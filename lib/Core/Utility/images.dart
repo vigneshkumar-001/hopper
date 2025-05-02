@@ -1,0 +1,28 @@
+class AppImages {
+  static String roundCar = "assets/images/RoundCar.png";
+  static String apple = "assets/images/apple.png";
+  static String google = "assets/images/google.png";
+  static String mail = "assets/images/mail.png";
+  static String chat = "assets/images/chat.png";
+  static String backButton = "assets/images/backButton.png";
+  static String rightButton = "assets/images/rightButton.png";
+  static String terms = "assets/images/terms.png";
+  static String bike = "assets/images/bike.png";
+  static String car = "assets/images/car.png";
+  static String basicInfo = "assets/images/basicInfo.png";
+  static String docUpload = "assets/images/docUpload.png";
+  static String tick = "assets/images/tick.png";
+  static String close = "assets/images/close.png";
+  static String ninDoc = "assets/images/ninDoc.png";
+  static String driverLicense = "assets/images/driverLicense.png";
+  static String carOwnerDoc = "assets/images/carOwnerDoc.png";
+  static String carOwnerShip = "assets/images/carOwnerShip.png";
+  static String carDoc = "assets/images/carDoc.png";
+  static String carInterior = "assets/images/carInterior.png";
+  static String consent = "assets/images/consent.png";
+  static String exclamationCircle = "assets/images/exclamationCircle.png";
+  static String bikeOwner = "assets/images/bikeOwner.png";
+  static String bikeExterior = "assets/images/bikeExterior.png";
+  static String waitingReview = "assets/images/waitingReview.png";
+  static String dummyProfile = "assets/images/dummyProfile.png";
+}
