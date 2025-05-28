@@ -4,7 +4,12 @@ import 'package:image_picker/image_picker.dart';
 class ImageUtils {
   static Future<String> pickImage(BuildContext context) async {
     final ImagePicker _picker = ImagePicker();
-    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+    final XFile? image = await _picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1024, // Resize to lower resolution
+      maxHeight: 1024,
+      imageQuality: 80,
+    );
 
     if (image != null) {
       if (image.path.endsWith('.png') ||
@@ -23,6 +28,7 @@ class ImageUtils {
       return '';
     }
   }
+
   // Future<void> pickImage(int index) async {
   //   final XFile? image = await _picker.pickImage(source: ImageSource.camera);
   //   if (image != null) {

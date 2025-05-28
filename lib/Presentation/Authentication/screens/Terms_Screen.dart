@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
+import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
+import 'package:hopper/Presentation/Authentication/screens/processingScreen.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/basicInfo.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
 import 'package:hopper/Presentation/Authentication/widgets/bottomNavigation.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/processingScreen.dart';
+import 'package:get/get.dart';
 
 class TermsScreen extends StatefulWidget {
   const TermsScreen({super.key});
@@ -13,6 +20,20 @@ class TermsScreen extends StatefulWidget {
 }
 
 class _TermsScreenState extends State<TermsScreen> {
+  final ChooseServiceController controller = Get.find();
+
+  Future<void> getUserDetail() async {
+    await controller.getUserDetails();
+    controller.getUserDetails();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    getUserDetail();
+    // loadAndNavigate();
+  }
+
   bool isChecked = false;
   @override
   Widget build(BuildContext context) {
@@ -59,7 +80,14 @@ class _TermsScreenState extends State<TermsScreen> {
         height: 120.h,
         onBackPressed: () => Navigator.pop(context),
         onNextPressed: () {
-           Navigator.push(context, MaterialPageRoute(builder: (context)=>ChooseService()));
+          if (isChecked == false) {
+            CustomSnackBar.showInfo('Please Accept terms and condition');
+          } else {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => ProcessingScreen()),
+            );
+          }
         },
 
         backgroundColor: Colors.white,

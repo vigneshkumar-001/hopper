@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:hopper/Core/Utility/images.dart';
 
 class Buttons {
   static final Buttons _singleton = Buttons._internal();
@@ -14,13 +15,14 @@ class Buttons {
     double? size = double.infinity,
     Color? buttonColor,
     Color? textColor = Colors.white,
+
     bool? isLoading,
     bool hasBorder = false,
     String? imagePath,
   }) {
     return SizedBox(
       width: size,
-      height: 50.sp,
+
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
@@ -56,6 +58,13 @@ class Buttons {
           ],
         ),
       ),
+    );
+  }
+
+  static backButton({required BuildContext context}) {
+    return GestureDetector(
+      onTap: () => Navigator.pop(context),
+      child: Image.asset(AppImages.backButton, height: 18),
     );
   }
 }

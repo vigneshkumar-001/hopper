@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "399977568127",
+    "project_id": "hopper-64620",
+    "storage_bucket": "hopper-64620.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:399977568127:android:dbf272ed5417e43aeb6c4a",
+        "android_client_info": {
+          "package_name": "com.hopper.hopper"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBf0JJKLFuTbCk8qMdjwdbn51FCl0fdg2k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

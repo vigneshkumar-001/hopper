@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hopper/Presentation/Authentication/screens/GetStarted_Screens.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
+import 'package:get/get.dart';
 
 class LandingScreens extends StatefulWidget {
   const LandingScreens({super.key});
@@ -10,6 +12,24 @@ class LandingScreens extends StatefulWidget {
 }
 
 class _LandingScreensState extends State<LandingScreens> {
+  final ChooseServiceController controller = Get.find();
+  Future<void> loadAndNavigate() async {
+    await controller.getUserDetails();
+    controller.handleLandingPageNavigation(Get.context!);
+  }
+
+  Future<void> getUserDetail() async {
+    await controller.getUserDetails();
+    controller.getUserDetails();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    getUserDetail();
+    // loadAndNavigate();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -44,7 +64,6 @@ class _LandingScreensState extends State<LandingScreens> {
                 ),
                 const SizedBox(height: 20),
 
-                // Subtitle Text
                 const Text(
                   "Drive on your terms. Earn with Nigeria's\ntrusted ride-hailing app.",
                   textAlign: TextAlign.center,

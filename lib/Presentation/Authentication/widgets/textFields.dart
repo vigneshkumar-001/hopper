@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
+import 'package:hopper/Presentation/Authentication/controller/authController.dart';
 import 'package:intl/intl.dart';
 
 class CustomTextfield {
@@ -9,7 +10,13 @@ class CustomTextfield {
 
   static CustomTextfield get instance => _singleton;
 
-  static textField({required String tittle, required String hintText}) {
+  static textField({
+    required String tittle,
+    required String hintText,
+    TextEditingController? controller,
+    TextInputType? type,
+    String? Function(String?)? validator,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -18,7 +25,9 @@ class CustomTextfield {
           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         ),
         SizedBox(height: 8),
-        TextField(
+        TextFormField(
+          keyboardType: type,
+          controller: controller,
           style: TextStyle(
             color: Color(0xff111111),
             fontWeight: FontWeight.w500,
@@ -29,7 +38,16 @@ class CustomTextfield {
             border: OutlineInputBorder(
               borderSide: BorderSide(color: Color(0xffF1F1F1)),
             ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.red, width: 1.5),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.red, width: 1.5),
+            ),
           ),
+          validator: validator,
         ),
       ],
     );
@@ -37,6 +55,8 @@ class CustomTextfield {
 
   static dropDown({
     required String title,
+    TextEditingController? controller,
+    ValueChanged<String>? onChanged,
     required String hintText,
     VoidCallback? onTap,
     bool isReadOnly = true,
@@ -51,12 +71,14 @@ class CustomTextfield {
         ),
         SizedBox(height: 8),
         TextField(
+          controller: controller,
           style: TextStyle(
             color: Color(0xff111111),
             fontWeight: FontWeight.w500,
           ),
           readOnly: isReadOnly,
           onTap: onTap,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: hintText,
             hintStyle: TextStyle(color: Color(0xff666666)),
@@ -108,7 +130,7 @@ class CustomTextfield {
             );
             if (pickedDate != null) {
               String formattedDate = DateFormat(
-                'd MMMM yyyy',
+                'd-MMMM-yyyy',
               ).format(pickedDate);
               controller.text = formattedDate;
             }
@@ -121,7 +143,10 @@ class CustomTextfield {
   static mobileNumber({
     VoidCallback? onTap,
     Widget? suffixIcon,
+    String? initialValue,
+    Widget? prefixIcon,
     required String title,
+    TextEditingController? controller,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -137,10 +162,12 @@ class CustomTextfield {
               child: Container(
                 decoration: BoxDecoration(color: Color(0xffF1F1F1)),
                 child: TextField(
+                  readOnly: true,
+
                   onTap: onTap,
                   decoration: InputDecoration(
                     border: InputBorder.none,
-
+                    prefixIcon: prefixIcon,
                     suffixIcon: suffixIcon,
                   ),
                 ),
@@ -151,14 +178,17 @@ class CustomTextfield {
               flex: 4,
               child: Container(
                 decoration: BoxDecoration(color: Color(0xffF1F1F1)),
-                child: TextField(
+                child: TextFormField(
+                  controller: controller,
+                  initialValue: initialValue,
+                  readOnly: true,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: Colors.black, width: 1.5),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    hintText: '0000 0000 0000',
+                    // focusedBorder: OutlineInputBorder(
+                    //   borderSide: BorderSide(color: Colors.black, width: 1.5),
+                    //   borderRadius: BorderRadius.circular(4),
+                    // ),
+                    hintText: getMobileNumber,
                     contentPadding: EdgeInsets.symmetric(horizontal: 20),
                     border: InputBorder.none,
                   ),
