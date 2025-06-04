@@ -5,7 +5,6 @@ import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/screens/Otp_Screens.dart';
 import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
-import 'package:hopper/api/repository/failure.dart';
 
 var getMobileNumber = '';
 var countryCodes = '';

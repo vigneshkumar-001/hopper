@@ -4,8 +4,6 @@ import 'package:get/get.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/driverLicense.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/uploadExteriorPhotos.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 
 class InteriorImageController extends GetxController {

@@ -1,13 +1,11 @@
 import 'dart:async';
 
-import 'package:hopper/Core/Constants/log.dart';
 import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/basicInfo.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/carOwnerShip.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/driverAddress.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/driverLicense.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/interiorUploadPhotos.dart';

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/ModelBottomSheet.dart';
@@ -7,12 +6,7 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/driveraddress_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/stateList_Controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/docUploadPic.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/driverDocGuidelines.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
 import 'package:get/get.dart';

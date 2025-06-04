@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 class CommonBottomNavigationBar extends StatelessWidget {
   final VoidCallback onBackPressed;

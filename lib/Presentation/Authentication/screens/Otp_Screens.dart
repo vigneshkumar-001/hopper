@@ -4,11 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/log.dart';
-import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/controller/otp_controller.dart';
-import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
 import 'package:hopper/Presentation/Authentication/widgets/bottomNavigation.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
 import 'package:get/get.dart';
