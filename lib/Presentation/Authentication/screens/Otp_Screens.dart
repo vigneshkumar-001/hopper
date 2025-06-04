@@ -29,7 +29,6 @@ class _OtpScreensState extends State<OtpScreens> {
   StreamController<ErrorAnimationType>? errorController;
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       body: Obx(
         () =>
@@ -75,8 +74,9 @@ class _OtpScreensState extends State<OtpScreens> {
 
                               animationType: AnimationType.fade,
                               validator: (v) {
-                                if (v == null || v.length != 4)
+                                if (v == null || v.length != 4) {
                                   return 'Enter valid 4-digit OTP';
+                                }
                                 return null;
                               },
 
@@ -101,7 +101,7 @@ class _OtpScreensState extends State<OtpScreens> {
                               ),
                               enableActiveFill: true,
                               errorAnimationController: errorController,
-                              controller:  otp,
+                              controller: otp,
                               keyboardType: TextInputType.number,
                               boxShadows: const [
                                 BoxShadow(
@@ -114,9 +114,7 @@ class _OtpScreensState extends State<OtpScreens> {
                               onChanged: (value) {
                                 debugPrint(value);
 
-
-                                  verifyCode = value;
-
+                                verifyCode = value;
                               },
                               beforeTextPaste: (text) {
                                 debugPrint("Allowing to paste $text");
@@ -159,7 +157,7 @@ class _OtpScreensState extends State<OtpScreens> {
       bottomNavigationBar: CommonBottomNavigationBar(
         onBackPressed: () => Navigator.pop(context),
         onNextPressed: () async {
-          await controller.verifyOtp(context,verifyCode );
+          await controller.verifyOtp(context, verifyCode);
           // Navigator.push(
           //   context,
           //   MaterialPageRoute(builder: (context) => TermsScreen()),

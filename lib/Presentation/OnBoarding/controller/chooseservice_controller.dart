@@ -16,7 +16,6 @@ import 'package:hopper/Presentation/OnBoarding/screens/driverLicense.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/interiorUploadPhotos.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/profilePicAccess.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/takePictureScreen.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/uploadExteriorPhotos.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/vehicleDetails.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';

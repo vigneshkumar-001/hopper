@@ -1,11 +1,9 @@
 import 'dart:convert';
-import 'dart:developer';
 
 import 'dart:io';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Presentation/Authentication/models/loginResponse.dart';
 import 'package:hopper/Presentation/Authentication/models/otp_response.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/models/baseinfo_response.dart';
 import 'package:hopper/Presentation/OnBoarding/models/chooseservice_model.dart';
 import 'package:hopper/Presentation/OnBoarding/models/getuserdetails_models.dart';
@@ -13,11 +11,9 @@ import 'package:hopper/Presentation/OnBoarding/models/guidelines_Models.dart';
 import 'package:hopper/Presentation/OnBoarding/models/stateList_Models.dart';
 import 'package:hopper/Presentation/OnBoarding/models/userImage_models.dart';
 import 'package:hopper/Presentation/OnBoarding/models/yearandcolor_Models.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
 import 'package:hopper/api/repository/api_constents.dart';
 import 'package:hopper/api/repository/request.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../Presentation/Authentication/controller/authController.dart';
 import '../repository/failure.dart';
 import 'package:dio/dio.dart';

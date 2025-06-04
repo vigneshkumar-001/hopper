@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/ModelBottomSheet.dart';
@@ -14,9 +13,6 @@ import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/stateList_Controller.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/vehicledetails_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/uploadExteriorPhotos.dart';
 
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
@@ -410,8 +406,8 @@ class _VehicleDetailsState extends State<VehicleDetails> {
             await controller.vehicleDetails(
               frontImageFile: File(frontImage),
               backImageFile: File(backImage),
-              context: context,serviceType: serviceType
-
+              context: context,
+              serviceType: serviceType,
             );
           }
           // Navigator.push(

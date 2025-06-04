@@ -1,22 +1,23 @@
-  import 'dart:async';
+import 'dart:async';
 
 import 'package:hopper/Core/Constants/log.dart';
-  import 'package:flutter/material.dart';
-  import 'package:hopper/Core/Constants/texts.dart';
-  import 'package:hopper/Core/Utility/images.dart';
-  import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-  import 'package:hopper/Presentation/OnBoarding/screens/basicInfo.dart';
-  import 'package:hopper/Presentation/OnBoarding/screens/carOwnerShip.dart';
-  import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
-  import 'package:hopper/Presentation/OnBoarding/screens/driverAddress.dart';
-  import 'package:hopper/Presentation/OnBoarding/screens/driverLicense.dart';
-  import 'package:hopper/Presentation/OnBoarding/screens/interiorUploadPhotos.dart';
-  import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
-  import 'package:hopper/Presentation/OnBoarding/screens/takePictureScreen.dart';
-  import 'package:hopper/Presentation/OnBoarding/screens/uploadExteriorPhotos.dart';
-  import 'package:hopper/Presentation/OnBoarding/screens/vehicleDetails.dart';
-  import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
-  import 'package:get/get.dart';
+import 'package:flutter/material.dart';
+import 'package:hopper/Core/Constants/texts.dart';
+import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/basicInfo.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/carOwnerShip.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/driverAddress.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/driverLicense.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/interiorUploadPhotos.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/takePictureScreen.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/uploadExteriorPhotos.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/vehicleDetails.dart';
+import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
+import 'package:get/get.dart';
+
 //
 // class CompletedScreens extends StatefulWidget {
 //   const CompletedScreens({super.key});
@@ -650,7 +651,7 @@ import 'package:hopper/Core/Constants/log.dart';
 //   // }
 // }
 class CompletedScreens extends StatefulWidget {
-  const CompletedScreens({Key? key}) : super(key: key);
+  const CompletedScreens({super.key});
 
   @override
   State<CompletedScreens> createState() => _CompletedScreensState();
@@ -686,25 +687,67 @@ class _CompletedScreensState extends State<CompletedScreens> {
     if (serviceType == 'Bike') {
       return [
         {'title': 'Basic Info', 'status': user?.basicInfoStatus?.status ?? 0},
-        {'title': 'Driver Address Details', 'status': user?.driverAddressStatus?.status ?? 0},
-        {'title': 'Profile Photo', 'status': user?.profilePhotoStatus?.status ?? 0},
-        {'title': 'Identify Verification', 'status': user?.ninVerificationStatus?.status ?? 0},
-        {'title': 'Driver License', 'status': user?.driversLicenseStatus?.status ?? 0},
-        {'title': 'Bike Ownership Details', 'status': user?.bikeOwnershipStatus?.status ?? 0},
-        {'title': 'Bike Details', 'status': user?.bikeDetailsStatus?.status ?? 0},
+        {
+          'title': 'Driver Address Details',
+          'status': user?.driverAddressStatus?.status ?? 0,
+        },
+        {
+          'title': 'Profile Photo',
+          'status': user?.profilePhotoStatus?.status ?? 0,
+        },
+        {
+          'title': 'Identify Verification',
+          'status': user?.ninVerificationStatus?.status ?? 0,
+        },
+        {
+          'title': 'Driver License',
+          'status': user?.driversLicenseStatus?.status ?? 0,
+        },
+        {
+          'title': 'Bike Ownership Details',
+          'status': user?.bikeOwnershipStatus?.status ?? 0,
+        },
+        {
+          'title': 'Bike Details',
+          'status': user?.bikeDetailsStatus?.status ?? 0,
+        },
         {'title': 'Bike Photos', 'status': user?.bikePhotosStatus?.status ?? 0},
       ];
     } else {
       return [
         {'title': 'Basic Info', 'status': user?.basicInfoStatus?.status ?? 0},
-        {'title': 'Driver Address Details', 'status': user?.driverAddressStatus?.status ?? 0},
-        {'title': 'Profile Photo', 'status': user?.profilePhotoStatus?.status ?? 0},
-        {'title': 'Identify Verification', 'status': user?.ninVerificationStatus?.status ?? 0},
-        {'title': 'Driver License', 'status': user?.driversLicenseStatus?.status ?? 0},
-        {'title': 'Car Ownership Details', 'status': user?.carOwnershipStatus?.status ?? 0},
-        {'title': 'Vehicle Details', 'status': user?.carDetailsStatus?.status ?? 0},
-        {'title': 'Exterior Photos', 'status': user?.carExteriorPhotosStatus?.status ?? 0},
-        {'title': 'Interior Photos', 'status': user?.carInteriorPhotosStatus?.status ?? 0},
+        {
+          'title': 'Driver Address Details',
+          'status': user?.driverAddressStatus?.status ?? 0,
+        },
+        {
+          'title': 'Profile Photo',
+          'status': user?.profilePhotoStatus?.status ?? 0,
+        },
+        {
+          'title': 'Identify Verification',
+          'status': user?.ninVerificationStatus?.status ?? 0,
+        },
+        {
+          'title': 'Driver License',
+          'status': user?.driversLicenseStatus?.status ?? 0,
+        },
+        {
+          'title': 'Car Ownership Details',
+          'status': user?.carOwnershipStatus?.status ?? 0,
+        },
+        {
+          'title': 'Vehicle Details',
+          'status': user?.carDetailsStatus?.status ?? 0,
+        },
+        {
+          'title': 'Exterior Photos',
+          'status': user?.carExteriorPhotosStatus?.status ?? 0,
+        },
+        {
+          'title': 'Interior Photos',
+          'status': user?.carInteriorPhotosStatus?.status ?? 0,
+        },
       ];
     }
   }
@@ -739,84 +782,121 @@ class _CompletedScreensState extends State<CompletedScreens> {
         return user == null
             ? Center(child: CircularProgressIndicator())
             : SingleChildScrollView(
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-              child: Column(
-                children: [
-                  Center(child: Image.asset(AppImages.waitingReview)),
-                  SizedBox(height: 24),
-                  Text(AppTexts.awaitingReview, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24)),
-                  SizedBox(height: 24),
-                  Text(AppTexts.awaitingContent, textAlign: TextAlign.center),
-                  SizedBox(height: 24),
-                  ClipOval(
-                    child: Image.network(
-                      user.profilePic ?? '',
-                      width: 130,
-                      height: 130,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Icon(Icons.error),
-                    ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 15,
                   ),
-                  SizedBox(height: 10),
-                  Container(
-                    width: MediaQuery.of(context).size.width * 0.5,
-                    child: CustomLinearProgress.linearProgressIndicator(
-                      value: (user.completed ?? 0).toDouble(),
-                      progressColor: Color(0xff009721),
-                      minHeight: 4,
-                    ),
-                  ),
-                  SizedBox(height: 10),
-                  Text('${user.completed ?? 0}% profile completed'),
-                  SizedBox(height: 24),
-                  Row(
+                  child: Column(
                     children: [
-                      Expanded(child: settingBox(title: 'Settings', icon: Icons.settings)),
-                      SizedBox(width: 15),
-                      Expanded(child: settingBox(title: 'FAQ', icon: Icons.help_outline)),
+                      Center(child: Image.asset(AppImages.waitingReview)),
+                      SizedBox(height: 24),
+                      Text(
+                        AppTexts.awaitingReview,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 24,
+                        ),
+                      ),
+                      SizedBox(height: 24),
+                      Text(
+                        AppTexts.awaitingContent,
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 24),
+                      ClipOval(
+                        child: Image.network(
+                          user.profilePic ?? '',
+                          width: 130,
+                          height: 130,
+                          fit: BoxFit.cover,
+                          errorBuilder:
+                              (context, error, stackTrace) => Icon(Icons.error),
+                        ),
+                      ),
+                      SizedBox(height: 10),
+                      SizedBox(
+                        width: MediaQuery.of(context).size.width * 0.5,
+                        child: CustomLinearProgress.linearProgressIndicator(
+                          value: (user.completed ?? 0).toDouble(),
+                          progressColor: Color(0xff009721),
+                          minHeight: 4,
+                        ),
+                      ),
+                      SizedBox(height: 10),
+                      Text('${user.completed ?? 0}% profile completed'),
+                      SizedBox(height: 24),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: settingBox(
+                              title: 'Settings',
+                              icon: Icons.settings,
+                            ),
+                          ),
+                          SizedBox(width: 15),
+                          Expanded(
+                            child: settingBox(
+                              title: 'FAQ',
+                              icon: Icons.help_outline,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 24),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Color(0xffF5F5F7),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Color(0xffD9D9D9)),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 16.0,
+                            horizontal: 16,
+                          ),
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            physics: NeverScrollableScrollPhysics(),
+                            itemCount: steps.length,
+                            separatorBuilder: (_, __) => Divider(),
+                            itemBuilder: (context, index) {
+                              final data = steps[index];
+                              final status = data['status'] ?? 0;
+
+                              return GestureDetector(
+                                onTap: () {
+                                  if (status == 2) navigateToStep(index);
+                                },
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      data['title'],
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    Icon(
+                                      getIcon(status),
+                                      color: getIconColor(status),
+                                      size: 19,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                  SizedBox(height: 24),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Color(0xffF5F5F7),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Color(0xffD9D9D9)),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 16),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        physics: NeverScrollableScrollPhysics(),
-                        itemCount: steps.length,
-                        separatorBuilder: (_, __) => Divider(),
-                        itemBuilder: (context, index) {
-                          final data = steps[index];
-                          final status = data['status'] ?? 0;
-
-                          return GestureDetector(
-                            onTap: () {
-                              if (status == 2) navigateToStep(index);
-                            },
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(data['title'], style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                                Icon(getIcon(status), color: getIconColor(status), size: 19),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
-        );
+            );
       }),
     );
   }
@@ -865,7 +945,10 @@ class _CompletedScreensState extends State<CompletedScreens> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            Text(
+              title,
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
             Icon(icon),
           ],
         ),

@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/Authentication/screens/processingScreen.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/basicInfo.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
 import 'package:hopper/Presentation/Authentication/widgets/bottomNavigation.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/processingScreen.dart';

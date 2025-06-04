@@ -22,11 +22,6 @@ class AuthController extends GetxController {
   RxBool isLoading = false.obs;
   RxBool isGoogleLoading = false.obs;
 
-  @override
-  void onInit() {
-    super.onInit();
-  }
-
   Future<String?> login(BuildContext context) async {
     final number = mobileNumber.text.trim();
     final String countryCode = countryCodeController.text.trim();

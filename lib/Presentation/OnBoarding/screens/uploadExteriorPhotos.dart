@@ -433,7 +433,7 @@ class _UploadExteriorPhotosState extends State<UploadExteriorPhotos> {
           final selectedImages = controller.selectedImages;
 
           final allSelected = selectedImages.every(
-            (img) => img != null && img!.isNotEmpty,
+            (img) => img != null && img.isNotEmpty,
           );
           if (!allSelected) {
             CustomSnackBar.showError("Please upload all required images.");

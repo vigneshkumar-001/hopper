@@ -6,9 +6,6 @@ import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/interiorUploadPhotos.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:get/get.dart';
@@ -142,13 +139,13 @@ class _CarDocGuideLinesState extends State<ExteriorDocGuideLines> {
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         onTap: () async {
           if (serviceType == "Car") {
-              Navigator. pop(context);
+            Navigator.pop(context);
             // await Navigator.push(
             //   context,
             //   MaterialPageRoute(builder: (context) => InteriorUploadPhotos()),
             // );
           } else {
-            Navigator. pop(context);
+            Navigator.pop(context);
             // Navigator.push(
             //   context,
             //   MaterialPageRoute(builder: (context) => ConsentForms()),

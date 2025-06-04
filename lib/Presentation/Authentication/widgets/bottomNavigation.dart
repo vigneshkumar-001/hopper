@@ -18,7 +18,7 @@ class CommonBottomNavigationBar extends StatelessWidget {
   final ValueChanged<bool?>? onCheckboxChanged;
   final double? height; // Customizable height
   const CommonBottomNavigationBar({
-    Key? key,
+    super.key,
     required this.onBackPressed,
     required this.onNextPressed,
     this.nextButtonText = 'Next',
@@ -31,7 +31,7 @@ class CommonBottomNavigationBar extends StatelessWidget {
     this.height,
     this.isChecked = false,
     this.onCheckboxChanged,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

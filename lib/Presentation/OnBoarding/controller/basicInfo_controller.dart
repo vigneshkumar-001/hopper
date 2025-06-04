@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/Authentication/controller/authController.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/driverAddress.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
-import 'package:hopper/api/repository/failure.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class BasicInfoController extends GetxController {
   TextEditingController name = TextEditingController();

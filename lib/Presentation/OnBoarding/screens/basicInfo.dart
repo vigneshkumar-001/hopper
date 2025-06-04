@@ -1,21 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/ModelBottomSheet.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/basicInfo_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/driverAddress.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
 import 'package:get/get.dart';
-
-import '../../Authentication/controller/authController.dart';
 
 class BasicInfo extends StatefulWidget {
   final bool? fromCompleteScreens;
@@ -65,7 +58,7 @@ class _BasicInfoState extends State<BasicInfo> {
                   hintText: 'Enter Your Name',
                 ),
                 CustomTextfield.textField(
-                  controller: controller. lastName,
+                  controller: controller.lastName,
                   tittle: 'Last Name',
                   hintText: 'Enter Your Name',
                 ),

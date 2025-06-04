@@ -19,8 +19,7 @@ import 'package:get/get.dart';
 
 class DriverAddress extends StatefulWidget {
   final bool fromCompleteScreens;
-  const DriverAddress({Key? key, this.fromCompleteScreens = false})
-    : super(key: key);
+  const DriverAddress({super.key, this.fromCompleteScreens = false});
 
   @override
   State<DriverAddress> createState() => _DriverAddressState();

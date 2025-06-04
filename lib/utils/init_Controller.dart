@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Presentation/Authentication/controller/authController.dart';
 import 'package:hopper/Presentation/Authentication/controller/otp_controller.dart';

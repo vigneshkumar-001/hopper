@@ -35,6 +35,7 @@ class GuidelinesController extends GetxController {
         (response) {
           guidelinesList.clear();
           guidelinesList.add(response);
+          return null;
         },
       );
     } catch (e) {

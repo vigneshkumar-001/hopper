@@ -14,13 +14,8 @@ class ExteriorImageController extends GetxController {
   String accessToken = '';
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
-  RxList<String?> _selectedImages = List<String?>.filled(6, null).obs;
+  final RxList<String?> _selectedImages = List<String?>.filled(6, null).obs;
   List<String?> get selectedImages => _selectedImages;
-
-  @override
-  void onInit() {
-    super.onInit();
-  }
 
   // Future<void> exteriorImageUpload({
   //   required List<String?> selectedImages,
@@ -123,13 +118,12 @@ class ExteriorImageController extends GetxController {
     final profile = Get.find<ChooseServiceController>().userProfile.value;
     // final isCar = profile?.serviceType == 'Car';
     // final serviceType = isCar ? 'Car' : 'Bike';
-    final isCar =  serviceType == 'Car';
+    final isCar = serviceType == 'Car';
 
     final serviceTypes = isCar ? 'Car' : 'Bike';
     final ninResult = await apiDataSource.uploadExteriorImage(
       imageUrls: uploadedUrls,
       serviceType: serviceType,
-
     );
 
     ninResult.fold(

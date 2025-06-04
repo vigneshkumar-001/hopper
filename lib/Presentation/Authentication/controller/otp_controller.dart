@@ -17,10 +17,6 @@ class OtpController extends GetxController {
   // OtpController({required String phoneNumber}) {
   //   mobileNumber.text = phoneNumber;
   // }
-  @override
-  void onInit() {
-    super.onInit();
-  }
 
   Future<String?> verifyOtp(BuildContext context, String otp) async {
     isLoading.value = true;
@@ -31,7 +27,7 @@ class OtpController extends GetxController {
         (failure) {
           isLoading.value = false;
 
-          CommonLogger.log.e('${failure.message}');
+          CommonLogger.log.e(failure.message);
           CustomSnackBar.showError(failure.message);
 
           return failure.message; // from ServerFailure('...')

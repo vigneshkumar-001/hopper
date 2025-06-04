@@ -12,7 +12,7 @@ class InteriorImageController extends GetxController {
   String accessToken = '';
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
-  RxList<String?> _selectedImages = List<String?>.filled(6, null).obs;
+  final RxList<String?> _selectedImages = List<String?>.filled(6, null).obs;
   List<String?> get selectedImages => _selectedImages;
 
   @override

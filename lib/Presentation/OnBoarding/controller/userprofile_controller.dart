@@ -15,18 +15,11 @@ class UserProfileController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
 
-  @override
-  void onInit() {
-    super.onInit();
-  }
-
   Future<String?> userProfileUpload(
     BuildContext context,
-    File imageFile,
-      {
-        bool fromCompleteScreen = false,
-      }
-  ) async {
+    File imageFile, {
+    bool fromCompleteScreen = false,
+  }) async {
     isLoading.value = true;
 
     final frontResult = await apiDataSource.userProfileUpload(

@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:dotted_border/dotted_border.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/ModelBottomSheet.dart';
@@ -10,13 +9,9 @@ import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/caronwership_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/carOwnerDocGuidelines.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/vehicleDetails.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
-import 'package:hopper/utils/imagePath/imagePath.dart';
 
-import 'chooseService.dart';
 import 'package:get/get.dart';
 
 class CarOwnership extends StatefulWidget {
@@ -154,10 +149,10 @@ class _CarOwnershipState extends State<CarOwnership> {
           // if (_formKey.currentState!.validate()) {
           //   await controller.carOwnerShip(context, selectedService);
           // }
-           Navigator.push(
-             context,
-             MaterialPageRoute(builder: (context) => ConsentForms()),
-           );
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ConsentForms()),
+          );
         },
       ),
     );

@@ -5,8 +5,6 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/interiorUploadPhotos.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:image_picker/image_picker.dart';
 
