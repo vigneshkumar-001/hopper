@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hopper/Presentation/Authentication/screens/Landing_Screens.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
 
 import 'package:hopper/utils/init_Controller.dart';
 
 import 'package:get/get.dart';
 import 'package:firebase_core/firebase_core.dart';
 
-void main() async{
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initController();
   await Firebase.initializeApp();

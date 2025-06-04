@@ -5,11 +5,7 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/interiorimage_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/exteriorDocGuidelines.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/interiorDocGuidelines.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
@@ -281,24 +277,24 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
       ),
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         onTap: () async {
-           final selectedImages = controller.selectedImages;
+          final selectedImages = controller.selectedImages;
 
-           // Ensure that the selected images are not null or empty
-           if (selectedImages.any((image) => image == null || image.isEmpty)) {
-             CustomSnackBar.showError("Please upload all required images.");
-             return;
-           }
+          // Ensure that the selected images are not null or empty
+          if (selectedImages.any((image) => image == null || image.isEmpty)) {
+            CustomSnackBar.showError("Please upload all required images.");
+            return;
+          }
 
-           // Call the image upload method
-           await controller.interiorImageUpload(
-             selectedImages: selectedImages,
-             context: context,
-           );
+          // Call the image upload method
+          await controller.interiorImageUpload(
+            selectedImages: selectedImages,
+            context: context,
+          );
 
-           // Navigator.push(
-           //   context,
-           //   MaterialPageRoute(builder: (context) => ConsentForms()),
-           // );
+          // Navigator.push(
+          //   context,
+          //   MaterialPageRoute(builder: (context) => ConsentForms()),
+          // );
         },
         title: 'Save & Next',
       ),

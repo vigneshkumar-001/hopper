@@ -5,8 +5,8 @@ import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/basicInfo.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
 import 'package:get/get.dart';
+
 class ProcessingScreen extends StatefulWidget {
   final String? selectedFlag;
   const ProcessingScreen({super.key, this.selectedFlag});
@@ -45,7 +45,9 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
   void initState() {
     super.initState();
 
-    final isCar = profile?.serviceType == 'Car'; // or add a .toLowerCase() check if needed
+    final isCar =
+        profile?.serviceType ==
+        'Car'; // or add a .toLowerCase() check if needed
     final serviceType = isCar ? 'Car' : 'Bike';
 
     if (serviceType == 'Bike') {
@@ -133,7 +135,10 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => BasicInfo( fromCompleteScreens: false,)),
+                    MaterialPageRoute(
+                      builder:
+                          (context) => BasicInfo(fromCompleteScreens: false),
+                    ),
                   );
                 },
                 text: "Start Application",

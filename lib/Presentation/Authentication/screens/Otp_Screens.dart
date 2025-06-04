@@ -4,11 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/log.dart';
-import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/controller/otp_controller.dart';
-import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
 import 'package:hopper/Presentation/Authentication/widgets/bottomNavigation.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
 import 'package:get/get.dart';
@@ -29,7 +26,6 @@ class _OtpScreensState extends State<OtpScreens> {
   StreamController<ErrorAnimationType>? errorController;
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       body: Obx(
         () =>
@@ -75,8 +71,9 @@ class _OtpScreensState extends State<OtpScreens> {
 
                               animationType: AnimationType.fade,
                               validator: (v) {
-                                if (v == null || v.length != 4)
+                                if (v == null || v.length != 4) {
                                   return 'Enter valid 4-digit OTP';
+                                }
                                 return null;
                               },
 
@@ -101,7 +98,7 @@ class _OtpScreensState extends State<OtpScreens> {
                               ),
                               enableActiveFill: true,
                               errorAnimationController: errorController,
-                              controller:  otp,
+                              controller: otp,
                               keyboardType: TextInputType.number,
                               boxShadows: const [
                                 BoxShadow(
@@ -114,9 +111,7 @@ class _OtpScreensState extends State<OtpScreens> {
                               onChanged: (value) {
                                 debugPrint(value);
 
-
-                                  verifyCode = value;
-
+                                verifyCode = value;
                               },
                               beforeTextPaste: (text) {
                                 debugPrint("Allowing to paste $text");
@@ -159,7 +154,7 @@ class _OtpScreensState extends State<OtpScreens> {
       bottomNavigationBar: CommonBottomNavigationBar(
         onBackPressed: () => Navigator.pop(context),
         onNextPressed: () async {
-          await controller.verifyOtp(context,verifyCode );
+          await controller.verifyOtp(context, verifyCode);
           // Navigator.push(
           //   context,
           //   MaterialPageRoute(builder: (context) => TermsScreen()),

@@ -2,10 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hopper/Core/Constants/log.dart';
 
 import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/docUploadPic.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
 
 import 'package:hopper/api/dataSource/apiDataSource.dart';
@@ -15,18 +13,11 @@ class UserProfileController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
 
-  @override
-  void onInit() {
-    super.onInit();
-  }
-
   Future<String?> userProfileUpload(
     BuildContext context,
-    File imageFile,
-      {
-        bool fromCompleteScreen = false,
-      }
-  ) async {
+    File imageFile, {
+    bool fromCompleteScreen = false,
+  }) async {
     isLoading.value = true;
 
     final frontResult = await apiDataSource.userProfileUpload(

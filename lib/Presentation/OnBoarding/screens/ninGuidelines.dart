@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
@@ -130,7 +129,7 @@ class _NinGuideLinesState extends State<NinGuideLines> {
       ),
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         onTap: () {
-          Navigator.pop(context,true);
+          Navigator.pop(context, true);
         },
         title: 'Take a Photo',
       ),

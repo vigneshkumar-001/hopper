@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/driverLicense.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/uploadExteriorPhotos.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 
@@ -31,52 +30,42 @@ class VehicleDetailsController extends GetxController {
     required String serviceType,
     required File backImageFile,
     required BuildContext context,
-  }) async
-  {
+  }) async {
     isLoading.value = true;
     String? frontImageUrl;
     String? backImageUrl;
 
     final profile = Get.find<ChooseServiceController>().userProfile.value;
-    if (frontImageFile != null) {
-      final frontResult = await apiDataSource.userProfileUpload(
-        imageFile: frontImageFile,
-      );
+    final frontResult = await apiDataSource.userProfileUpload(
+      imageFile: frontImageFile,
+    );
 
-      frontImageUrl = frontResult.fold((failure) {
-        CustomSnackBar.showError("Front Upload Failed: ${failure.message}");
-        return null;
-      }, (success) => success.message);
+    frontImageUrl = frontResult.fold((failure) {
+      CustomSnackBar.showError("Front Upload Failed: ${failure.message}");
+      return null;
+    }, (success) => success.message);
 
-      if (frontImageUrl == null) {
-        isLoading.value = false;
-        return;
-      }
-    } else {
-      // Use existing URL if no new file
-      frontImageUrl = this.frontImageUrl.value;
+    if (frontImageUrl == null) {
+      isLoading.value = false;
+      return;
     }
 
-    if (backImageFile != null) {
-      final backResult = await apiDataSource.userProfileUpload(
-        imageFile: backImageFile,
-      );
+    final backResult = await apiDataSource.userProfileUpload(
+      imageFile: backImageFile,
+    );
 
-      backImageUrl = backResult.fold((failure) {
-        CustomSnackBar.showError("Back Upload Failed: ${failure.message}");
-        return null;
-      }, (success) => success.message);
+    backImageUrl = backResult.fold((failure) {
+      CustomSnackBar.showError("Back Upload Failed: ${failure.message}");
+      return null;
+    }, (success) => success.message);
 
-      if (backImageUrl == null) {
-        isLoading.value = false;
-        return;
-      }
-    } else {
-      backImageUrl = this.backImageUrl.value;
+    if (backImageUrl == null) {
+      isLoading.value = false;
+      return;
     }
-     final isCar =  serviceType == 'Car';
+    final isCar = serviceType == 'Car';
 
-  final serviceTypes = isCar ? 'Car' : 'Bike';
+    final serviceTypes = isCar ? 'Car' : 'Bike';
 
     final ninResult = await apiDataSource.vehicleDetails(
       serviceType: serviceTypes,

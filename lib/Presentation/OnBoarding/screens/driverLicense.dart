@@ -4,14 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/driverLicense_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/carOwnerShip.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/driverDocGuidelines.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ninGuidelines.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
 import 'package:hopper/utils/imagePath/imagePath.dart';
@@ -336,7 +332,7 @@ class _DriverLicenseState extends State<DriverLicense> {
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         title: 'Save & Next',
         onTap: () async {
-        if (_formKey.currentState!.validate()) {
+          if (_formKey.currentState!.validate()) {
             await controller.driverLicense(
               context,
               frontImage.isNotEmpty ? File(frontImage) : null,

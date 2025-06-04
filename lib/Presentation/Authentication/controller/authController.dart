@@ -5,7 +5,6 @@ import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/screens/Otp_Screens.dart';
 import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
-import 'package:hopper/api/repository/failure.dart';
 
 var getMobileNumber = '';
 var countryCodes = '';
@@ -21,11 +20,6 @@ class AuthController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
   RxBool isGoogleLoading = false.obs;
-
-  @override
-  void onInit() {
-    super.onInit();
-  }
 
   Future<String?> login(BuildContext context) async {
     final number = mobileNumber.text.trim();

@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 class CommonBottomNavigationBar extends StatelessWidget {
   final VoidCallback onBackPressed;
@@ -18,7 +16,7 @@ class CommonBottomNavigationBar extends StatelessWidget {
   final ValueChanged<bool?>? onCheckboxChanged;
   final double? height; // Customizable height
   const CommonBottomNavigationBar({
-    Key? key,
+    super.key,
     required this.onBackPressed,
     required this.onNextPressed,
     this.nextButtonText = 'Next',
@@ -31,7 +29,7 @@ class CommonBottomNavigationBar extends StatelessWidget {
     this.height,
     this.isChecked = false,
     this.onCheckboxChanged,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

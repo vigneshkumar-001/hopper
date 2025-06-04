@@ -5,7 +5,6 @@ import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/takePictureScreen.dart'
     show TakePicture;
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';

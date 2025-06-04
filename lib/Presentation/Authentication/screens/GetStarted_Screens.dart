@@ -182,7 +182,7 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                                   print(
                                     'Selected Country Code: +${country.dialCode}',
                                   );
-                                  print('Selected flag ${flag}');
+                                  print('Selected flag $flag');
                                 },
                                 onChanged: (phone) {
                                   controller.selectedCountryCode.value =

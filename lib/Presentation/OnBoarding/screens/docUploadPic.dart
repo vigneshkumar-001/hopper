@@ -3,7 +3,6 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/profilePicAccess.dart'
     show ProfilePicAccess;
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';

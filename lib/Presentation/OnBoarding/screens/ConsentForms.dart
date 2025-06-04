@@ -5,7 +5,6 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/stateList_Controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:get/get.dart';
 
@@ -231,7 +230,9 @@ class _ConsentFormsState extends State<ConsentForms> {
                   title: "Send for Verification",
                   onTap: () {
                     if (!isChecked) {
-                      CustomSnackBar.showInfo('Please agree to the terms to proceed.');
+                      CustomSnackBar.showInfo(
+                        'Please agree to the terms to proceed.',
+                      );
                       // ScaffoldMessenger.of(context).showSnackBar(
                       //   SnackBar(
                       //     content: Text("Please agree to the terms to proceed."),

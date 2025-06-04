@@ -5,7 +5,6 @@ import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
-import 'package:hopper/api/repository/failure.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class OtpController extends GetxController {
@@ -17,10 +16,6 @@ class OtpController extends GetxController {
   // OtpController({required String phoneNumber}) {
   //   mobileNumber.text = phoneNumber;
   // }
-  @override
-  void onInit() {
-    super.onInit();
-  }
 
   Future<String?> verifyOtp(BuildContext context, String otp) async {
     isLoading.value = true;
@@ -31,7 +26,7 @@ class OtpController extends GetxController {
         (failure) {
           isLoading.value = false;
 
-          CommonLogger.log.e('${failure.message}');
+          CommonLogger.log.e(failure.message);
           CustomSnackBar.showError(failure.message);
 
           return failure.message; // from ServerFailure('...')
