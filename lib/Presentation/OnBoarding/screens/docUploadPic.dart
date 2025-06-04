@@ -3,7 +3,9 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/profilePicAccess.dart' show ProfilePicAccess;
+import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/profilePicAccess.dart'
+    show ProfilePicAccess;
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 
 class DocUpLoadPic extends StatefulWidget {
@@ -72,16 +74,40 @@ class _DocUpLoadPicState extends State<DocUpLoadPic> {
               CustomTextfield.concatenateText(
                 title: AppTexts.thinksToAvoidContents2,
               ),
-              Spacer(),
-              Buttons.button(
-                buttonColor: AppColors.commonBlack,
-                onTap: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (context)=>ProfilePicAccess()));
-                },
-                text: 'Take a Photo',
-              ),
+              // Spacer(),
+              // Buttons.button(
+              //   buttonColor: AppColors.commonBlack,
+              //   onTap: () {
+              //     Navigator.push(
+              //       context,
+              //       MaterialPageRoute(builder: (context) => ProfilePicAccess()),
+              //     );
+              //   },
+              //   text: 'Take a Photo',
+              // ),
             ],
           ),
+        ),
+      ),
+      bottomNavigationBar: BottomAppBar(
+        color: AppColors.commonWhite,
+        child: Column(
+          children: [
+            Buttons.button(
+              buttonColor: AppColors.commonBlack,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ProfilePicAccess()),
+                );
+                // Navigator.push(
+                //   context,
+                //   MaterialPageRoute(builder: (context) => NinScreens()),
+                // );
+              },
+              text: 'Take a Photo',
+            ),
+          ],
         ),
       ),
     );

@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/stateList_Controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
+import 'package:get/get.dart';
 
 class ConsentForms extends StatefulWidget {
   const ConsentForms({super.key});
@@ -14,6 +17,12 @@ class ConsentForms extends StatefulWidget {
 }
 
 class _ConsentFormsState extends State<ConsentForms> {
+  final StateListController controller = Get.find();
+  @override
+  void initState() {
+    super.initState();
+  }
+
   bool isChecked = false;
   @override
   Widget build(BuildContext context) {
@@ -207,11 +216,33 @@ class _ConsentFormsState extends State<ConsentForms> {
           ),
         ),
       ),
-      bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
-        title: 'Send for Verification',
-        onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context)=>CompletedScreens()));
-        },
+
+      bottomNavigationBar: Obx(
+        () =>
+            controller.isLoading.value
+                ? Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: SizedBox(
+                    height: 48,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                )
+                : CustomBottomNavigation.bottomNavigation(
+                  title: "Send for Verification",
+                  onTap: () {
+                    if (!isChecked) {
+                      CustomSnackBar.showInfo('Please agree to the terms to proceed.');
+                      // ScaffoldMessenger.of(context).showSnackBar(
+                      //   SnackBar(
+                      //     content: Text("Please agree to the terms to proceed."),
+                      //     backgroundColor: Colors.red,
+                      //   ),
+                      // );
+                      return;
+                    }
+                    controller.sendVerification(context);
+                  },
+                ),
       ),
     );
   }

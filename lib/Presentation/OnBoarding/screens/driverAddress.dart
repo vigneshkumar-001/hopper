@@ -2,26 +2,44 @@ import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
+import 'package:hopper/Core/Utility/ModelBottomSheet.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/driveraddress_controller.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/stateList_Controller.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/docUploadPic.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/driverDocGuidelines.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
+import 'package:get/get.dart';
 
 class DriverAddress extends StatefulWidget {
-  const DriverAddress({super.key});
+  final bool fromCompleteScreens;
+  const DriverAddress({Key? key, this.fromCompleteScreens = false})
+    : super(key: key);
 
   @override
   State<DriverAddress> createState() => _DriverAddressState();
 }
 
 class _DriverAddressState extends State<DriverAddress> {
-  TextEditingController dobController = TextEditingController();
+  final StateListController stateController = Get.find();
+  final DriverAddressController controller = Get.find();
+
+  @override
+  void initState() {
+    super.initState();
+    stateController.getStateList();
+    controller.fetchAndSetUserData();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(backgroundColor: AppColors.commonWhite),
       body: SingleChildScrollView(
         child: SafeArea(
           child: Padding(
@@ -29,6 +47,8 @@ class _DriverAddressState extends State<DriverAddress> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Buttons.backButton(context: context),
+                SizedBox(height: 24),
                 CustomLinearProgress.linearProgressIndicator(value: 0.2),
                 Image.asset(AppImages.basicInfo),
                 SizedBox(height: 24),
@@ -38,38 +58,101 @@ class _DriverAddressState extends State<DriverAddress> {
                 ),
                 SizedBox(height: 24),
                 CustomTextfield.textField(
+                  controller: controller.addressController,
                   tittle: 'Address',
-                  hintText: 'Enter your email id',
+                  hintText: 'Enter your Address',
                 ),
                 SizedBox(height: 24),
 
                 CustomTextfield.dropDown(
-                  title: 'City',
-                  hintText: 'Select City',
-                  onTap: () {},
+                  controller: controller.stateController,
+                  title: 'States',
+                  hintText: 'Select States',
+                  onTap: () {
+                    // Directly show the bottom sheet (no delay!)
+                    CustomBottomSheet.showOptionsBottomSheet(
+                      title: 'States',
+                      options: stateController.states,
+                      context: context,
+                      controller: controller.stateController,
+                    );
+                  },
                   suffixIcon: Icon(Icons.arrow_drop_down),
                 ),
+
                 SizedBox(height: 24),
                 CustomTextfield.dropDown(
-                  title: 'State',
-                  hintText: 'Select State',
-                  onTap: () {},
+                  controller: controller.cityController,
+                  title: 'City',
+                  hintText: 'Select City',
+                  onTap: () async {
+                    final selectedState = controller.stateController.text;
+                    if (selectedState.isEmpty) {
+                      CustomSnackBar.showError("Please select a state first");
+                      return;
+                    }
+
+                    await stateController.getCityList(selectedState);
+                    CustomBottomSheet.showOptionsBottomSheet(
+                      title: 'Select City',
+                      options: stateController.cities,
+                      context: context,
+                      controller: controller.cityController,
+                    );
+                  },
                   suffixIcon: Icon(Icons.arrow_drop_down),
+                ),
+
+                SizedBox(height: 24),
+                CustomTextfield.textField(
+                  type: TextInputType.number,
+
+                  controller: controller.postController,
+                  tittle: 'Post Code',
+                  hintText: 'Enter your PostCode',
                 ),
               ],
             ),
           ),
         ),
       ),
-      bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
-        title: 'Save & Next',
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => DocUpLoadPic()),
-          );
-        },
+      bottomNavigationBar: Obx(
+        () =>
+            controller.isLoading.value
+                ? Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: SizedBox(
+                    height: 48,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                )
+                : CustomBottomNavigation.bottomNavigation(
+                  title: 'Save & Next',
+                  onTap: () {
+                    controller.driverDetails(
+                      context,
+                      fromCompleteScreen: widget.fromCompleteScreens,
+                    );
+                    // Navigator.push(
+                    //   context,
+                    //   MaterialPageRoute(builder: (context) => DriverDocGuideLines()),
+                    // );
+                  },
+                ),
       ),
+      // bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
+      //   title: 'Save & Next',
+      //   onTap: () {
+      //     controller.driverDetails(
+      //       context,
+      //       fromCompleteScreen: widget.fromCompleteScreens,
+      //     );
+      //     // Navigator.push(
+      //     //   context,
+      //     //   MaterialPageRoute(builder: (context) => DriverDocGuideLines()),
+      //     // );
+      //   },
+      // ),
     );
   }
 }

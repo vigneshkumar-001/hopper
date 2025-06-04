@@ -213,12 +213,15 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/userprofile_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:get/get.dart';
 
 class TakePicture extends StatefulWidget {
-  const TakePicture({super.key});
+  final bool fromCompleteScreens;
+  const TakePicture({super.key, this.fromCompleteScreens = false});
 
   @override
   State<TakePicture> createState() => _TakePictureState();
@@ -230,11 +233,14 @@ class _TakePictureState extends State<TakePicture> {
   bool _isCameraInitialized = false;
   late FaceDetector _faceDetector;
   bool _isFaceDetected = false;
-
+  String frontImage = '';
+  // final UserProfileController controller = Get.find();
+  late UserProfileController controller;
   @override
   void initState() {
     super.initState();
     _initializeCamera();
+    controller = Get.find<UserProfileController>(); // ✅ Safe
     _faceDetector = GoogleMlKit.vision.faceDetector();
   }
 
@@ -334,135 +340,142 @@ class _TakePictureState extends State<TakePicture> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(backgroundColor: Colors.white),
-      body:
-          _capturedImage != null
-              ? Center(
-                child: Stack(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 24,
+      body: Obx(
+        () =>
+            controller.isLoading.value
+                ? Center(child: CircularProgressIndicator())
+                : _capturedImage != null
+                ? Center(
+                  child: Stack(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 24,
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              AppTexts.avoidRejection,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(height: 24),
+                            CustomTextfield.concatenateText(
+                              title: AppTexts.avoidRejectionContent1,
+                            ),
+                            CustomTextfield.concatenateText(
+                              title: AppTexts.avoidRejectionContent2,
+                            ),
+                            CustomTextfield.concatenateText(
+                              title: AppTexts.avoidRejectionContent3,
+                            ),
+                            SizedBox(height: 32),
+                            Center(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(150),
+                                child: Image.file(
+                                  _capturedImage!,
+                                  width: 300,
+                                  height: 300,
+                                  fit: BoxFit.fill,
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: 32),
+                            TextButton(
+                              onPressed: () {
+                                _retakePicture();
+                              },
+                              child: Text(
+                                'Retake Photo',
+                                style: TextStyle(
+                                  color: Color(0xff357AE9),
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                            // Spacer(),
+                            // Buttons.button(
+                            //   buttonColor: AppColors.commonBlack,
+                            //   onTap: () {
+                            //     Navigator.push(
+                            //       context,
+                            //       MaterialPageRoute(
+                            //         builder: (context) => NinScreens(),
+                            //       ),
+                            //     );
+                            //   },
+                            //   text: 'Upload',
+                            // ),
+                          ],
+                        ),
                       ),
+                    ],
+                  ),
+                )
+                : _isCameraInitialized
+                ? Stack(
+                  children: [
+                    Center(
                       child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          Container(
+                            width: 300,
+                            height: 300,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 4),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                150,
+                              ), // Circle
+                              child: CameraPreview(_cameraController!),
+                            ),
+                          ),
+
+                          SizedBox(height: 10),
                           Text(
-                            AppTexts.avoidRejection,
+                            'Position yourself within the frame',
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                          SizedBox(height: 24),
-                          CustomTextfield.concatenateText(
-                            title: AppTexts.avoidRejectionContent1,
-                          ),
-                          CustomTextfield.concatenateText(
-                            title: AppTexts.avoidRejectionContent2,
-                          ),
-                          CustomTextfield.concatenateText(
-                            title: AppTexts.avoidRejectionContent3,
-                          ),
-                          SizedBox(height: 32),
-                          Center(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(150),
-                              child: Image.file(
-                                _capturedImage!,
-                                width: 300,
-                                height: 300,
-                                fit: BoxFit.fill,
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: 32),
-                          TextButton(
-                            onPressed: () {
-                              _retakePicture();
-                            },
-                            child: Text(
-                              'Retake Photo',
-                              style: TextStyle(
-                                color: Color(0xff357AE9),
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                          // Spacer(),
-                          // Buttons.button(
-                          //   buttonColor: AppColors.commonBlack,
-                          //   onTap: () {
-                          //     Navigator.push(
-                          //       context,
-                          //       MaterialPageRoute(
-                          //         builder: (context) => NinScreens(),
-                          //       ),
-                          //     );
-                          //   },
-                          //   text: 'Upload',
-                          // ),
                         ],
                       ),
                     ),
+                    // Positioned(
+                    //   bottom: 30,
+                    //   left: 0,
+                    //   right: 0,
+                    //   child: Center(
+                    //     child: Buttons.button(
+                    //       buttonColor: AppColors.commonBlack,
+                    //       onTap: () {
+                    //         _takePicture();
+                    //       },
+                    //       text: 'Take photo',
+                    //     ),
+                    //   ),
+                    // ),
                   ],
-                ),
-              )
-              : _isCameraInitialized
-              ? Stack(
-                children: [
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 300,
-                          height: 300,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 4),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(150), // Circle
-                            child: CameraPreview(_cameraController!),
-                          ),
-                        ),
-
-                        SizedBox(height: 10),
-                        Text(
-                          'Position yourself within the frame',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Positioned(
-                  //   bottom: 30,
-                  //   left: 0,
-                  //   right: 0,
-                  //   child: Center(
-                  //     child: Buttons.button(
-                  //       buttonColor: AppColors.commonBlack,
-                  //       onTap: () {
-                  //         _takePicture();
-                  //       },
-                  //       text: 'Take photo',
-                  //     ),
-                  //   ),
-                  // ),
-                ],
-              )
-              : const Center(child: CircularProgressIndicator()),
+                )
+                : const Center(child: CircularProgressIndicator()),
+      ),
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         title: _capturedImage != null ? 'Upload Photo' : 'Take Photo',
         onTap: () async {
           if (_capturedImage != null) {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => NinScreens()),
-            );
+            // await Navigator.push(
+            //   context,
+            //   MaterialPageRoute(builder: (context) => NinScreens()),
+            // );
+            await controller.userProfileUpload(context, _capturedImage!);
           } else {
             _takePicture();
           }

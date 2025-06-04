@@ -3,9 +3,10 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/basicInfo.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
-
+import 'package:get/get.dart';
 class ProcessingScreen extends StatefulWidget {
   final String? selectedFlag;
   const ProcessingScreen({super.key, this.selectedFlag});
@@ -16,6 +17,7 @@ class ProcessingScreen extends StatefulWidget {
 
 class _ProcessingScreenState extends State<ProcessingScreen> {
   late List<Map<String, dynamic>> rowData;
+
   final List<Map<String, dynamic>> carSteps = [
     {'title': 'Basic Info', 'icon': Icons.visibility_outlined},
     {'title': 'Driver Address Details', 'icon': Icons.visibility_outlined},
@@ -38,12 +40,15 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
     {'title': 'Bike Details', 'icon': Icons.visibility_outlined},
     {'title': 'Bike Photos', 'icon': Icons.visibility_outlined},
   ];
-
+  final profile = Get.find<ChooseServiceController>().userProfile.value;
   @override
   void initState() {
     super.initState();
 
-    if (selectedService == 'Bike') {
+    final isCar = profile?.serviceType == 'Car'; // or add a .toLowerCase() check if needed
+    final serviceType = isCar ? 'Car' : 'Bike';
+
+    if (serviceType == 'Bike') {
       rowData = bikeSteps;
     } else {
       rowData = carSteps;
@@ -128,7 +133,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => BasicInfo()),
+                    MaterialPageRoute(builder: (context) => BasicInfo( fromCompleteScreens: false,)),
                   );
                 },
                 text: "Start Application",

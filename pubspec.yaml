@@ -51,6 +51,19 @@ dev_dependencies:
   shared_preferences: any
   image: any
   image_picker: any
+  get: any
+  get_it : any
+  equatable: any
+  dartz: any
+  dio: any
+  intl_phone_field: any
+  fluttertoast: any
+  google_sign_in: any
+  sign_in_with_apple: any
+  firebase_auth: any
+  firebase_core: any
+  flutter_spinkit: any
+
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

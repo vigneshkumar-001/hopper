@@ -5,11 +5,13 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/interiorUploadPhotos.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:get/get.dart';
 
 class ExteriorDocGuideLines extends StatefulWidget {
   const ExteriorDocGuideLines({super.key});
@@ -43,6 +45,10 @@ class _CarDocGuideLinesState extends State<ExteriorDocGuideLines> {
 
   @override
   Widget build(BuildContext context) {
+    final profile = Get.find<ChooseServiceController>().userProfile.value;
+    final isCar = profile?.serviceType == 'Car';
+    final serviceType = isCar ? 'Car' : 'Bike';
+
     return Scaffold(
       appBar: AppBar(backgroundColor: AppColors.commonWhite),
       body: SingleChildScrollView(
@@ -53,14 +59,14 @@ class _CarDocGuideLinesState extends State<ExteriorDocGuideLines> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  selectedService == "Car"
+                  serviceType == "Car"
                       ? AppTexts.carImageUploadGuidelines
                       : AppTexts.bikeImageUploadGuidelines,
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
                 SizedBox(height: 24),
                 Image.asset(
-                  selectedService == "Car"
+                  serviceType == "Car"
                       ? AppImages.carDoc
                       : AppImages.bikeExterior,
                 ),
@@ -135,7 +141,7 @@ class _CarDocGuideLinesState extends State<ExteriorDocGuideLines> {
       ),
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         onTap: () async {
-          if (selectedService == "Car") {
+          if (serviceType == "Car") {
               Navigator. pop(context);
             // await Navigator.push(
             //   context,
