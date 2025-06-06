@@ -159,13 +159,13 @@ class _NinScreensState extends State<NinScreens> {
                                     }
                                   },
                                   child: DottedBorder(
-                                    color: const Color(
+                                    options: RoundedRectDottedBorderOptions( color: const Color(
                                       0xff666666,
                                     ).withOpacity(0.3),
-                                    borderType: BorderType.RRect,
                                     radius: const Radius.circular(10),
                                     dashPattern: const [7, 4],
-                                    strokeWidth: 1.5,
+                                    strokeWidth: 1.5,),
+                                   
                                     child: Container(
                                       height: 120,
                                       padding: const EdgeInsets.all(10),
@@ -278,13 +278,12 @@ class _NinScreensState extends State<NinScreens> {
                                     }
                                   },
                                   child: DottedBorder(
-                                    color: const Color(
+                                    options: RoundedRectDottedBorderOptions( color: const Color(
                                       0xff666666,
                                     ).withOpacity(0.3),
-                                    borderType: BorderType.RRect,
                                     radius: const Radius.circular(10),
                                     dashPattern: const [7, 4],
-                                    strokeWidth: 1.5,
+                                    strokeWidth: 1.5,),
                                     child: Container(
                                       height: 120,
                                       padding: const EdgeInsets.all(10),

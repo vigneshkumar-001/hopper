@@ -175,11 +175,13 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                                         }
                                       },
                                       child: DottedBorder(
-                                        color: Colors.grey.withOpacity(0.5),
-                                        strokeWidth: 1.5,
-                                        dashPattern: [6, 4],
-                                        borderType: BorderType.RRect,
-                                        radius: const Radius.circular(10),
+                                         options: RoundedRectDottedBorderOptions( color: const Color(
+                                      0xff666666,
+                                    ).withOpacity(0.3),
+                                    radius: const Radius.circular(10),
+                                    dashPattern: const [7, 4],
+                                    strokeWidth: 1.5,),
+                                       
                                         child: Container(
                                           height: 130,
                                           width: 97,

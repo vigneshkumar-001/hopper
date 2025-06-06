@@ -54,11 +54,12 @@ class _ProfilePicAccessState extends State<ProfilePicAccess> {
                   ),
                   child: Center(
                     child: DottedBorder(
-                      borderType: BorderType.RRect,
-
-                      radius: const Radius.circular(100),
-                      dashPattern: const [7, 4],
-                      strokeWidth: 1.5,
+                     options: RoundedRectDottedBorderOptions( color: const Color(
+                                      0xff666666,
+                                    ).withOpacity(0.3),
+                                    radius: const Radius.circular(10),
+                                    dashPattern: const [7, 4],
+                                    strokeWidth: 1.5,),
                       child: Container(
                         height: 150,
                         width: 150,
