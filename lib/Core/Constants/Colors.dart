@@ -1,5 +1,7 @@
 import 'dart:ui';
 
+import 'package:flutter/material.dart';
+
 class AppColors {
   static const dividerColor = Color(0xffAFAFAF);
   static const containerColor = Color(0xffF1F1F1);
@@ -11,5 +13,7 @@ class AppColors {
   static const textColor = Color(0xff686868);
   static const sampleDocText = Color(0xff666666);
   static const dividerColor1 = Color(0xffF1F1F1);
-  static const  checkBox = Color(0xFFE1E1E2);
+  static const checkBox = Color(0xFFE1E1E2);
+  static const errorRed = Color(0xFFEA4335);
+  static final errorBorder = Colors.red;
 }

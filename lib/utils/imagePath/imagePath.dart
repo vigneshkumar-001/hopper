@@ -3,8 +3,9 @@ import 'package:image_picker/image_picker.dart';
 
 class ImageUtils {
   static Future<String> pickImage(BuildContext context) async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(
+    final ImagePicker _picker = ImagePicker();
+    final XFile? image = await _picker.pickImage(
+      preferredCameraDevice: CameraDevice.rear,
       source: ImageSource.camera,
       maxWidth: 1024, // Resize to lower resolution
       maxHeight: 1024,

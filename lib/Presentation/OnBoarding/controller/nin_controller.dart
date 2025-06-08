@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/driverLicense.dart';
-import 'package:hopper/api/dataSource/apiDataSource.dart';
+import '../../../Core/Utility/snackbar.dart';
+import 'chooseservice_controller.dart';
+import '../screens/driverLicense.dart';
+import '../../../api/dataSource/apiDataSource.dart';
 
 class NinController extends GetxController {
   String accessToken = '';
@@ -15,67 +15,19 @@ class NinController extends GetxController {
 
   RxBool isLoading = false.obs;
   TextEditingController ninNumberController = TextEditingController();
+  TextEditingController bankNumberController = TextEditingController();
   @override
   void onInit() {
     super.onInit();
     fetchAndSetUserData();
   }
-  //
-  // Future<void> ninScreen(
-  //   BuildContext context,
-  //   File frontImageFile,
-  //   File backImageFile,
-  // )
-  // async {
-  //   isLoading.value = true;
-  //
-  //   final frontResult = await apiDataSource.userProfileUpload(
-  //     imageFile: frontImageFile,
-  //   );
-  //   final backResult = await apiDataSource.userProfileUpload(
-  //     imageFile: backImageFile,
-  //   );
-  //
-  //   final frontImageUrl = frontResult.fold((failure) {
-  //     CustomSnackBar.showError("Front Upload Failed: ${failure.message}");
-  //     return null;
-  //   }, (success) => success.message);
-  //
-  //   final backImageUrl = backResult.fold((failure) {
-  //     CustomSnackBar.showError("Back Upload Failed: ${failure.message}");
-  //     return null;
-  //   }, (success) => success.message);
-  //
-  //   if (frontImageUrl != null && backImageUrl != null) {
-  //     final ninResult = await apiDataSource.ninVerification(
-  //       ninNumber: ninNumberController.text.trim(),
-  //       frontImage: frontImageUrl,
-  //       backImage: backImageUrl,
-  //     );
-  //
-  //     ninResult.fold(
-  //       (failure) {
-  //         CustomSnackBar.showError(failure.message);
-  //       },
-  //       (success) {
-  //         CustomSnackBar.showSuccess(success.message);
-  //         Navigator.push(
-  //           context,
-  //           MaterialPageRoute(builder: (_) => DriverLicense()),
-  //         );
-  //       },
-  //     );
-  //   }
-  //
-  //   isLoading.value = false;
-  // }
 
   Future<void> ninScreen(
     BuildContext context,
     File? frontImageFile,
-    File? backImageFile,
-  )
-  async {
+    File? backImageFile, {
+    bool fromCompleteScreen = false,
+  }) async {
     isLoading.value = true;
 
     String? frontImageUrl;
@@ -119,6 +71,7 @@ class NinController extends GetxController {
     }
 
     final ninResult = await apiDataSource.ninVerification(
+      binNumber: bankNumberController.text.trim(),
       ninNumber: ninNumberController.text.trim(),
       frontImage: frontImageUrl,
       backImage: backImageUrl,
@@ -130,10 +83,15 @@ class NinController extends GetxController {
       },
       (success) {
         CustomSnackBar.showSuccess(success.message);
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => DriverLicense()),
-        );
+        if (fromCompleteScreen) {
+          Navigator.pop(context);
+        } else {
+          Get.to(() => DriverLicense());
+        }
+        // Navigator.push(
+        //   context,
+        //   MaterialPageRoute(builder: (_) => DriverLicense()),
+        // );
       },
     );
 
@@ -145,6 +103,7 @@ class NinController extends GetxController {
 
     if (profile != null) {
       ninNumberController.text = profile.nationalIdNumber ?? '';
+      bankNumberController.text = profile.bankVerificationNumber ?? '';
       frontImageUrl.value = profile.frontIdCardNin ?? '';
       backImageUrl.value = profile.backIdCardNin ?? '';
     } else {

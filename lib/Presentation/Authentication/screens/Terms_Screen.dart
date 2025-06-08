@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/Authentication/widgets/bottomNavigation.dart';
+import '../../../Core/Constants/Colors.dart';
+
+import '../../../Core/Utility/images.dart';
+import '../../../Core/Utility/snackbar.dart';
+
+import '../../OnBoarding/controller/chooseservice_controller.dart';
+
+import '../widgets/bottomNavigation.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/processingScreen.dart';
+import '../../OnBoarding/screens/chooseService.dart';
+import '../../OnBoarding/screens/processingScreen.dart';
 import 'package:get/get.dart';
 
 class TermsScreen extends StatefulWidget {
-  const TermsScreen({super.key});
+  final String? type;
+  const TermsScreen({super.key, this.type});
 
   @override
   State<TermsScreen> createState() => _TermsScreenState();
@@ -31,6 +36,7 @@ class _TermsScreenState extends State<TermsScreen> {
   }
 
   bool isChecked = false;
+  bool isNextClicked = false;
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -41,12 +47,15 @@ class _TermsScreenState extends State<TermsScreen> {
             child: Column(
               spacing: 32,
               children: [
-                Center(child: Image.asset(AppImages.terms)),
+                Center(
+                  child: Image.asset(AppImages.terms, height: 80, width: 80),
+                ),
                 Text(
                   textAlign: TextAlign.center,
                   'Accept Hoppr’s Terms & Review Privacy Notice',
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
+
                 RichText(
                   textAlign: TextAlign.center,
                   text: const TextSpan(
@@ -75,19 +84,43 @@ class _TermsScreenState extends State<TermsScreen> {
       bottomNavigationBar: CommonBottomNavigationBar(
         height: 120.h,
         onBackPressed: () => Navigator.pop(context),
-        onNextPressed: () {
-          if (isChecked == false) {
-            CustomSnackBar.showInfo('Please Accept terms and condition');
-          } else {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => ProcessingScreen()),
-            );
-          }
-        },
 
+       // onNextPressed: () {
+       //   if (isChecked == false) {
+       //     CustomSnackBar.showInfo('Please Accept terms and condition');
+       //   } else {
+       //     Navigator.push(
+       //       context,
+       //       MaterialPageRoute(builder: (context) => ChooseService()),
+       //     );
+       //   }
+       // },
+    onNextPressed: () {
+      if (isChecked && !isNextClicked) {
+        setState(() {
+          isNextClicked = true;
+        });
+        final nextPage =
+            widget.type == 'googleSignIn'
+                ? ProcessingScreen(type: 'googleSignIn')
+                : ProcessingScreen();
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => nextPage),
+        ).then((_) {
+          setState(() {
+            isNextClicked = false;
+          });
+        });
+      } else if (!isChecked) {
+        CustomSnackBar.showInfo('Please Accept terms and condition');
+      }
+      // else (isNextClicked true) do nothing to disable repeated clicks
+    },
         backgroundColor: Colors.white,
-        buttonColor: Colors.black,
+        buttonColor:
+            isChecked ? AppColors.commonBlack : AppColors.containerColor,
+
         containerColor: Colors.grey.shade300,
         backButtonImage: AppImages.backButton,
         rightButtonImage: AppImages.rightButton,

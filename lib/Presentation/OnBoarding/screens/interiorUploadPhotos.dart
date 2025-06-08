@@ -1,21 +1,27 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/texts.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/interiorimage_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/interiorDocGuidelines.dart';
-import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
-import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
-import 'package:hopper/utils/imagePath/imagePath.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../../Core/Utility/Buttons.dart';
+import '../../../Core/Utility/images.dart';
+import '../../../Core/Utility/snackbar.dart';
+import '../../Authentication/widgets/textFields.dart';
+import '../controller/interiorimage_controller.dart';
+import 'ConsentForms.dart';
+import 'chooseService.dart';
+import 'exteriorDocGuidelines.dart';
+import 'interiorDocGuidelines.dart';
+import '../widgets/bottomNavigation.dart';
+import '../widgets/linearProgress.dart';
+import '../../../utils/imagePath/imagePath.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:get/get.dart';
 
 class InteriorUploadPhotos extends StatefulWidget {
-  const InteriorUploadPhotos({super.key});
+  final bool fromCompleteScreens;
+  const InteriorUploadPhotos({super.key, this.fromCompleteScreens = false});
 
   @override
   State<InteriorUploadPhotos> createState() => _InteriorUploadPhotosState();
@@ -24,26 +30,16 @@ class InteriorUploadPhotos extends StatefulWidget {
 class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
   // final List<String?> _selectedImages = List.generate(6, (index) => null);
 
-  final InteriorImageController controller = Get.find();
-
-  final ImagePicker _picker = ImagePicker();
-
-  // Future<void> pickImage(int index) async {
-  //   final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-  //   if (image != null) {
-  //     if (image.path.endsWith('.png') || image.path.endsWith('.jpg')
-  //     // image.path.endsWith('.jpeg')
-  //     ) {
-  //       setState(() {
-  //         _selectedImages[index] = File(image.path);
-  //       });
-  //     } else {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(content: Text('Only PNG and JPG formats are supported')),
-  //       );
-  //     }
-  //   }
-  // }
+  final InteriorImageController controller = Get.put(InteriorImageController());
+  bool isButtonDisabled = false;
+  final List<String> photoLabels = [
+    "interior-photos-i",
+    "interior-photos-ii",
+    "interior-photos-iii",
+    "interior-photos-iv",
+    "interior-photos-v",
+    "interior-photos-vi",
+  ];
   @override
   void initState() {
     super.initState();
@@ -53,11 +49,11 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(backgroundColor: AppColors.commonWhite),
+      // appBar: AppBar(backgroundColor: AppColors.commonWhite),
       body: Obx(
         () =>
             controller.isLoading.value
-                ? Center(child: CircularProgressIndicator())
+                ? Center(child: Image.asset(AppImages.animation))
                 : SingleChildScrollView(
                   child: SafeArea(
                     child: Padding(
@@ -68,6 +64,8 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Buttons.backButton(context: context),
+                          SizedBox(height: 24),
                           CustomLinearProgress.linearProgressIndicator(
                             value: 0.9,
                           ),
@@ -83,62 +81,7 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                           ),
                           SizedBox(height: 10),
                           Text(AppTexts.limitPhotos),
-                          // GestureDetector(
-                          //   onTap: () {
-                          //     // Navigator.push(
-                          //     //   context,
-                          //     //   MaterialPageRoute(
-                          //     //     builder: (context) => NinGuideLines(),
-                          //     //   ),
-                          //     // );
-                          //   },
-                          //   child: DottedBorder(
-                          //     color: Color(0xff666666).withOpacity(0.3),
-                          //     borderType: BorderType.RRect,
-                          //
-                          //     radius: const Radius.circular(10),
-                          //     dashPattern: const [7, 4],
-                          //     strokeWidth: 1.5,
-                          //     child: Container(
-                          //       height: 120,
-                          //
-                          //       padding: const EdgeInsets.all(10),
-                          //       decoration: BoxDecoration(
-                          //         color: Color(0xffF8F7F7),
-                          //         borderRadius: BorderRadius.circular(10),
-                          //       ),
-                          //       child:
-                          //           _selectedImage == null
-                          //               ? Column(
-                          //                 mainAxisAlignment: MainAxisAlignment.center,
-                          //                 children: [
-                          //                   Icon(Icons.add, size: 30),
-                          //                   const SizedBox(height: 10),
-                          //                   Text(
-                          //                     "Upload Photo",
-                          //                     style: TextStyle(fontSize: 14),
-                          //                   ),
-                          //                 ],
-                          //               )
-                          //               : Expanded(
-                          //                 child: Column(
-                          //                   mainAxisAlignment: MainAxisAlignment.center,
-                          //                   children: [
-                          //                     ClipRRect(
-                          //                       borderRadius: BorderRadius.circular(10),
-                          //                       child: Image.file(
-                          //                         _selectedImage!,
-                          //                         height: 100,
-                          //                         width: 100,
-                          //                         fit: BoxFit.cover,
-                          //                       ),
-                          //                     ),
-                          //                   ],
-                          //                 ),
-                          //               ),
-                          //     ),
-                          //   ),
-                          // ),
+
                           SizedBox(height: 30),
                           Obx(
                             () => GridView.count(
@@ -161,7 +104,10 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                                             MaterialPageRoute(
                                               builder:
                                                   (context) =>
-                                                      InteriorDocGuideLines(),
+                                                      InteriorDocGuideLines(
+                                                        photoLabel:
+                                                            photoLabels[index],
+                                                      ),
                                             ),
                                           );
                                           final path =
@@ -171,15 +117,20 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                                           if (path.isNotEmpty) {
                                             controller.selectedImages[index] =
                                                 path;
+                                            setState(() {
+                                              isButtonDisabled =
+                                                  false; // re-enable if user changes images
+                                            });
                                           }
                                         }
                                       },
                                       child: DottedBorder(
-                                        color: Colors.grey.withOpacity(0.5),
-                                        strokeWidth: 1.5,
-                                        dashPattern: [6, 4],
-                                        borderType: BorderType.RRect,
-                                        radius: const Radius.circular(10),
+                                       options: RoundedRectDottedBorderOptions(  color: const Color(
+                                      0xff666666,
+                                    ).withOpacity(0.3),
+                                    radius: const Radius.circular(10),
+                                    dashPattern: const [7, 4],
+                                    strokeWidth: 1.5,),
                                         child: Container(
                                           height: 130,
                                           width: 97,
@@ -229,13 +180,21 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                                           if (imagePath != null) {
                                             controller.selectedImages[index] =
                                                 null;
+                                            setState(() {
+                                              isButtonDisabled =
+                                                  false; // re-enable if user changes images
+                                            });
                                           } else {
                                             await Navigator.push(
                                               context,
                                               MaterialPageRoute(
                                                 builder:
-                                                    (context) =>
-                                                        InteriorDocGuideLines(),
+                                                    (
+                                                      context,
+                                                    ) => InteriorDocGuideLines(
+                                                      photoLabel:
+                                                          photoLabels[index],
+                                                    ),
                                               ),
                                             );
                                             final path =
@@ -276,26 +235,44 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                 ),
       ),
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
-        onTap: () async {
-          final selectedImages = controller.selectedImages;
+        buttonColor:
+            isButtonDisabled
+                ? Colors.grey
+                : controller.selectedImages.every(
+                  (img) => img != null && img!.isNotEmpty,
+                )
+                ? AppColors.commonBlack
+                : AppColors.containerColor,
+        onTap:
+            isButtonDisabled
+                ? null
+                : () async {
+                  final selectedImages = controller.selectedImages;
 
-          // Ensure that the selected images are not null or empty
-          if (selectedImages.any((image) => image == null || image.isEmpty)) {
-            CustomSnackBar.showError("Please upload all required images.");
-            return;
-          }
+                  // Ensure that the selected images are not null or empty
+                  if (selectedImages.any(
+                    (image) => image == null || image.isEmpty,
+                  )) {
+                    CustomSnackBar.showError(
+                      "Please upload all required images.",
+                    );
+                    return;
+                  }
+                  setState(() {
+                    isButtonDisabled = true;
+                  });
+                  // Call the image upload method
+                  await controller.interiorImageUpload(
+                    selectedImages: selectedImages,
+                    context: context,
+                    fromCompleteScreen: widget.fromCompleteScreens,
+                  );
 
-          // Call the image upload method
-          await controller.interiorImageUpload(
-            selectedImages: selectedImages,
-            context: context,
-          );
-
-          // Navigator.push(
-          //   context,
-          //   MaterialPageRoute(builder: (context) => ConsentForms()),
-          // );
-        },
+                  // Navigator.push(
+                  //   context,
+                  //   MaterialPageRoute(builder: (context) => ConsentForms()),
+                  // );
+                },
         title: 'Save & Next',
       ),
     );

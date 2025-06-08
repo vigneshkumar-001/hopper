@@ -1,4 +1,4 @@
-import 'package:hopper/Core/Constants/log.dart';
+import '../../../Core/Constants/log.dart';
 
 class StatusModel {
   final int? status;

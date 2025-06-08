@@ -1,16 +1,18 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
-import 'package:hopper/api/dataSource/apiDataSource.dart';
+
+import '../../../Core/Utility/snackbar.dart';
+import '../../../api/dataSource/apiDataSource.dart';
+import '../screens/ConsentForms.dart';
+import 'chooseservice_controller.dart';
 
 class InteriorImageController extends GetxController {
   String accessToken = '';
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
-  final RxList<String?> _selectedImages = List<String?>.filled(6, null).obs;
+  RxList<String?> _selectedImages = List<String?>.filled(6, null).obs;
   List<String?> get selectedImages => _selectedImages;
 
   @override
@@ -19,57 +21,10 @@ class InteriorImageController extends GetxController {
     fetchAndSetUserData();
   }
 
-  // Future<void> interiorImageUpload({
-  //   required List<String?> selectedImages,
-  //   required BuildContext context,
-  // })
-  // async {
-  //   isLoading.value = true;
-  //
-  //   List<String> uploadedUrls = [];
-  //
-  //   for (int i = 0; i < selectedImages.length; i++) {
-  //     final path = selectedImages[i];
-  //     if (path != null) {
-  //       final result = await apiDataSource.userProfileUpload(
-  //         imageFile: File(path),
-  //       );
-  //
-  //       final url = result.fold((failure) {
-  //         CustomSnackBar.showError(
-  //           "Upload failed for image ${i + 1}: ${failure.message}",
-  //         );
-  //         return null;
-  //       }, (success) => success.message);
-  //
-  //       if (url != null) {
-  //         uploadedUrls.add(url);
-  //       }
-  //     }
-  //   }
-  //
-  //   if (uploadedUrls.length == selectedImages.where((e) => e != null).length) {
-  //     final ninResult = await apiDataSource.uploadInteriorImage(
-  //       imageUrls: uploadedUrls,
-  //     );
-  //
-  //     ninResult.fold(
-  //       (failure) {
-  //         CustomSnackBar.showError(failure.message);
-  //       },
-  //       (success) {
-  //         CustomSnackBar.showSuccess(success.message);
-  //         Get.to(() => ConsentForms());
-  //       },
-  //     );
-  //   }
-  //
-  //   isLoading.value = false;
-  // }
-
   Future<void> interiorImageUpload({
     required List<String?> selectedImages,
     required BuildContext context,
+    bool fromCompleteScreen = false,
   }) async {
     isLoading.value = true;
 
@@ -120,11 +75,15 @@ class InteriorImageController extends GetxController {
       },
       (success) {
         CustomSnackBar.showSuccess(success.message);
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => ConsentForms()),
-        );
+        if (fromCompleteScreen) {
+          Navigator.pop(context);
+        } else {
+          Get.to(() => ConsentForms());
+        }
+        // Navigator.push(
+        //   context,
+        //   MaterialPageRoute(builder: (context) => ConsentForms()),
+        // );
       },
     );
 

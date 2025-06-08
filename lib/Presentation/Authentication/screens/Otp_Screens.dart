@@ -3,16 +3,28 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Presentation/Authentication/controller/otp_controller.dart';
-import 'package:hopper/Presentation/Authentication/widgets/bottomNavigation.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/log.dart';
+import '../../../Core/Utility/Buttons.dart';
+import '../../../Core/Utility/images.dart';
+import '../controller/otp_controller.dart';
+import 'Terms_Screen.dart';
+import '../widgets/bottomNavigation.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
 import 'package:get/get.dart';
 
 class OtpScreens extends StatefulWidget {
   final String mobileNumber;
-  const OtpScreens({super.key, required this.mobileNumber});
+  final String? type;
+  final String? emailVerify;
+  final String? email;
+  const OtpScreens({
+    super.key,
+    required this.mobileNumber,
+    this.type,
+    this.email,
+    this.emailVerify,
+  });
 
   @override
   State<OtpScreens> createState() => _OtpScreensState();
@@ -20,10 +32,20 @@ class OtpScreens extends StatefulWidget {
 
 class _OtpScreensState extends State<OtpScreens> {
   final OtpController controller = Get.find<OtpController>();
-  TextEditingController otp = TextEditingController();
+  TextEditingController otp = TextEditingController(text: "");
   String verifyCode = '';
   final formKey = GlobalKey<FormState>();
+  String? otpError;
+  bool isButtonDisabled = false;
+
   StreamController<ErrorAnimationType>? errorController;
+  @override
+  void dispose() {
+    otp.dispose();
+
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -41,7 +63,7 @@ class _OtpScreensState extends State<OtpScreens> {
                       child: Column(
                         spacing: 32,
                         children: [
-                          Image.asset(AppImages.chat),
+                          Image.asset(AppImages.chat, height: 80, width: 80),
 
                           Text(
                             textAlign: TextAlign.center,
@@ -56,7 +78,9 @@ class _OtpScreensState extends State<OtpScreens> {
                           Form(
                             key: formKey,
                             child: PinCodeTextField(
+                              autoFocus: true,
                               appContext: context,
+
                               // pastedTextStyle: TextStyle(
                               //   color: Colors.green.shade600,
                               //   fontWeight: FontWeight.bold,
@@ -68,15 +92,14 @@ class _OtpScreensState extends State<OtpScreens> {
                               // obscuringWidget: const FlutterLogo(size: 24,),
                               blinkWhenObscuring: true,
                               mainAxisAlignment: MainAxisAlignment.center,
-
+                              autoDisposeControllers: false,
                               animationType: AnimationType.fade,
-                              validator: (v) {
-                                if (v == null || v.length != 4) {
-                                  return 'Enter valid 4-digit OTP';
-                                }
-                                return null;
-                              },
 
+                              // validator: (v) {
+                              //   if (v == null || v.length != 4)
+                              //     return 'Enter valid 4-digit OTP';
+                              //   return null;
+                              // },
                               pinTheme: PinTheme(
                                 shape: PinCodeFieldShape.box,
                                 borderRadius: BorderRadius.circular(4.sp),
@@ -107,6 +130,12 @@ class _OtpScreensState extends State<OtpScreens> {
                                   blurRadius: 5,
                                 ),
                               ],
+                              // validator: (value) {
+                              //   if (value == null || value.length != 4) {
+                              //     return 'Please enter a valid 4-digit OTP';
+                              //   }
+                              //   return null;
+                              // },
                               // onCompleted: (value) async {},
                               onChanged: (value) {
                                 debugPrint(value);
@@ -119,6 +148,18 @@ class _OtpScreensState extends State<OtpScreens> {
                               },
                             ),
                           ),
+                          if (otpError != null)
+                            Center(
+                              child: Text(
+                                otpError!,
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 14,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               elevation: 0,
@@ -130,20 +171,32 @@ class _OtpScreensState extends State<OtpScreens> {
                                 borderRadius: BorderRadius.circular(30),
                               ),
                             ),
-                            onPressed: () {},
+                            onPressed: () {
+                              controller.resendOtp(widget.mobileNumber);
+                            },
                             child: Text('Resend code via SMS'),
                           ),
                           TextButton(
                             style: TextButton.styleFrom(
                               foregroundColor: Colors.black,
                             ),
-                            onPressed: () {},
-                            child: const Text(
-                              'Change Mobile Number?',
-                              style: TextStyle(
-                                decoration: TextDecoration.underline,
-                              ),
-                            ),
+                            onPressed: () {
+                              Navigator.pop(context);
+                            },
+                            child:
+                                widget.type == "basicInfo"
+                                    ? Text(
+                                      'Change Email?',
+                                      style: TextStyle(
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    )
+                                    : Text(
+                                      'Change Mobile Number?',
+                                      style: TextStyle(
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
                           ),
                         ],
                       ),
@@ -153,12 +206,50 @@ class _OtpScreensState extends State<OtpScreens> {
       ),
       bottomNavigationBar: CommonBottomNavigationBar(
         onBackPressed: () => Navigator.pop(context),
+        // onNextPressed: () async {
+        //   if (formKey.currentState!.validate()) {
+        //     await controller.verifyOtp(context, verifyCode);
+        //   } else {
+        //     errorController?.add(ErrorAnimationType.shake);
+        //   }
+        // },
         onNextPressed: () async {
-          await controller.verifyOtp(context, verifyCode);
-          // Navigator.push(
-          //   context,
-          //   MaterialPageRoute(builder: (context) => TermsScreen()),
-          // );
+          if (isButtonDisabled) return;
+
+          setState(() {
+            otpError = null;
+            isButtonDisabled = true;
+          });
+
+          if (otp.text.length != 4) {
+            errorController?.add(ErrorAnimationType.shake);
+            setState(() {
+              otpError = 'Please enter a valid 4-digit OTP';
+              isButtonDisabled = false;
+            });
+            return;
+          }
+
+          try {
+            if (widget.type == "basicInfo" && widget.emailVerify == "Email") {
+              await controller.emailVerifyOtp(
+                email: widget.email ?? '',
+                context,
+                verifyCode,
+                type: widget.type ?? '',
+              );
+            } else {
+              await controller.verifyOtp(
+                context,
+                verifyCode,
+                type: widget.type ?? '',
+              );
+            }
+          } finally {
+            setState(() {
+              isButtonDisabled = false;
+            });
+          }
         },
 
         backgroundColor: Colors.white,

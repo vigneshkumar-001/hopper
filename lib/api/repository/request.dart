@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
-import 'package:hopper/Core/Constants/log.dart';
-import 'package:hopper/Presentation/Authentication/controller/otp_controller.dart';
+import '../../Core/Constants/log.dart';
+import '../../Presentation/Authentication/controller/otp_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../Presentation/Authentication/controller/authController.dart';
 import 'package:get/get.dart' as getx;

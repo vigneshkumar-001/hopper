@@ -1,20 +1,27 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/texts.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../../Core/Utility/Buttons.dart';
+import '../../../Core/Utility/images.dart';
+import '../../../Core/Utility/snackbar.dart';
+import '../../Authentication/widgets/textFields.dart';
 import 'package:dotted_border/dotted_border.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/driverLicense_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/driverDocGuidelines.dart';
-import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
-import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
-import 'package:hopper/utils/imagePath/imagePath.dart';
+import '../controller/driverLicense_controller.dart';
+import '../controller/guidelines_Controller.dart';
+import 'carOwnerShip.dart';
+import 'chooseService.dart';
+import 'driverDocGuidelines.dart';
+import 'ninGuidelines.dart';
+import '../widgets/bottomNavigation.dart';
+import '../widgets/linearProgress.dart';
+import '../../../utils/imagePath/imagePath.dart';
 import 'package:get/get.dart';
 
 class DriverLicense extends StatefulWidget {
-  const DriverLicense({super.key});
+  final bool fromCompleteScreens;
+  const DriverLicense({super.key, this.fromCompleteScreens = false});
 
   @override
   State<DriverLicense> createState() => _DriverLicenseState();
@@ -23,25 +30,29 @@ class DriverLicense extends StatefulWidget {
 class _DriverLicenseState extends State<DriverLicense> {
   String frontImage = '';
   String backImage = '';
-  final DriverLicenseController controller = Get.find();
+  final DriverLicenseController controller = Get.put(DriverLicenseController());
   final TextEditingController driverLicense = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final GuidelinesController guidelinesController = Get.put(
+    GuidelinesController(),
+  );
+
 
   @override
   void initState() {
     super.initState();
 
     controller.fetchAndSetUserData();
+    guidelinesController.guideLines('driver-license');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(backgroundColor: AppColors.commonWhite),
       body: Obx(
         () =>
             controller.isLoading.value
-                ? Center(child: CircularProgressIndicator())
+                ? Center(child: Image.asset(AppImages.animation))
                 : SingleChildScrollView(
                   child: SafeArea(
                     child: Padding(
@@ -54,6 +65,8 @@ class _DriverLicenseState extends State<DriverLicense> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Buttons.backButton(context: context),
+                            SizedBox(height: 24),
                             CustomLinearProgress.linearProgressIndicator(
                               value: 0.5,
                             ),
@@ -69,15 +82,16 @@ class _DriverLicenseState extends State<DriverLicense> {
                             ),
                             SizedBox(height: 30),
                             CustomTextfield.textField(
+                              formKey: _formKey,
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
                                   return 'Please enter your License Number';
-                                }
-                                // else if (value.length != 11) {
-                                //   return 'NIN must be exactly 11 digits';
-                                // }
+                                } /* else if (!RegExp(r'^[A-Z]{3}-\d{5}[A-Z]{2}\d{2}$').hasMatch(value)) {
+                                  return 'You must follow the proper format. Eg: ABC-12345AA00';
+                                }*/
                                 return null;
                               },
+
                               controller: controller.driverLicenseController,
                               tittle: "Driver's License Number",
                               hintText: 'Enter your driving license number',
@@ -128,13 +142,13 @@ class _DriverLicenseState extends State<DriverLicense> {
                                     }
                                   },
                                   child: DottedBorder(
-                                    color: const Color(
+                                    options: RoundedRectDottedBorderOptions(  color: const Color(
                                       0xff666666,
                                     ).withOpacity(0.3),
-                                    borderType: BorderType.RRect,
                                     radius: const Radius.circular(10),
                                     dashPattern: const [7, 4],
-                                    strokeWidth: 1.5,
+                                    strokeWidth: 1.5,),
+                                  
                                     child: Container(
                                       height: 120,
                                       padding: const EdgeInsets.all(10),
@@ -249,13 +263,12 @@ class _DriverLicenseState extends State<DriverLicense> {
                                     }
                                   },
                                   child: DottedBorder(
-                                    color: const Color(
+                                     options: RoundedRectDottedBorderOptions(  color: const Color(
                                       0xff666666,
                                     ).withOpacity(0.3),
-                                    borderType: BorderType.RRect,
                                     radius: const Radius.circular(10),
                                     dashPattern: const [7, 4],
-                                    strokeWidth: 1.5,
+                                    strokeWidth: 1.5,),
                                     child: Container(
                                       height: 120,
                                       padding: const EdgeInsets.all(10),
@@ -334,6 +347,7 @@ class _DriverLicenseState extends State<DriverLicense> {
         onTap: () async {
           if (_formKey.currentState!.validate()) {
             await controller.driverLicense(
+              fromCompleteScreen: widget.fromCompleteScreens,
               context,
               frontImage.isNotEmpty ? File(frontImage) : null,
               backImage.isNotEmpty ? File(backImage) : null,

@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hopper/Core/Constants/log.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/Authentication/screens/Otp_Screens.dart';
-import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
-import 'package:hopper/api/dataSource/apiDataSource.dart';
+import '../../../Core/Constants/log.dart';
+import 'package:country_picker/country_picker.dart';
+
+import '../../../Core/Utility/snackbar.dart';
+import '../screens/Landing_Screens.dart';
+import '../screens/Otp_Screens.dart';
+import '../screens/Terms_Screen.dart';
+import '../../../api/dataSource/apiDataSource.dart';
+import '../../../api/repository/failure.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 var getMobileNumber = '';
 var countryCodes = '';
@@ -20,8 +25,23 @@ class AuthController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
   RxBool isGoogleLoading = false.obs;
+  final errorText = ''.obs;
 
-  Future<String?> login(BuildContext context) async {
+  @override
+  void onInit() {
+    super.onInit();
+  }
+
+  void setSelectedCountry(Country country) {
+    selectedCountryCode.value = '+${country.phoneCode}';
+    countryCodeController.text = '+${country.phoneCode}';
+    selectedCountryFlag = country.flagEmoji;
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   mobileNumber.clear();
+    // });
+  }
+
+  Future<String?> login(BuildContext context, {String? type}) async {
     final number = mobileNumber.text.trim();
     final String countryCode = countryCodeController.text.trim();
     getMobileNumber = number;
@@ -44,12 +64,23 @@ class AuthController extends GetxController {
         },
         (response) {
           CustomSnackBar.showSuccess(response.message.toString());
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => OtpScreens(mobileNumber: number),
-            ),
-          );
+          if (type == 'basicInfo') {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder:
+                    (context) =>
+                        OtpScreens(mobileNumber: number, type: 'basicInfo'),
+              ),
+            );
+          } else {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => OtpScreens(mobileNumber: number),
+              ),
+            );
+          }
 
           isLoading.value = false;
 
@@ -82,13 +113,17 @@ class AuthController extends GetxController {
 
           return '';
         },
-        (response) {
+        (response) async {
           isGoogleLoading.value = false;
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => TermsScreen()),
+            MaterialPageRoute(
+              builder: (context) => TermsScreen(type: 'googleSignIn'),
+            ),
           );
           accessToken = response.data.token;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('token', response.data.token);
           CustomSnackBar.showSuccess(response.message.toString());
 
           return ' ';
@@ -100,6 +135,73 @@ class AuthController extends GetxController {
     }
 
     isGoogleLoading.value = false; // Stop loading
+    return '';
+  }
+
+  Future<void> logout(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.clear();
+    await prefs.remove('token');
+    accessToken = '';
+
+    CustomSnackBar.showSuccess("Logged out successfully");
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => LandingScreens()),
+      (route) => false,
+    );
+  }
+
+  Future<String?> emailLoginOtp(
+    BuildContext context,
+    String email, {
+    String? type,
+  }) async {
+    isLoading.value = true;
+    try {
+      final results = await apiDataSource.emailLogin(email);
+      results.fold(
+        (failure) {
+          CustomSnackBar.showError(failure.message);
+          isLoading.value = false;
+
+          return '';
+        },
+        (response) {
+          CustomSnackBar.showSuccess(response.message.toString());
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder:
+                  (context) => OtpScreens(
+                     emailVerify: 'Email',
+                    mobileNumber: email,
+                    type: 'basicInfo',
+                    email: email,
+                  ),
+            ),
+          );
+          // Navigator.push(
+          //   context,
+          //   MaterialPageRoute(
+          //     builder:
+          //         (context) =>
+          //             OtpScreens(mobileNumber: email, type: 'basicInfo'),
+          //   ),
+          // );
+
+          isLoading.value = false;
+
+          return ' ';
+        },
+      );
+    } catch (e) {
+      isLoading.value = false;
+      return ' ';
+    }
+    isLoading.value = false;
     return '';
   }
 

@@ -25,4 +25,8 @@ class AppImages {
   static String bikeExterior = "assets/images/bikeExterior.png";
   static String waitingReview = "assets/images/waitingReview.png";
   static String dummyProfile = "assets/images/dummyProfile.png";
+  static String splashScreen = "assets/images/Splash Screen.png";
+  static String lock = "assets/images/lock.png";
+  static String redExclamation = "assets/images/redExclamation.png";
+  static String animation = "assets/images/animation.gif";
 }

@@ -1,11 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../../../Core/Constants/log.dart';
 
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/models/stateList_Models.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
+import '../../../Core/Utility/snackbar.dart';
+import '../models/stateList_Models.dart';
+import '../screens/completedScreens.dart';
+import '../screens/docUploadPic.dart';
+import '../screens/ninScreens.dart';
 
-import 'package:hopper/api/dataSource/apiDataSource.dart';
+import '../../../api/dataSource/apiDataSource.dart';
 
 import 'chooseservice_controller.dart' show ChooseServiceController;
 

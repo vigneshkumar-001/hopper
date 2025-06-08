@@ -1,24 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hopper/Core/Constants/log.dart';
 
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/Authentication/screens/GetStarted_Screens.dart';
-import 'package:hopper/Presentation/OnBoarding/models/getuserdetails_models.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/basicInfo.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/carOwnerShip.dart';
-
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/driverAddress.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/driverLicense.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/interiorUploadPhotos.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/profilePicAccess.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/uploadExteriorPhotos.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/vehicleDetails.dart';
-import 'package:hopper/api/dataSource/apiDataSource.dart';
+import '../../../Core/Constants/log.dart';
+import '../../../Core/Utility/snackbar.dart';
+import '../../../api/dataSource/apiDataSource.dart';
+import '../../Authentication/screens/GetStarted_Screens.dart';
+import '../models/getuserdetails_models.dart';
+import '../screens/ConsentForms.dart';
+import '../screens/basicInfo.dart';
+import '../screens/carOwnerShip.dart';
+import '../screens/chooseService.dart';
+import '../screens/completedScreens.dart';
+import '../screens/driverAddress.dart';
+import '../screens/driverLicense.dart';
+import '../screens/interiorUploadPhotos.dart';
+import '../screens/ninScreens.dart';
+import '../screens/profilePicAccess.dart';
+import '../screens/uploadExteriorPhotos.dart';
+import '../screens/vehicleDetails.dart';
 
 class ChooseServiceController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
@@ -48,9 +47,12 @@ class ChooseServiceController extends GetxController {
           return failure.message; // from ServerFailure('...')
         },
         (response) async {
+
           isLoading.value = false;
+          await getUserDetails();
           serviceType.value = response.serviceType;
           CustomSnackBar.showSuccess(response.message);
+
           Get.to(() => CarOwnership());
 
           return '';
@@ -91,7 +93,7 @@ class ChooseServiceController extends GetxController {
   }
 
   void handleLandingPageNavigation(BuildContext context) {
-    final landingPage = userProfile.value?.landingPage ?? 0;
+    final landingPage = userProfile.value?.landingPage ?? '';
 
     switch (landingPage) {
       case 0:

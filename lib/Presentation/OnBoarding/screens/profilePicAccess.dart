@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/texts.dart';
-import 'package:hopper/Core/Utility/Buttons.dart';
-import 'package:hopper/Core/Utility/images.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../../Core/Utility/Buttons.dart';
+import '../../../Core/Utility/images.dart';
 import 'package:dotted_border/dotted_border.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
+import '../../../Core/Utility/snackbar.dart';
+import 'ninScreens.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/takePictureScreen.dart'
     show TakePicture;
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
@@ -54,11 +55,12 @@ class _ProfilePicAccessState extends State<ProfilePicAccess> {
                   ),
                   child: Center(
                     child: DottedBorder(
-                      borderType: BorderType.RRect,
-
-                      radius: const Radius.circular(100),
-                      dashPattern: const [7, 4],
-                      strokeWidth: 1.5,
+                      options: RoundedRectDottedBorderOptions(  color: const Color(
+                                      0xff666666,
+                                    ).withOpacity(0.3),
+                                    radius: const Radius.circular(10),
+                                    dashPattern: const [7, 4],
+                                    strokeWidth: 1.5,),
                       child: Container(
                         height: 150,
                         width: 150,

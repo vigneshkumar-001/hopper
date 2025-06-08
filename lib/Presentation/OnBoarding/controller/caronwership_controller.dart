@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hopper/Core/Constants/log.dart';
-
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-
-import 'package:hopper/Presentation/OnBoarding/screens/vehicleDetails.dart';
-import 'package:hopper/api/dataSource/apiDataSource.dart';
+import '../../../Core/Constants/log.dart';
+import '../../../Core/Utility/snackbar.dart';
+import 'chooseservice_controller.dart';
+import '../screens/chooseService.dart';
+import '../screens/vehicleDetails.dart';
+import '../../../api/dataSource/apiDataSource.dart';
+import 'dart:async';
 
 class CarOwnerShipController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
-
+  String serviceType = '';
+  String countryCode = '';
   RxBool isLoading = false.obs;
-
+  late Timer _timer;
   TextEditingController carOwnershipController = TextEditingController();
   TextEditingController carOwnerNameController = TextEditingController();
   TextEditingController carPlateNumberController = TextEditingController();
@@ -21,14 +22,25 @@ class CarOwnerShipController extends GetxController {
   TextEditingController bikeOwnershipController = TextEditingController();
   TextEditingController bikeOwnerNameController = TextEditingController();
   TextEditingController bikePlateNumberController = TextEditingController();
-
   @override
   void onInit() {
     super.onInit();
+
     fetchAndSetUserData();
+    // Fetch repeatedly every 2 seconds
   }
 
-  Future<String?> carOwnerShip(BuildContext context, String serviceType) async {
+  @override
+  void onClose() {
+    _timer.cancel();
+    super.onClose();
+  }
+
+  Future<String?> carOwnerShip(
+    BuildContext context,
+    String serviceTypes, {
+    bool fromCompleteScreen = false,
+  }) async {
     isLoading.value = true;
     final profile = Get.find<ChooseServiceController>().userProfile.value;
     final isCar = serviceType == 'Car';
@@ -58,11 +70,15 @@ class CarOwnerShipController extends GetxController {
         (response) async {
           isLoading.value = false;
           CustomSnackBar.showSuccess(response.message);
-
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => VehicleDetails()),
-          );
+          if (fromCompleteScreen) {
+            Navigator.pop(context);
+          } else {
+            Get.to(() => VehicleDetails());
+          }
+          // Navigator.push(
+          //   context,
+          //   MaterialPageRoute(builder: (context) => VehicleDetails()),
+          // );
 
           return '';
         },
@@ -86,10 +102,14 @@ class CarOwnerShipController extends GetxController {
   //     carPlateNumber.clear();
   //   }
   // }
+
   Future<void> fetchAndSetUserData() async {
     final profile = Get.find<ChooseServiceController>().userProfile.value;
 
     if (profile != null) {
+      serviceType = profile.serviceType ?? '';
+      countryCode = profile.countryCode ?? '';
+      CommonLogger.log.i(serviceType);
       if (profile.serviceType == 'Car') {
         carOwnershipController.text = profile.carOwnership ?? '';
         carOwnerNameController.text = profile.carOwnerName ?? '';

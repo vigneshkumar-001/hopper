@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Utility/images.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 class CommonBottomNavigationBar extends StatelessWidget {
   final VoidCallback onBackPressed;
@@ -16,7 +18,7 @@ class CommonBottomNavigationBar extends StatelessWidget {
   final ValueChanged<bool?>? onCheckboxChanged;
   final double? height; // Customizable height
   const CommonBottomNavigationBar({
-    super.key,
+    Key? key,
     required this.onBackPressed,
     required this.onNextPressed,
     this.nextButtonText = 'Next',
@@ -29,7 +31,7 @@ class CommonBottomNavigationBar extends StatelessWidget {
     this.height,
     this.isChecked = false,
     this.onCheckboxChanged,
-  });
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -96,7 +98,13 @@ class CommonBottomNavigationBar extends StatelessWidget {
                     color: AppColors.containerColor,
                     borderRadius: BorderRadius.circular(30),
                   ),
-                  child: Image.asset(backButtonImage),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8.0,
+                      vertical: 8,
+                    ),
+                    child: Image.asset(backButtonImage),
+                  ),
                 ),
               ),
               SizedBox(
@@ -106,14 +114,14 @@ class CommonBottomNavigationBar extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     elevation: 0,
                     foregroundColor: AppColors.commonWhite,
-                    backgroundColor: AppColors.commonBlack,
+                    backgroundColor: buttonColor,
                   ),
                   onPressed: onNextPressed,
                   child: Row(
                     children: [
                       Text(nextButtonText),
                       const Spacer(),
-                      Image.asset(rightButtonImage),
+                      Image.asset(rightButtonImage, height: 32, width: 32),
                     ],
                   ),
                 ),

@@ -2,10 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
-import 'package:hopper/api/dataSource/apiDataSource.dart';
+import '../../../Core/Utility/snackbar.dart';
+import 'chooseservice_controller.dart';
+import '../screens/carOwnerShip.dart';
+import '../screens/chooseService.dart';
+import '../screens/driverLicense.dart';
+import '../../../api/dataSource/apiDataSource.dart';
 
 class DriverLicenseController extends GetxController {
   String accessToken = '';
@@ -24,8 +26,9 @@ class DriverLicenseController extends GetxController {
   Future<void> driverLicense(
     BuildContext context,
     File? frontImageFile,
-    File? backImageFile,
-  ) async {
+    File? backImageFile, {
+    bool fromCompleteScreen = false,
+  }) async {
     isLoading.value = true;
 
     String? frontImageUrl;
@@ -80,10 +83,15 @@ class DriverLicenseController extends GetxController {
       },
       (success) {
         CustomSnackBar.showSuccess(success.message);
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => ChooseService()),
-        );
+        if (fromCompleteScreen) {
+          Navigator.pop(context);
+        } else {
+          Get.to(() => ChooseService());
+        }
+        // Navigator.push(
+        //   context,
+        //   MaterialPageRoute(builder: (context) => ChooseService()),
+        // );
       },
     );
 

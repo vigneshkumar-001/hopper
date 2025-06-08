@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/log.dart';
-import 'package:hopper/Core/Constants/texts.dart';
-import 'package:hopper/Core/Utility/Buttons.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/basicInfo.dart';
 import 'package:get/get.dart';
 
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/log.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../../Core/Utility/Buttons.dart';
+import '../../../Core/Utility/images.dart';
+import '../controller/chooseservice_controller.dart';
+import 'basicInfo.dart';
+
 class ProcessingScreen extends StatefulWidget {
+  final String? type;
   final String? selectedFlag;
-  const ProcessingScreen({super.key, this.selectedFlag});
+  const ProcessingScreen({super.key, this.selectedFlag, this.type});
 
   @override
   State<ProcessingScreen> createState() => _ProcessingScreenState();
@@ -19,26 +22,26 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
   late List<Map<String, dynamic>> rowData;
 
   final List<Map<String, dynamic>> carSteps = [
-    {'title': 'Basic Info', 'icon': Icons.visibility_outlined},
-    {'title': 'Driver Address Details', 'icon': Icons.visibility_outlined},
-    {'title': 'Profile Photo', 'icon': Icons.visibility_outlined},
-    {'title': 'Identify Verification', 'icon': Icons.visibility_outlined},
-    {'title': 'Driver License', 'icon': Icons.visibility_outlined},
-    {'title': 'Car Ownership Details', 'icon': Icons.visibility_outlined},
-    {'title': 'Vehicle Details', 'icon': Icons.visibility_outlined},
-    {'title': 'Exterior Photos', 'icon': Icons.visibility_outlined},
-    {'title': 'Interior Photos', 'icon': Icons.visibility_outlined},
+    {'title': 'Basic Info', 'image': AppImages.lock},
+    {'title': 'Driver Address Details','image': AppImages.lock},
+    {'title': 'Profile Photo', 'image': AppImages.lock},
+    {'title': 'Identify Verification', 'image': AppImages.lock},
+    {'title': 'Driver License', 'image': AppImages.lock},
+    {'title': 'Car Ownership Details', 'image': AppImages.lock},
+    {'title': 'Vehicle Details', 'image': AppImages.lock},
+    {'title': 'Exterior Photos', 'image': AppImages.lock},
+    {'title': 'Interior Photos', 'image': AppImages.lock},
   ];
 
   final List<Map<String, dynamic>> bikeSteps = [
-    {'title': 'Basic Info', 'icon': Icons.visibility_outlined},
-    {'title': 'Driver Address Details', 'icon': Icons.visibility_outlined},
-    {'title': 'Profile Photo', 'icon': Icons.visibility_outlined},
-    {'title': 'Identify Verification', 'icon': Icons.visibility_outlined},
-    {'title': 'Driver License', 'icon': Icons.visibility_outlined},
-    {'title': 'Bike Ownership Details', 'icon': Icons.visibility_outlined},
-    {'title': 'Bike Details', 'icon': Icons.visibility_outlined},
-    {'title': 'Bike Photos', 'icon': Icons.visibility_outlined},
+    {'title': 'Basic Info', 'image': AppImages.lock},
+    {'title': 'Driver Address Details', 'image': AppImages.lock},
+    {'title': 'Profile Photo', 'image': AppImages.lock},
+    {'title': 'Identify Verification', 'image': AppImages.lock},
+    {'title': 'Driver License', 'image': AppImages.lock},
+    {'title': 'Bike Ownership Details', 'image': AppImages.lock},
+    {'title': 'Bike Details', 'image': AppImages.lock},
+    {'title': 'Bike Photos', 'image': AppImages.lock},
   ];
   final profile = Get.find<ChooseServiceController>().userProfile.value;
   @override
@@ -96,9 +99,12 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
                         physics: NeverScrollableScrollPhysics(),
                         itemCount: rowData.length,
                         itemBuilder: (context, index) {
+                          final item = rowData[index];
+                          final isBasicInfo = item['title'] == 'Basic Info';
+
                           return GestureDetector(
                             onTap: () {
-                              CommonLogger.log.i(rowData[index]);
+                              CommonLogger.log.i(item);
                             },
                             child: Column(
                               children: [
@@ -107,17 +113,21 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
                                       MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      rowData[index]['title'],
+                                      item['title'],
                                       style: TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
-                                    Icon(rowData[index]['icon']),
+                                    if (!isBasicInfo)
+                                      Image.asset(
+                                        item['image']?? '',
+                                        height: 20,
+                                        width: 20,
+                                      ),
                                   ],
                                 ),
-
-                                Divider(),
+                                if (index != rowData.length - 1) Divider(),
                               ],
                             ),
                           );
@@ -133,12 +143,16 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
                 buttonColor: AppColors.commonBlack,
 
                 onTap: () {
+                  final nextPage =
+                      widget.type == 'googleSignIn'
+                          ? BasicInfo(
+                            fromCompleteScreens: false,
+                            type: 'googleSignIn',
+                          )
+                          : BasicInfo(fromCompleteScreens: false);
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder:
-                          (context) => BasicInfo(fromCompleteScreens: false),
-                    ),
+                    MaterialPageRoute(builder: (context) => nextPage),
                   );
                 },
                 text: "Start Application",

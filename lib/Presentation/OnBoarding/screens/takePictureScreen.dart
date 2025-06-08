@@ -1,12 +1,13 @@
-
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
-import 'package:hopper/Core/Constants/texts.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/userprofile_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../Authentication/widgets/textFields.dart';
+import '../controller/userprofile_controller.dart';
+import '../widgets/bottomNavigation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:get/get.dart';
 
@@ -25,14 +26,23 @@ class _TakePictureState extends State<TakePicture> {
   late FaceDetector _faceDetector;
   bool _isFaceDetected = false;
   String frontImage = '';
-  // final UserProfileController controller = Get.find();
+    bool _isDetecting = false;
+
   late UserProfileController controller;
   @override
   void initState() {
     super.initState();
     _initializeCamera();
     controller = Get.find<UserProfileController>(); // ✅ Safe
-    _faceDetector = GoogleMlKit.vision.faceDetector();
+   _faceDetector = FaceDetector(
+  options: FaceDetectorOptions(
+    enableContours: true,
+    enableLandmarks: true,
+    enableClassification: true,
+    performanceMode: FaceDetectorMode.accurate,
+  ),
+);
+
   }
 
   Future<void> _retakePicture() async {
@@ -42,7 +52,8 @@ class _TakePictureState extends State<TakePicture> {
     setState(() {});
   }
 
-  Future<void> _initializeCamera() async {
+
+ Future<void> _initializeCamera() async {
     final status = await Permission.camera.request();
     if (status.isGranted) {
       final cameras = await availableCameras();
@@ -60,10 +71,68 @@ class _TakePictureState extends State<TakePicture> {
       setState(() {
         _isCameraInitialized = true;
       });
+          _cameraController!.startImageStream(_processCameraImage);
+
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Camera permission denied')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Camera permission denied')),
+      );
+    }
+  }
+
+  
+  void _processCameraImage(CameraImage image) async {
+    if (_isDetecting) return;
+    _isDetecting = true;
+
+    try {
+      final WriteBuffer allBytes = WriteBuffer();
+      for (final Plane plane in image.planes) {
+        allBytes.putUint8List(plane.bytes);
+      }
+      final bytes = allBytes.done().buffer.asUint8List();
+
+      final Size imageSize =
+          Size(image.width.toDouble(), image.height.toDouble());
+
+      final InputImageRotation imageRotation =
+          InputImageRotationValue.fromRawValue(
+                  _cameraController!.description.sensorOrientation) ??
+              InputImageRotation.rotation0deg;
+
+      final inputImageFormat =
+          InputImageFormatValue.fromRawValue(image.format.raw) ??
+              InputImageFormat.nv21;
+
+      // final planeData = image.planes.map(
+      //   (Plane plane) {
+      //     return InputImagePlaneMetadata(
+      //       bytesPerRow: plane.bytesPerRow,
+      //       height: plane.height,
+      //       width: plane.width,
+      //     );
+      //   },
+      // ).toList();
+
+      final inputImageData = InputImageMetadata (
+        size: imageSize,
+        rotation: imageRotation,
+        format: inputImageFormat,
+        bytesPerRow: 60,
+      );
+
+      final inputImage =
+          InputImage.fromBytes(bytes: bytes, metadata: inputImageData);
+
+      final faces = await _faceDetector.processImage(inputImage);
+
+      setState(() {
+        _isFaceDetected = faces.isNotEmpty;
+      });
+    } catch (e) {
+      print("Error in face detection: $e");
+    } finally {
+      _isDetecting = false;
     }
   }
 
@@ -76,20 +145,15 @@ class _TakePictureState extends State<TakePicture> {
       if (faces.isNotEmpty) {
         final face = faces.first;
         final boundingBox = face.boundingBox;
-        final imageWidth =
-            _cameraController!
-                .value
-                .previewSize!
-                .height; // note: width/height may flip
+        final imageWidth = _cameraController!.value.previewSize!.height;
         final imageHeight = _cameraController!.value.previewSize!.width;
-        // Check if face is well-centered in vertical & horizontal bounds
+
         bool isFaceWellCentered =
             boundingBox.left > imageWidth * 0.1 &&
             boundingBox.right < imageWidth * 0.9 &&
             boundingBox.top > imageHeight * 0.2 &&
             boundingBox.bottom < imageHeight * 0.8;
 
-        // Check face is covering enough space (not tiny or too close)
         bool isFaceBigEnough =
             boundingBox.height > imageHeight * 0.4 &&
             boundingBox.width > imageWidth * 0.4;
@@ -214,19 +278,47 @@ class _TakePictureState extends State<TakePicture> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Container(
-                            width: 300,
-                            height: 300,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 4),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(
-                                150,
-                              ), // Circle
-                              child: CameraPreview(_cameraController!),
-                            ),
+                          Stack(
+                            children: [
+                              Container(
+                                width: 300,
+                                height: 300,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 4),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                    150,
+                                  ), // Circle
+                                  child:
+                                  Transform(
+                                            alignment: Alignment.center,
+                                            transform: Matrix4.rotationY(math.pi),
+                                            child:  CameraPreview(_cameraController!),
+                                          )
+                                  
+                                ),
+                              ),
+                                 if (_isFaceDetected)
+      Positioned.fill(
+        child: Container(
+          width: 300,
+          height: 300,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.greenAccent, width: 3),
+            // Optional: glowing effect
+            boxShadow: [
+              BoxShadow(
+                color: Colors.greenAccent.withOpacity(0.6),
+                blurRadius: 12,
+                spreadRadius: 4,
+              ),
+            ],
+          ),
+        ),),
+                            ],
                           ),
 
                           SizedBox(height: 10),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hopper/Presentation/Authentication/controller/authController.dart';
+import 'package:flutter/services.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../controller/authController.dart';
 import 'package:intl/intl.dart';
 
 class CustomTextfield {
@@ -11,10 +13,15 @@ class CustomTextfield {
 
   static textField({
     required String tittle,
+    required GlobalKey<FormState>? formKey,
     required String hintText,
     TextEditingController? controller,
     TextInputType? type,
+    ValueChanged<String>? onChanged,
+    List<TextInputFormatter>? inputFormatters,
     String? Function(String?)? validator,
+
+    bool readOnly = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -25,8 +32,16 @@ class CustomTextfield {
         ),
         SizedBox(height: 8),
         TextFormField(
+          onChanged: (value) {
+            // Call the passed onChanged if exists
+            if (onChanged != null) onChanged(value);
+            // Then trigger form validation if formKey is provided
+            formKey?.currentState?.validate();
+          },
+          inputFormatters: inputFormatters,
           keyboardType: type,
           controller: controller,
+          readOnly: readOnly,
           style: TextStyle(
             color: Color(0xff111111),
             fontWeight: FontWeight.w500,
@@ -37,13 +52,20 @@ class CustomTextfield {
             border: OutlineInputBorder(
               borderSide: BorderSide(color: Color(0xffF1F1F1)),
             ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: Colors.black,
+                width: 1.5,
+              ), // BLACK BORDER
+            ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.red, width: 1.5),
+              borderSide: BorderSide(color: AppColors.errorRed, width: 1.5),
             ),
             focusedErrorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.red, width: 1.5),
+              borderSide: BorderSide(color:  AppColors.errorRed, width: 1.5),
             ),
           ),
           validator: validator,
@@ -54,6 +76,7 @@ class CustomTextfield {
 
   static dropDown({
     required String title,
+    String? Function(String?)? validator,
     TextEditingController? controller,
     ValueChanged<String>? onChanged,
     required String hintText,
@@ -69,7 +92,8 @@ class CustomTextfield {
           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         ),
         SizedBox(height: 8),
-        TextField(
+        TextFormField(
+          validator: validator,
           controller: controller,
           style: TextStyle(
             color: Color(0xff111111),
@@ -92,8 +116,11 @@ class CustomTextfield {
   }
 
   static datePickerField({
+    required GlobalKey<FormState> formKey, // add this line
+    String? Function(String?)? validator,
     required BuildContext context,
     required String title,
+    ValueChanged<String>? onChanged,
     required String hintText,
     required TextEditingController controller,
   }) {
@@ -105,14 +132,22 @@ class CustomTextfield {
           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         ),
         SizedBox(height: 8),
-        TextField(
+        TextFormField(
+          onChanged: onChanged,
           style: TextStyle(
             color: Color(0xff111111),
             fontWeight: FontWeight.w500,
           ),
           controller: controller,
           readOnly: true,
+          validator: validator,
           decoration: InputDecoration(
+            errorBorder: const OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.red),
+            ),
+            focusedErrorBorder: const OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.red),
+            ),
             hintText: hintText,
             hintStyle: TextStyle(color: Color(0xff666666)),
             border: OutlineInputBorder(
@@ -127,11 +162,36 @@ class CustomTextfield {
               firstDate: DateTime(1900),
               lastDate: DateTime.now(),
             );
+
             if (pickedDate != null) {
-              String formattedDate = DateFormat(
-                'd-MMMM-yyyy',
-              ).format(pickedDate);
-              controller.text = formattedDate;
+              DateTime today = DateTime.now();
+              int age = today.year - pickedDate.year;
+              if (today.month < pickedDate.month ||
+                  (today.month == pickedDate.month &&
+                      today.day < pickedDate.day)) {
+                age--;
+              }
+
+              if (age < 18) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    duration: Duration(seconds: 2),
+                    backgroundColor: Colors.red,
+                    content: Text('You must be at least 18 years old'),
+                  ),
+                );
+                controller.clear();
+                formKey.currentState?.validate(); // ✅ forces re-validation
+              } else {
+                String formattedDate = DateFormat(
+                  'd-MMMM-yyyy',
+                ).format(pickedDate);
+                controller.text = formattedDate;
+                formKey.currentState?.validate(); // ✅ clears error
+                if (onChanged != null) {
+                  onChanged(formattedDate);
+                }
+              }
             }
           },
         ),
@@ -143,6 +203,7 @@ class CustomTextfield {
     VoidCallback? onTap,
     Widget? suffixIcon,
     String? initialValue,
+    bool readOnly = false,
     Widget? prefixIcon,
     required String title,
     TextEditingController? controller,
@@ -180,7 +241,7 @@ class CustomTextfield {
                 child: TextFormField(
                   controller: controller,
                   initialValue: initialValue,
-                  readOnly: true,
+                  readOnly: readOnly,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
                     // focusedBorder: OutlineInputBorder(

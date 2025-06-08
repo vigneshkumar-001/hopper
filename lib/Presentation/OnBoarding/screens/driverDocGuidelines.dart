@@ -1,15 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/texts.dart';
-import 'package:hopper/Core/Utility/Buttons.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/guidelines_Controller.dart';
-import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:get/get.dart';
+
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../../Core/Utility/Buttons.dart';
+import '../../../Core/Utility/images.dart';
+import '../../Authentication/widgets/textFields.dart';
+import '../controller/guidelines_Controller.dart';
+import '../widgets/bottomNavigation.dart';
 
 class DriverDocGuideLines extends StatefulWidget {
   const DriverDocGuideLines({super.key});
@@ -19,31 +17,13 @@ class DriverDocGuideLines extends StatefulWidget {
 }
 
 class _DriverDocGuideLinesState extends State<DriverDocGuideLines> {
-  File? _selectedImage;
-  final ImagePicker _picker = ImagePicker();
-  final GuidelinesController controller = Get.find();
+
+  final GuidelinesController controller = Get.put(GuidelinesController());
   @override
   void initState() {
-    controller.guideLines();
-  } // Future<void> _pickImage() async {
-  //   final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-  //   if (image != null) {
-  //     if (image.path.endsWith('.png') || image.path.endsWith('.jpg')
-  //     // image.path.endsWith('.jpeg')
-  //     ) {
-  //       setState(() {
-  //         _selectedImage = File(image.path);
-  //       });
-  //
-  //       Navigator.pop(context, true);
-  //     } else {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(content: Text('Only PNG and JPG formats are supported')),
-  //       );
-  //     }
-  //   }
-  // }
-
+    super.initState();
+    controller.guideLines('driver-license');
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -88,10 +68,9 @@ class _DriverDocGuideLinesState extends State<DriverDocGuideLines> {
                   ),
                   const SizedBox(height: 24),
 
-                  /// ✅ Requirements Title
                   Row(
                     children: [
-                      Image.asset(AppImages.tick),
+                      Image.asset(AppImages.tick, height: 30, width: 30),
                       const SizedBox(width: 10),
                       Text(
                         AppTexts.requirements,
@@ -115,7 +94,7 @@ class _DriverDocGuideLinesState extends State<DriverDocGuideLines> {
                   /// ✅ Things to Avoid Title
                   Row(
                     children: [
-                      Image.asset(AppImages.close),
+                      Image.asset(AppImages.close, height: 30, width: 30),
                       const SizedBox(width: 10),
                       Text(
                         AppTexts.thinksToAvoid,

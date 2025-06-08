@@ -1,11 +1,27 @@
 import 'package:flutter/material.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../../Core/Utility/Buttons.dart';
+import '../../../Core/Utility/images.dart';
+import 'ninScreens.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/profilePicAccess.dart'
+    show ProfilePicAccess;
+import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/profilePicAccess.dart'
-    show ProfilePicAccess;
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/guidelines_Controller.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/profilePicAccess.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/takePictureScreen.dart';
+import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:get/get.dart';
 
 class DocUpLoadPic extends StatefulWidget {
   const DocUpLoadPic({super.key});
@@ -15,99 +31,114 @@ class DocUpLoadPic extends StatefulWidget {
 }
 
 class _DocUpLoadPicState extends State<DocUpLoadPic> {
+  final GuidelinesController controller = Get.put(GuidelinesController());
+  @override
+  void initState() {
+    super.initState();
+    controller.guideLines('profile-pic');
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(backgroundColor: AppColors.commonWhite),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                maxLines: 2,
-                AppTexts.documentsUpload,
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 28),
-              ),
-              SizedBox(height: 24),
-              Image.asset(AppImages.docUpload),
-              SizedBox(height: 24),
-              Row(
+      body: Obx(() {
+        if (controller.guidelinesList.isEmpty) {
+          return Center(child: Image.asset(AppImages.animation));
+        }
+
+        final guideline = controller.guidelinesList.first;
+
+        return SingleChildScrollView(
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 25),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Image.asset(AppImages.tick),
-                  SizedBox(width: 10),
+                  Buttons.backButton(context: context),
+                  SizedBox(height: 25),
                   Text(
-                    AppTexts.requirements,
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    guideline.data.title,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+                  const SizedBox(height: 24),
+                  Image.network(
+                    guideline.data.image,
+                    height: 200,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder:
+                        (_, __, ___) => const Icon(Icons.broken_image),
+                  ),
+                  const SizedBox(height: 10),
+                  Center(
+                    child: Text(
+                      AppTexts.sampleDocument,
+                      style: TextStyle(color: AppColors.sampleDocText),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  Row(
+                    children: [
+                      Image.asset(AppImages.tick, height: 30, width: 30),
+                      const SizedBox(width: 10),
+                      Text(
+                        AppTexts.requirements,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  /// ✅ Requirements List
+                  for (var item in guideline.data.requirements)
+                    CustomTextfield.concatenateText(title: item),
+
+                  const SizedBox(height: 24),
+                  const Divider(),
+                  const SizedBox(height: 24),
+
+                  /// ✅ Things to Avoid Title
+                  Row(
+                    children: [
+                      Image.asset(AppImages.close, height: 30, width: 30),
+                      const SizedBox(width: 10),
+                      Text(
+                        AppTexts.thinksToAvoid,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  /// ✅ Things to Avoid List
+                  for (var item in guideline.data.thingsToAvoid)
+                    CustomTextfield.concatenateText(title: item),
                 ],
               ),
-              SizedBox(height: 24),
-              CustomTextfield.concatenateText(
-                title: AppTexts.requirementsContents1,
-              ),
-              CustomTextfield.concatenateText(
-                title: AppTexts.requirementsContents2,
-              ),
-              CustomTextfield.concatenateText(
-                title: AppTexts.requirementsContents3,
-              ),
-              SizedBox(height: 20),
-              Divider(),
-              SizedBox(height: 20),
-              Row(
-                children: [
-                  Image.asset(AppImages.close),
-                  SizedBox(width: 10),
-                  Text(
-                    AppTexts.thinksToAvoid,
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                ],
-              ),
-              SizedBox(height: 24),
-              CustomTextfield.concatenateText(
-                title: AppTexts.thinksToAvoidContents1,
-              ),
-              CustomTextfield.concatenateText(
-                title: AppTexts.thinksToAvoidContents2,
-              ),
-              // Spacer(),
-              // Buttons.button(
-              //   buttonColor: AppColors.commonBlack,
-              //   onTap: () {
-              //     Navigator.push(
-              //       context,
-              //       MaterialPageRoute(builder: (context) => ProfilePicAccess()),
-              //     );
-              //   },
-              //   text: 'Take a Photo',
-              // ),
-            ],
-          ),
-        ),
-      ),
-      bottomNavigationBar: BottomAppBar(
-        color: AppColors.commonWhite,
-        child: Column(
-          children: [
-            Buttons.button(
-              buttonColor: AppColors.commonBlack,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => ProfilePicAccess()),
-                );
-                // Navigator.push(
-                //   context,
-                //   MaterialPageRoute(builder: (context) => NinScreens()),
-                // );
-              },
-              text: 'Take a Photo',
             ),
-          ],
-        ),
+          ),
+        );
+      }),
+
+      bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
+        onTap: () {
+
+           Navigator.push(
+             context,
+             MaterialPageRoute(builder: (context) => TakePicture()),
+           );
+        },
+        title: 'Take a Photo',
       ),
     );
   }
