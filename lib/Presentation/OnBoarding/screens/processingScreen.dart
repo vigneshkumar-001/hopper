@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/log.dart';
 import '../../../Core/Constants/texts.dart';
@@ -6,8 +8,6 @@ import '../../../Core/Utility/Buttons.dart';
 import '../../../Core/Utility/images.dart';
 import '../controller/chooseservice_controller.dart';
 import 'basicInfo.dart';
-import 'chooseService.dart';
-import 'package:get/get.dart';
 
 class ProcessingScreen extends StatefulWidget {
   final String? type;

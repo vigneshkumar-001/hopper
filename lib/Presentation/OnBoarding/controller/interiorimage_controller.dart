@@ -1,12 +1,12 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+
 import '../../../Core/Utility/snackbar.dart';
-import 'chooseservice_controller.dart';
-import '../screens/ConsentForms.dart';
-import '../screens/driverLicense.dart';
-import '../screens/uploadExteriorPhotos.dart';
 import '../../../api/dataSource/apiDataSource.dart';
+import '../screens/ConsentForms.dart';
+import 'chooseservice_controller.dart';
 
 class InteriorImageController extends GetxController {
   String accessToken = '';

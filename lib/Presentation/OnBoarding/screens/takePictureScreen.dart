@@ -4,10 +4,10 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
-import 'package:hopper/Core/Constants/texts.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/userprofile_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../Authentication/widgets/textFields.dart';
+import '../controller/userprofile_controller.dart';
+import '../widgets/bottomNavigation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:get/get.dart';
 

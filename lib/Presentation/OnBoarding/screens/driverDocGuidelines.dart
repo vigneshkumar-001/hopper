@@ -1,17 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/texts.dart';
 import '../../../Core/Utility/Buttons.dart';
 import '../../../Core/Utility/images.dart';
 import '../../Authentication/widgets/textFields.dart';
 import '../controller/guidelines_Controller.dart';
-import 'chooseService.dart';
-import 'profilePicAccess.dart';
 import '../widgets/bottomNavigation.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:get/get.dart';
 
 class DriverDocGuideLines extends StatefulWidget {
   const DriverDocGuideLines({super.key});

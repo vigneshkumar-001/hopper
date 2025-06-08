@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../Core/Constants/log.dart';
 import '../../../Core/Utility/snackbar.dart';
-import '../screens/Terms_Screen.dart';
-import '../../OnBoarding/controller/chooseservice_controller.dart';
 import '../../../api/dataSource/apiDataSource.dart';
-import '../../../api/repository/failure.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../OnBoarding/controller/chooseservice_controller.dart';
+import '../screens/Terms_Screen.dart';
 
 class OtpController extends GetxController {
   String accessToken = '';

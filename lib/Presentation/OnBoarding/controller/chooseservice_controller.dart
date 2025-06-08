@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../../../Core/Constants/log.dart';
 
+import '../../../Core/Constants/log.dart';
 import '../../../Core/Utility/snackbar.dart';
+import '../../../api/dataSource/apiDataSource.dart';
 import '../../Authentication/screens/GetStarted_Screens.dart';
 import '../models/getuserdetails_models.dart';
 import '../screens/ConsentForms.dart';
 import '../screens/basicInfo.dart';
 import '../screens/carOwnerShip.dart';
-
 import '../screens/chooseService.dart';
 import '../screens/completedScreens.dart';
 import '../screens/driverAddress.dart';
@@ -16,10 +16,8 @@ import '../screens/driverLicense.dart';
 import '../screens/interiorUploadPhotos.dart';
 import '../screens/ninScreens.dart';
 import '../screens/profilePicAccess.dart';
-import '../screens/takePictureScreen.dart';
 import '../screens/uploadExteriorPhotos.dart';
 import '../screens/vehicleDetails.dart';
-import '../../../api/dataSource/apiDataSource.dart';
 
 class ChooseServiceController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
