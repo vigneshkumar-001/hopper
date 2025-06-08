@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/texts.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/stateList_Controller.dart';
-import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../../Core/Utility/Buttons.dart';
+import '../../../Core/Utility/images.dart';
+import '../../../Core/Utility/snackbar.dart';
+import '../../Authentication/widgets/textFields.dart';
+import '../controller/stateList_Controller.dart';
+import 'completedScreens.dart';
+import '../widgets/bottomNavigation.dart';
 import 'package:get/get.dart';
 
 class ConsentForms extends StatefulWidget {
@@ -26,7 +28,6 @@ class _ConsentFormsState extends State<ConsentForms> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(backgroundColor: AppColors.commonWhite),
       body: SingleChildScrollView(
         child: SafeArea(
           child: Padding(
@@ -34,6 +35,8 @@ class _ConsentFormsState extends State<ConsentForms> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Buttons.backButton(context: context),
+                SizedBox(height: 24),
                 Image.asset(AppImages.consent),
                 SizedBox(height: 24),
                 Container(
@@ -156,7 +159,7 @@ class _ConsentFormsState extends State<ConsentForms> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Image.asset(
-                        AppImages.exclamationCircle,
+                        AppImages.redExclamation,
                         width: 20,
                         height: 20,
                       ),
@@ -215,36 +218,63 @@ class _ConsentFormsState extends State<ConsentForms> {
           ),
         ),
       ),
+      bottomNavigationBar: Obx(() {
+        if (controller.isLoading.value) {
+          return Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: SizedBox(
+              height: 48,
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          );
+        }
 
-      bottomNavigationBar: Obx(
-        () =>
-            controller.isLoading.value
-                ? Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: SizedBox(
-                    height: 48,
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                )
-                : CustomBottomNavigation.bottomNavigation(
-                  title: "Send for Verification",
-                  onTap: () {
-                    if (!isChecked) {
-                      CustomSnackBar.showInfo(
-                        'Please agree to the terms to proceed.',
-                      );
-                      // ScaffoldMessenger.of(context).showSnackBar(
-                      //   SnackBar(
-                      //     content: Text("Please agree to the terms to proceed."),
-                      //     backgroundColor: Colors.red,
-                      //   ),
-                      // );
-                      return;
-                    }
-                    controller.sendVerification(context);
-                  },
-                ),
-      ),
+        final buttonEnabled = isChecked; // true if checked, false otherwise
+        final buttonColor =
+            buttonEnabled ? AppColors.commonBlack : AppColors.containerColor;
+
+        return CustomBottomNavigation.bottomNavigation(
+          title: "Send for Verification",
+          buttonColor: buttonColor,
+          onTap: () {
+            if (!isChecked) {
+              CustomSnackBar.showInfo('Please agree to the terms to proceed.');
+              return;
+            }
+            controller.sendVerification(context);
+          },
+        );
+      }),
+
+      // bottomNavigationBar: Obx(
+      //   () =>
+      //       controller.isLoading.value
+      //           ? Padding(
+      //             padding: const EdgeInsets.all(16.0),
+      //             child: SizedBox(
+      //               height: 48,
+      //               child: Center(child: CircularProgressIndicator()),
+      //             ),
+      //           )
+      //           : CustomBottomNavigation.bottomNavigation(
+      //             title: "Send for Verification",
+      //             onTap: () {
+      //               if (!isChecked) {
+      //                 CustomSnackBar.showInfo(
+      //                   'Please agree to the terms to proceed.',
+      //                 );
+      //                 // ScaffoldMessenger.of(context).showSnackBar(
+      //                 //   SnackBar(
+      //                 //     content: Text("Please agree to the terms to proceed."),
+      //                 //     backgroundColor: Colors.red,
+      //                 //   ),
+      //                 // );
+      //                 return;
+      //               }
+      //               controller.sendVerification(context);
+      //             },
+      //           ),
+      // ),
     );
   }
 }

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/docUploadPic.dart';
+import '../../../Core/Utility/snackbar.dart';
+import 'chooseservice_controller.dart';
+import '../screens/docUploadPic.dart';
 
-import 'package:hopper/api/dataSource/apiDataSource.dart';
+import '../../../api/dataSource/apiDataSource.dart';
 
 class DriverAddressController extends GetxController {
   TextEditingController addressController = TextEditingController();

@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/log.dart';
-import 'package:hopper/Core/Constants/texts.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
-import 'package:hopper/Presentation/Authentication/widgets/customContainer.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/log.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../../Core/Utility/Buttons.dart';
+import '../../../Core/Utility/images.dart';
+import '../../../Core/Utility/snackbar.dart';
+import '../controller/chooseservice_controller.dart';
+import 'carOwnerShip.dart';
+import 'processingScreen.dart';
+import '../widgets/bottomNavigation.dart';
+import '../../../utils/init_Controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../Authentication/widgets/customContainer.dart';
 
 import 'package:get/get.dart';
 
@@ -146,12 +151,17 @@ class _ChooseServiceState extends State<ChooseService> {
                 )
                 : CustomBottomNavigation.bottomNavigation(
                   title: 'Continue',
+              buttonColor: selectedService.isNotEmpty
+                  ? AppColors.commonBlack
+                  : Colors.grey.shade400, // disabled-looking colo
                   onTap: () async {
                     if (selectedService.isEmpty) {
                       CommonLogger.log.e('Not Choosing Any');
                       CustomSnackBar.showInfo('Choose your Service');
                     } else {
                       await controller.chooseServiceType(selectedService);
+                      await controller.getUserDetails();
+
                     }
                   },
                 ),

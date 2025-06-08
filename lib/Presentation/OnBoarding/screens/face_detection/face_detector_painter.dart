@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/face_detection/coordinates_translator.dart';
+import 'coordinates_translator.dart';
 
 
 class FaceDetectorPainter extends CustomPainter {

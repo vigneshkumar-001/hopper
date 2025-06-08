@@ -1,18 +1,27 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/interiorUploadPhotos.dart';
-import 'package:hopper/api/dataSource/apiDataSource.dart';
+import '../../../Core/Utility/snackbar.dart';
+import 'chooseservice_controller.dart';
+import '../screens/ConsentForms.dart';
+import '../screens/chooseService.dart';
+import '../screens/driverLicense.dart';
+import '../screens/interiorUploadPhotos.dart';
+import '../screens/uploadExteriorPhotos.dart';
+import '../../../api/dataSource/apiDataSource.dart';
 
 class ExteriorImageController extends GetxController {
   String accessToken = '';
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
-  final RxList<String?> _selectedImages = List<String?>.filled(6, null).obs;
+  String vehicleType = '';
+  RxList<String?> _selectedImages = List<String?>.filled(6, null).obs;
   List<String?> get selectedImages => _selectedImages;
+
+  @override
+  void onInit() {
+    super.onInit();
+  }
 
   // Future<void> exteriorImageUpload({
   //   required List<String?> selectedImages,
@@ -73,6 +82,7 @@ class ExteriorImageController extends GetxController {
     required List<String?> selectedImages,
     required BuildContext context,
     required String serviceType,
+    bool fromCompleteScreen = false,
   }) async {
     isLoading.value = true;
 
@@ -115,7 +125,7 @@ class ExteriorImageController extends GetxController {
     final profile = Get.find<ChooseServiceController>().userProfile.value;
     // final isCar = profile?.serviceType == 'Car';
     // final serviceType = isCar ? 'Car' : 'Bike';
-    final isCar = serviceType == 'Car';
+    final isCar = vehicleType == 'Car';
 
     final serviceTypes = isCar ? 'Car' : 'Bike';
     final ninResult = await apiDataSource.uploadExteriorImage(
@@ -135,6 +145,10 @@ class ExteriorImageController extends GetxController {
         //         .value
         //         ?.serviceType ??
         //     '';
+        if (fromCompleteScreen) {
+          Navigator.pop(context);
+          return;
+        }
         if (serviceTypes == "Car") {
           Get.to(() => InteriorUploadPhotos());
         } else {
@@ -173,7 +187,7 @@ class ExteriorImageController extends GetxController {
 
     if (profile == null) return;
 
-    final vehicleType = profile.serviceType;
+    vehicleType = profile.serviceType ?? '';
 
     List<String>? photos;
 

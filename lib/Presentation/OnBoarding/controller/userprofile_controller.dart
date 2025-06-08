@@ -2,16 +2,23 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../../../Core/Constants/log.dart';
 
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
+import '../../../Core/Utility/snackbar.dart';
+import '../screens/docUploadPic.dart';
+import '../screens/ninScreens.dart';
 
-import 'package:hopper/api/dataSource/apiDataSource.dart';
+import '../../../api/dataSource/apiDataSource.dart';
 
 class UserProfileController extends GetxController {
   String accessToken = '';
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
+
+  @override
+  void onInit() {
+    super.onInit();
+  }
 
   Future<String?> userProfileUpload(
     BuildContext context,
@@ -40,10 +47,15 @@ class UserProfileController extends GetxController {
         },
         (success) {
           CustomSnackBar.showSuccess(success.message);
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => NinScreens()),
-          );
+          if (fromCompleteScreen) {
+            Navigator.pop(context);
+          } else {
+            Get.to(() => NinScreens());
+          }
+          // Navigator.push(
+          //   context,
+          //   MaterialPageRoute(builder: (context) => NinScreens()),
+          // );
         },
       );
     }

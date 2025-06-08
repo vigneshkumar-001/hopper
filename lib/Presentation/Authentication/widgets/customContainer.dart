@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
+import '../../../Core/Constants/Colors.dart';
 
 class CustomContainer {
   static final CustomContainer _singleton = CustomContainer._internal();
@@ -33,7 +33,9 @@ class CustomContainer {
         decoration: BoxDecoration(
           color: AppColors.containerColor1,
           border:
-              isSelected ? Border.all(color: AppColors.containerBorder) : null,
+              isSelected
+                  ? Border.all(color: AppColors.containerBorder)
+                  : Border.all(color: AppColors.containerColor1),
           borderRadius: BorderRadius.circular(15),
         ),
         child: Padding(
@@ -42,7 +44,7 @@ class CustomContainer {
             children: [
               Row(
                 children: [
-                  Image.asset(serviceTypeImage),
+                  Image.asset(serviceTypeImage, height: 32, width: 32),
                   SizedBox(width: 10),
                   Text(
                     serviceType,

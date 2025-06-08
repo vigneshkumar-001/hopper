@@ -1,4 +1,4 @@
-import 'package:hopper/Presentation/Authentication/controller/authController.dart';
+import '../Presentation/Authentication/controller/authController.dart';
 import 'package:get/get.dart';
 
 

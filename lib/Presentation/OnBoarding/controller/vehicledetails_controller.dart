@@ -1,15 +1,17 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/uploadExteriorPhotos.dart';
-import 'package:hopper/api/dataSource/apiDataSource.dart';
+import '../../../Core/Utility/snackbar.dart';
+import 'chooseservice_controller.dart';
+import '../screens/driverLicense.dart';
+import '../screens/uploadExteriorPhotos.dart';
+import '../../../api/dataSource/apiDataSource.dart';
 
 class VehicleDetailsController extends GetxController {
   String accessToken = '';
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
+  String vehicleType = '';
   RxString frontImageUrl = ''.obs;
   RxString backImageUrl = ''.obs;
 
@@ -26,44 +28,57 @@ class VehicleDetailsController extends GetxController {
   }
 
   Future<void> vehicleDetails({
-    required File frontImageFile,
+    required File? frontImageFile,
     required String serviceType,
-    required File backImageFile,
+    required File? backImageFile,
     required BuildContext context,
-  }) async {
+    bool fromCompleteScreen = false,
+  }
+
+  ) async {
     isLoading.value = true;
+
     String? frontImageUrl;
     String? backImageUrl;
 
-    final profile = Get.find<ChooseServiceController>().userProfile.value;
-    final frontResult = await apiDataSource.userProfileUpload(
-      imageFile: frontImageFile,
-    );
+    if (frontImageFile != null) {
+      final frontResult = await apiDataSource.userProfileUpload(
+        imageFile: frontImageFile,
+      );
 
-    frontImageUrl = frontResult.fold((failure) {
-      CustomSnackBar.showError("Front Upload Failed: ${failure.message}");
-      return null;
-    }, (success) => success.message);
+      frontImageUrl = frontResult.fold((failure) {
+        CustomSnackBar.showError("Front Upload Failed: ${failure.message}");
+        return null;
+      }, (success) => success.message);
 
-    if (frontImageUrl == null) {
-      isLoading.value = false;
-      return;
+      if (frontImageUrl == null) {
+        isLoading.value = false;
+        return;
+      }
+    } else {
+      // Use existing URL if no new file
+      frontImageUrl = this.frontImageUrl.value;
     }
 
-    final backResult = await apiDataSource.userProfileUpload(
-      imageFile: backImageFile,
-    );
+    if (backImageFile != null) {
+      final backResult = await apiDataSource.userProfileUpload(
+        imageFile: backImageFile,
+      );
 
-    backImageUrl = backResult.fold((failure) {
-      CustomSnackBar.showError("Back Upload Failed: ${failure.message}");
-      return null;
-    }, (success) => success.message);
+      backImageUrl = backResult.fold((failure) {
+        CustomSnackBar.showError("Back Upload Failed: ${failure.message}");
+        return null;
+      }, (success) => success.message);
 
-    if (backImageUrl == null) {
-      isLoading.value = false;
-      return;
+      if (backImageUrl == null) {
+        isLoading.value = false;
+        return;
+      }
+    } else {
+      backImageUrl = this.backImageUrl.value;
     }
-    final isCar = serviceType == 'Car';
+
+    final isCar = vehicleType == 'Car';
 
     final serviceTypes = isCar ? 'Car' : 'Bike';
 
@@ -84,10 +99,15 @@ class VehicleDetailsController extends GetxController {
       },
       (success) {
         CustomSnackBar.showSuccess(success.message);
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => UploadExteriorPhotos()),
-        );
+        if (fromCompleteScreen) {
+          Navigator.pop(context);
+        } else {
+          Get.to(() => UploadExteriorPhotos());
+        }
+        // Navigator.push(
+        //   context,
+        //   MaterialPageRoute(builder: (_) => UploadExteriorPhotos()),
+        // );
       },
     );
 
@@ -115,7 +135,7 @@ class VehicleDetailsController extends GetxController {
     final profile = Get.find<ChooseServiceController>().userProfile.value;
 
     if (profile != null) {
-      final vehicleType = profile.serviceType;
+      vehicleType = profile.serviceType ?? '';
 
       if (vehicleType == 'Car') {
         carBrandController.text = profile.carBrand ?? '';

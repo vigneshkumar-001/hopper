@@ -2,63 +2,52 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:dotted_border/dotted_border.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/texts.dart';
-import 'package:hopper/Core/Utility/Buttons.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/nin_controller.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/ninGuidelines.dart';
-import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
-import 'package:hopper/utils/imagePath/imagePath.dart';
+import 'package:flutter/services.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/log.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../../Core/Utility/Buttons.dart';
+import '../../../Core/Utility/images.dart';
+import '../../Authentication/widgets/textFields.dart';
+import '../controller/guidelines_Controller.dart';
+import '../controller/nin_controller.dart';
+import 'driverLicense.dart';
+import 'ninGuidelines.dart';
+import '../widgets/linearProgress.dart';
+import '../../../utils/imagePath/imagePath.dart';
+import '../../../utils/init_Controller.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:get/get.dart';
 
 class NinScreens extends StatefulWidget {
-  const NinScreens({super.key});
+  const NinScreens({super.key, this.fromCompleteScreens = false});
+
+  final bool fromCompleteScreens;
 
   @override
   State<NinScreens> createState() => _NinScreensState();
 }
 
 class _NinScreensState extends State<NinScreens> {
-  File? _selectedImage;
-  final ImagePicker _picker = ImagePicker();
-  final TextEditingController ninController = TextEditingController();
-  final NinController controller = Get.find();
-  String frontImage = '';
   String backImage = '';
+  final NinController controller = Get.put(NinController());
+  String frontImage = '';
+  final GuidelinesController guidelinesController = Get.put(
+    GuidelinesController(),
+  );
+
+  final TextEditingController ninController = TextEditingController();
+
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-
-  // Future<String> pickImage() async {
-  //   final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-  //   if (image != null) {
-  //     if (image.path.endsWith('.png') || image.path.endsWith('.jpg')
-  //     // image.path.endsWith('.jpeg')
-  //     ) {
-  //       return image.path;
-  //       // _selectedImage = File(image.path);
-  //     } else {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(content: Text('Only PNG and JPG formats are supported')),
-  //       );
-  //       return '';
-  //     }
-  //   } else {
-  //     return '';
-  //   }
-  // }
-
-  void _removeImage() {
-    setState(() {
-      _selectedImage = null;
-    });
-  }
+  bool _isButtonDisabled = false;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
+
     controller.fetchAndSetUserData();
+    guidelinesController.guideLines('nin-verification');
   }
 
   @override
@@ -67,7 +56,7 @@ class _NinScreensState extends State<NinScreens> {
       body: Obx(
         () =>
             controller.isLoading.value
-                ? Center(child: CircularProgressIndicator())
+                ? Center(child: Image.asset(AppImages.animation))
                 : SingleChildScrollView(
                   child: SafeArea(
                     child: Padding(
@@ -102,13 +91,41 @@ class _NinScreensState extends State<NinScreens> {
                             // ),
                             SizedBox(height: 32),
                             CustomTextfield.textField(
+                              type: TextInputType.number,
+                              formKey: _formKey,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                FilteringTextInputFormatter.deny(
+                                  RegExp(r'\s'),
+                                ), // deny spaces
+                              ],
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter your BVN';
+                                } else if (!RegExp(r'^\d+$').hasMatch(value)) {
+                                  return 'You must follow the proper format. Eg: 22345678901';
+                                }
+                                return null;
+                              },
+
+                              controller: controller.bankNumberController,
+                              tittle: 'Bank Verification Number',
+                              hintText: 'Enter your Bank Verification Number',
+                            ),
+                            SizedBox(height: 25),
+                            CustomTextfield.textField(
+                              type: TextInputType.number,
+                              formKey: _formKey,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(11),
+                              ],
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
                                   return 'Please enter your NIN';
+                                } else if (value.length != 11) {
+                                  return 'Must be exactly 11 digits';
                                 }
-                                // else if (value.length != 11) {
-                                //   return 'NIN must be exactly 11 digits';
-                                // }
                                 return null;
                               },
                               controller: controller.ninNumberController,
@@ -159,13 +176,12 @@ class _NinScreensState extends State<NinScreens> {
                                     }
                                   },
                                   child: DottedBorder(
-                                    options: RoundedRectDottedBorderOptions( color: const Color(
+                                     options: RoundedRectDottedBorderOptions(  color: const Color(
                                       0xff666666,
                                     ).withOpacity(0.3),
                                     radius: const Radius.circular(10),
                                     dashPattern: const [7, 4],
                                     strokeWidth: 1.5,),
-                                   
                                     child: Container(
                                       height: 120,
                                       padding: const EdgeInsets.all(10),
@@ -278,7 +294,7 @@ class _NinScreensState extends State<NinScreens> {
                                     }
                                   },
                                   child: DottedBorder(
-                                    options: RoundedRectDottedBorderOptions( color: const Color(
+                                    options: RoundedRectDottedBorderOptions(  color: const Color(
                                       0xff666666,
                                     ).withOpacity(0.3),
                                     radius: const Radius.circular(10),
@@ -364,8 +380,14 @@ class _NinScreensState extends State<NinScreens> {
             Buttons.button(
               buttonColor: AppColors.commonBlack,
               onTap: () async {
+                if (_isButtonDisabled) return; // ignore clicks when disabled
+
+                setState(() {
+                  _isButtonDisabled = true; // disable the button immediately
+                });
                 if (_formKey.currentState!.validate()) {
                   await controller.ninScreen(
+                    fromCompleteScreen: widget.fromCompleteScreens,
                     context,
                     frontImage.isNotEmpty ? File(frontImage) : null,
                     backImage.isNotEmpty ? File(backImage) : null,
@@ -375,6 +397,10 @@ class _NinScreensState extends State<NinScreens> {
                 //   context,
                 //   MaterialPageRoute(builder: (_) => DriverLicense()),
                 // );
+
+                setState(() {
+                  _isButtonDisabled = false;
+                });
               },
               text: "Save & Next",
             ),

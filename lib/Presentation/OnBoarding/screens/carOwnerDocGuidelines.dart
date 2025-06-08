@@ -1,10 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/texts.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
-import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/texts.dart';
+import '../../../Core/Utility/images.dart';
+import '../../Authentication/widgets/textFields.dart';
+import '../widgets/bottomNavigation.dart';
 import 'package:image_picker/image_picker.dart';
 
 class CarOwnerDocGuideLines extends StatefulWidget {

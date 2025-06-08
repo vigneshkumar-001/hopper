@@ -57,15 +57,15 @@ class OtpVerificationData {
   final String userStatus;
   final String token;
 
-  OtpVerificationData({
-    required this.userStatus,
-    required this.token,
-  });
+  OtpVerificationData({required this.userStatus, required this.token});
 
   factory OtpVerificationData.fromJson(Map<String, dynamic> json) {
     return OtpVerificationData(
       userStatus: json['userStatus'] ?? '',
       token: json['token'] ?? '',
     );
+  }
+  Map<String, dynamic> toJson() {
+    return {'userStatus': userStatus, 'token': token};
   }
 }

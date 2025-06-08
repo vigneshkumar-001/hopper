@@ -1,23 +1,24 @@
 import 'dart:convert';
-
 import 'dart:io';
-import 'package:hopper/Core/Constants/log.dart';
-import 'package:hopper/Presentation/Authentication/models/loginResponse.dart';
-import 'package:hopper/Presentation/Authentication/models/otp_response.dart';
-import 'package:hopper/Presentation/OnBoarding/models/baseinfo_response.dart';
-import 'package:hopper/Presentation/OnBoarding/models/chooseservice_model.dart';
-import 'package:hopper/Presentation/OnBoarding/models/getuserdetails_models.dart';
-import 'package:hopper/Presentation/OnBoarding/models/guidelines_Models.dart';
-import 'package:hopper/Presentation/OnBoarding/models/stateList_Models.dart';
-import 'package:hopper/Presentation/OnBoarding/models/userImage_models.dart';
-import 'package:hopper/Presentation/OnBoarding/models/yearandcolor_Models.dart';
-import 'package:hopper/api/repository/api_constents.dart';
-import 'package:hopper/api/repository/request.dart';
-import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
+
+import 'package:dartz/dartz.dart';
+import 'package:dio/dio.dart';
+import '../../Core/Constants/log.dart';
+import '../../Presentation/Authentication/models/loginResponse.dart';
+import '../../Presentation/Authentication/models/otp_response.dart';
+import '../../Presentation/OnBoarding/models/baseinfo_response.dart';
+import '../../Presentation/OnBoarding/models/chooseservice_model.dart';
+import '../../Presentation/OnBoarding/models/getuserdetails_models.dart';
+import '../../Presentation/OnBoarding/models/guidelines_Models.dart';
+import '../../Presentation/OnBoarding/models/stateList_Models.dart';
+import '../../Presentation/OnBoarding/models/userImage_models.dart';
+import '../../Presentation/OnBoarding/models/yearandcolor_Models.dart';
+import '../repository/api_constents.dart';
+import '../repository/request.dart';
+import '../../utils/sharedprefsHelper/sharedprefs_handler.dart';
+
 import '../../Presentation/Authentication/controller/authController.dart';
 import '../repository/failure.dart';
-import 'package:dio/dio.dart';
-import 'package:dartz/dartz.dart';
 
 abstract class BaseApiDataSource {
   Future<Either<Failure, LoginResponse>> mobileNumberLogin(
@@ -93,7 +94,39 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
-  Future<Either<Failure, LoginResponse>> googleSignInWithFirebase({
+  Future<Either<Failure, LoginResponse>> emailLogin(String emailId) async {
+    try {
+      String url = ApiConstents.loginApi;
+
+      dynamic response = await Request.sendRequest(
+        url,
+        {"type": "email", "email": emailId},
+        'Post',
+        false,
+      );
+
+      if (response.statusCode == 200) {
+        if (response.data['status'] == 200) {
+          return Right(LoginResponse.fromJson(response.data));
+        } else {
+          return Left(
+            ServerFailure(response.data['message'] ?? "Login failed"),
+          );
+        }
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(response.data['message'] ?? "Unexpected error"),
+        );
+      } else {
+        return Left(ServerFailure("Unknown error occurred"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, OtpResponse>> googleSignInWithFirebase({
     required String uniqueId,
     required String email,
   }) async {
@@ -115,7 +148,7 @@ class ApiDataSource extends BaseApiDataSource {
 
       if (response.statusCode == 200) {
         if (response.data['status'] == 200) {
-          return Right(LoginResponse.fromJson(response.data));
+          return Right(OtpResponse.fromJson(response.data));
         } else {
           return Left(
             ServerFailure(response.data['message'] ?? "Login failed"),
@@ -172,16 +205,56 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
-  Future<Either<Failure, OtpResponse>> resendOtp(
-    String mobileNumber,
+  Future<Either<Failure, OtpResponse>> emailOtp(
     String otp,
+    String email,
   ) async {
     try {
       String url = ApiConstents.verifyOtp;
 
       dynamic response = await Request.sendRequest(
         url,
-        {"mobileNumber": mobileNumber},
+
+        {"email": email, "otp": otp, "type": "email"},
+        'Post',
+        false,
+      );
+      CommonLogger.log.i(response);
+      if (response is Response && response.statusCode == 200) {
+        if (response.data['status'] == 200) {
+          return Right(OtpResponse.fromJson(response.data));
+        } else {
+          return Left(
+            ServerFailure(response.data['message'] ?? "Login failed"),
+          );
+        }
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(response.data['message'] ?? "Unexpected error"),
+        );
+      } else {
+        return Left(ServerFailure("Unknown error occurred"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, OtpResponse>> resendOtp(
+    String mobileNumber,
+    // String otp,
+  ) async {
+    try {
+      String url = ApiConstents.resendOTP;
+
+      dynamic response = await Request.sendRequest(
+        url,
+        {
+          "type": "Mobile", //or email,
+          "mobileNumber": mobileNumber, //email:"nnxnx@mml.com",
+          "countryCode": countryCodes,
+        },
         'Post',
         false,
       );
@@ -287,7 +360,7 @@ class ApiDataSource extends BaseApiDataSource {
           "type": "Basic Info",
           "data": {
             "firstName": name,
-            "lastName": name,
+            "lastName": lastName,
             "dob": dateOfBirth,
             "mobileNumber": mobileNumber,
             "countryCode": countryCode,
@@ -466,6 +539,7 @@ class ApiDataSource extends BaseApiDataSource {
   Future<Either<Failure, ChooseServiceModel>> ninVerification({
     required String ninNumber,
     required String frontImage,
+    required String binNumber,
     required String backImage,
   }) async {
     try {
@@ -476,6 +550,7 @@ class ApiDataSource extends BaseApiDataSource {
         {
           "type": "NIN Verification",
           "data": {
+            "bankVerificationNumber": binNumber,
             "nationalIdNumber": ninNumber,
             "frontIdCardNin": frontImage,
             "backIdCardNin": backImage,

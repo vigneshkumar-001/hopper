@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:hopper/Core/Utility/images.dart';
+import 'images.dart';
 
 class Buttons {
   static final Buttons _singleton = Buttons._internal();

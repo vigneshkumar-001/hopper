@@ -1,3 +1,5 @@
+import 'package:flutter/cupertino.dart';
+
 class AppTexts {
   static String carText =
       'Drive passengers & earn on your schedule. Your vehicle, your freedom. Set your own hours, maximise your income.';
@@ -12,10 +14,8 @@ class AppTexts {
   static String BasicInfo = "Basic Info";
   static String awaitingReview = "Awaiting Review";
   static String importantNotice = "Important Notice";
-  static String consentCheckBoxContent =
-      "By checking this box, I confirm I have reviewed all my submitted documents, verified their validity, and agree to maintain current documentation throughout my partnership with Hoppr.";
-  static String consentAgreement =
-      "Providing false documents or information may result in immediate rejection of your application, termination of your driver account, and possible legal consequences.";
+  static String consentCheckBoxContent = "By checking this box, I confirm I have reviewed all my submitted documents, verified their validity, and agree to maintain current documentation throughout my partnership with Hoppr.";
+  static String consentAgreement = "Providing false documents or information may result in immediate rejection of your application, termination of your driver account, and possible legal consequences.";
   static String iHereByConfirmAndAgree = "I hereby confirm and agree that:";
   static String vehicleDetails = "Vehicle Details";
   static String carOwnershipDetails = "Car Ownership Details";
@@ -30,10 +30,10 @@ class AppTexts {
   static String consentContent =
       "By proceeding, I acknowledge and consent that all documents and information submitted as part of my application will be verified and processed by Hoppr. This includes:";
   static String uploadExteriorContent =
-      "Upload at least 4 photos of your vehicle exterior. Make sure the number plate is clearly visible in one photo.";
+      "Upload 6 photos of your vehicle exterior. Make sure the number plate is clearly visible in one photo.";
   static String requirements = "Requirements:";
   static String limitPhotos =
-      "Upload at least 4 photos of your vehicle interior. Include clear shots of the dashboard and seats.";
+      "Upload  6 photos of your vehicle interior. Include clear shots of the dashboard and seats.";
   static String requirementsContents1 =
       "Clear front-facing photo against a plain background with no accessories/objects";
   static String requirementsContents2 =
@@ -51,8 +51,7 @@ class AppTexts {
   static String avoidRejectionContent3 =
       "Includes sufficient space above the head and upper body";
   static String idNumber = "Identity Verification";
-  static String awaitingContent =
-      "Thank you for your time in completing this process. Your application has been received and is being processed by the Hoppr Admin team.";
+  static String awaitingContent = "Thank you for your time in completing this process. Your application has been received and is being processed by the Hoppr Admin team.";
 
   static String sampleDocument = "Sample Document";
   static String ninDocContent1 = "Full 11-digit NIN number visible";
