@@ -34,7 +34,8 @@ class _ExteriorDocGuideLinesState extends State<ExteriorDocGuideLines> {
     return Scaffold(
       body: Obx(() {
         if (controller.isLoading.value) {
-          return Center(child: Image.asset(AppImages.animation));
+          return Center(child: Image.asset(AppImages.animation, height: 100,
+            width: 100,));
         }
 
         if (controller.guidelinesList.isEmpty) {
@@ -136,7 +137,7 @@ class _ExteriorDocGuideLinesState extends State<ExteriorDocGuideLines> {
         onTap: () {
           Navigator.pop(context);
         },
-        title: 'Take a Photo',
+        title: Text('Take a Photo'),
       ),
     );
   }

@@ -13,7 +13,7 @@ class CustomTextfield {
 
   static textField({
     required String tittle,
-    required GlobalKey<FormState>? formKey,
+    GlobalKey<FormState>? formKey,
     required String hintText,
     TextEditingController? controller,
     TextInputType? type,
@@ -32,11 +32,14 @@ class CustomTextfield {
         ),
         SizedBox(height: 8),
         TextFormField(
+          cursorColor: Colors.black,
+
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           onChanged: (value) {
             // Call the passed onChanged if exists
-            if (onChanged != null) onChanged(value);
-            // Then trigger form validation if formKey is provided
-            formKey?.currentState?.validate();
+            // if (onChanged != null) onChanged(value);
+            // // Then trigger form validation if formKey is provided
+            // formKey?.currentState?.validate();
           },
           inputFormatters: inputFormatters,
           keyboardType: type,
@@ -65,7 +68,7 @@ class CustomTextfield {
             ),
             focusedErrorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color:  AppColors.errorRed, width: 1.5),
+              borderSide: BorderSide(color: AppColors.errorRed, width: 1.5),
             ),
           ),
           validator: validator,
@@ -93,6 +96,7 @@ class CustomTextfield {
         ),
         SizedBox(height: 8),
         TextFormField(
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           validator: validator,
           controller: controller,
           style: TextStyle(
@@ -105,10 +109,19 @@ class CustomTextfield {
           decoration: InputDecoration(
             hintText: hintText,
             hintStyle: TextStyle(color: Color(0xff666666)),
-            border: OutlineInputBorder(
-              borderSide: BorderSide(color: Color(0xffF1F1F1)),
+            suffixIcon: suffixIcon,
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.black),
             ),
-            suffixIcon: suffixIcon, // Optional
+            focusedBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.black, width: 2),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.red),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.red, width: 2),
+            ),
           ),
         ),
       ],
@@ -116,7 +129,7 @@ class CustomTextfield {
   }
 
   static datePickerField({
-    required GlobalKey<FormState> formKey, // add this line
+    required GlobalKey<FormState> formKey,
     String? Function(String?)? validator,
     required BuildContext context,
     required String title,
@@ -133,6 +146,7 @@ class CustomTextfield {
         ),
         SizedBox(height: 8),
         TextFormField(
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           onChanged: onChanged,
           style: TextStyle(
             color: Color(0xff111111),
@@ -148,6 +162,12 @@ class CustomTextfield {
             focusedErrorBorder: const OutlineInputBorder(
               borderSide: BorderSide(color: Colors.red),
             ),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.black),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.black, width: 2),
+            ),
             hintText: hintText,
             hintStyle: TextStyle(color: Color(0xff666666)),
             border: OutlineInputBorder(
@@ -161,6 +181,19 @@ class CustomTextfield {
               initialDate: DateTime.now(),
               firstDate: DateTime(1900),
               lastDate: DateTime.now(),
+              builder: (context, child) {
+                return Theme(
+                  data: ThemeData.light().copyWith(
+                    primaryColor: Colors.blue, // Header color
+                    colorScheme: const ColorScheme.light(
+                      onPrimary: AppColors.commonWhite,
+                    ),
+                    dialogBackgroundColor:
+                        AppColors.commonWhite, // Background color
+                  ),
+                  child: child!,
+                );
+              },
             );
 
             if (pickedDate != null) {

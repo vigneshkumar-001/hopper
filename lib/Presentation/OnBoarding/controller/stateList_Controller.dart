@@ -158,6 +158,7 @@ class StateListController extends GetxController {
       },
       (response) {
         isLoading.value = false;
+        // CustomSnackBar.showSuccess( response. data.toString());
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => CompletedScreens()),

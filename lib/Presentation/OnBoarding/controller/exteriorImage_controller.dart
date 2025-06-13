@@ -138,7 +138,7 @@ class ExteriorImageController extends GetxController {
         CustomSnackBar.showError(failure.message);
       },
       (success) {
-        CustomSnackBar.showSuccess(success.message);
+        // CustomSnackBar.showSuccess(success.message);
         // final selectedServices =
         //     Get.find<ChooseServiceController>()
         //         .userProfile

@@ -11,11 +11,11 @@ import '../../../Core/Utility/images.dart';
 import '../../Authentication/widgets/textFields.dart';
 import '../controller/guidelines_Controller.dart';
 import '../controller/nin_controller.dart';
-import 'driverLicense.dart';
+
 import 'ninGuidelines.dart';
 import '../widgets/linearProgress.dart';
 import '../../../utils/imagePath/imagePath.dart';
-import '../../../utils/init_Controller.dart';
+
 import 'package:image_picker/image_picker.dart';
 import 'package:get/get.dart';
 
@@ -53,12 +53,18 @@ class _NinScreensState extends State<NinScreens> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Obx(
-        () =>
-            controller.isLoading.value
-                ? Center(child: Image.asset(AppImages.animation))
-                : SingleChildScrollView(
-                  child: SafeArea(
+      body: SafeArea(
+        child: Obx(
+          () =>
+              controller.isLoading.value
+                  ? Center(
+                    child: Image.asset(
+                      AppImages.animation,
+                      height: 100,
+                      width: 100,
+                    ),
+                  )
+                  : SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -176,12 +182,14 @@ class _NinScreensState extends State<NinScreens> {
                                     }
                                   },
                                   child: DottedBorder(
-                                     options: RoundedRectDottedBorderOptions(  color: const Color(
-                                      0xff666666,
-                                    ).withOpacity(0.3),
-                                    radius: const Radius.circular(10),
-                                    dashPattern: const [7, 4],
-                                    strokeWidth: 1.5,),
+                                    options: RoundedRectDottedBorderOptions(
+                                      color: const Color(
+                                        0xff666666,
+                                      ).withOpacity(0.3),
+                                      radius: const Radius.circular(10),
+                                      dashPattern: const [7, 4],
+                                      strokeWidth: 1.5,
+                                    ),
                                     child: Container(
                                       height: 120,
                                       padding: const EdgeInsets.all(10),
@@ -294,12 +302,14 @@ class _NinScreensState extends State<NinScreens> {
                                     }
                                   },
                                   child: DottedBorder(
-                                    options: RoundedRectDottedBorderOptions(  color: const Color(
-                                      0xff666666,
-                                    ).withOpacity(0.3),
-                                    radius: const Radius.circular(10),
-                                    dashPattern: const [7, 4],
-                                    strokeWidth: 1.5,),
+                                    options: RoundedRectDottedBorderOptions(
+                                      color: const Color(
+                                        0xff666666,
+                                      ).withOpacity(0.3),
+                                      radius: const Radius.circular(10),
+                                      dashPattern: const [7, 4],
+                                      strokeWidth: 1.5,
+                                    ),
                                     child: Container(
                                       height: 120,
                                       padding: const EdgeInsets.all(10),
@@ -371,42 +381,46 @@ class _NinScreensState extends State<NinScreens> {
                       ),
                     ),
                   ),
-                ),
-      ),
-      bottomNavigationBar: BottomAppBar(
-        color: AppColors.commonWhite,
-        child: Column(
-          children: [
-            Buttons.button(
-              buttonColor: AppColors.commonBlack,
-              onTap: () async {
-                if (_isButtonDisabled) return; // ignore clicks when disabled
-
-                setState(() {
-                  _isButtonDisabled = true; // disable the button immediately
-                });
-                if (_formKey.currentState!.validate()) {
-                  await controller.ninScreen(
-                    fromCompleteScreen: widget.fromCompleteScreens,
-                    context,
-                    frontImage.isNotEmpty ? File(frontImage) : null,
-                    backImage.isNotEmpty ? File(backImage) : null,
-                  );
-                }
-                // Navigator.push(
-                //   context,
-                //   MaterialPageRoute(builder: (_) => DriverLicense()),
-                // );
-
-                setState(() {
-                  _isButtonDisabled = false;
-                });
-              },
-              text: "Save & Next",
-            ),
-          ],
         ),
       ),
+      bottomNavigationBar:
+          controller.isLoading.value
+              ? null
+              : BottomAppBar(
+                color: AppColors.commonWhite,
+                child: Column(
+                  children: [
+                    Buttons.button(
+                      buttonColor: AppColors.commonBlack,
+                      onTap: () async {
+                        if (_isButtonDisabled) return;
+
+                        setState(() {
+                          _isButtonDisabled = true;
+                        });
+                        if (_formKey.currentState!.validate()) {
+                          await controller.ninScreen(
+                            fromCompleteScreen: widget.fromCompleteScreens,
+                            context,
+                            frontImage.isNotEmpty ? File(frontImage) : null,
+                            backImage.isNotEmpty ? File(backImage) : null,
+                          );
+                        }
+                        // Navigator.push(
+                        //   context,
+                        //   MaterialPageRoute(builder: (_) => DriverLicense()),
+                        // );
+
+                        setState(() {
+                          _isButtonDisabled = false;
+                        });
+                      },
+
+                      text: Text('Save & Next'),
+                    ),
+                  ],
+                ),
+              ),
     );
   }
 }

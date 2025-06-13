@@ -52,7 +52,13 @@ class _OtpScreensState extends State<OtpScreens> {
       body: Obx(
         () =>
             controller.isLoading.value
-                ? Center(child: CircularProgressIndicator())
+                ? Center(
+                  child: Image.asset(
+                    AppImages.animation,
+                    height: 100,
+                    width: 100,
+                  ),
+                )
                 : SingleChildScrollView(
                   child: SafeArea(
                     child: Padding(
@@ -172,7 +178,8 @@ class _OtpScreensState extends State<OtpScreens> {
                               ),
                             ),
                             onPressed: () {
-                              controller.resendOtp(widget.mobileNumber);
+                              String email  = widget.email ?? '';
+                              controller.resendOtp(widget.mobileNumber,email,widget.emailVerify ?? '');
                             },
                             child: Text('Resend code via SMS'),
                           ),
@@ -204,7 +211,8 @@ class _OtpScreensState extends State<OtpScreens> {
                   ),
                 ),
       ),
-      bottomNavigationBar: CommonBottomNavigationBar(
+      bottomNavigationBar:  controller.isLoading.value ? null :
+      CommonBottomNavigationBar(
         onBackPressed: () => Navigator.pop(context),
         // onNextPressed: () async {
         //   if (formKey.currentState!.validate()) {
@@ -231,8 +239,11 @@ class _OtpScreensState extends State<OtpScreens> {
           }
 
           try {
-            if (widget.type == "basicInfo" && widget.emailVerify == "Email") {
+            if (widget.type ==
+                "basicInfo" /* && widget.emailVerify == "Email"*/ ) {
               await controller.emailVerifyOtp(
+                emailOrMobile:
+                    widget.emailVerify == "Email" ? "email" : "Mobile",
                 email: widget.email ?? '',
                 context,
                 verifyCode,

@@ -141,14 +141,14 @@ class _CompletedScreensState extends State<CompletedScreens> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Obx(() {
-        final user = controller.userProfile.value;
-        final steps = getSteps();
+      body: SafeArea(
+        child: Obx(() {
+          final user = controller.userProfile.value;
+          final steps = getSteps();
 
-        return user == null
-            ? Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-              child: SafeArea(
+          return user == null
+              ? Center(child: CircularProgressIndicator())
+              : SingleChildScrollView(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -240,41 +240,95 @@ class _CompletedScreensState extends State<CompletedScreens> {
                               return GestureDetector(
                                 onTap: () {
                                   if (status == 2) navigateToStep(index);
+                                  print('Hi Iam Tapped');
                                 },
-                                child: Column(
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          data['title'],
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                          ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 5.0,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        data['title'],
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
                                         ),
-                                        Icon(
-                                          getIcon(status),
-                                          color: getIconColor(status),
-                                          size: 19,
-                                        ),
-                                      ],
-                                    ),
-                                    SizedBox(height: 5),
-                                  ],
+                                      ),
+                                      Icon(
+                                        getIcon(status),
+                                        color: getIconColor(status),
+                                        size: 19,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               );
                             },
                           ),
                         ),
                       ),
+
+                      // Container(
+                      //   decoration: BoxDecoration(
+                      //     color: Color(0xffF5F5F7),
+                      //     borderRadius: BorderRadius.circular(4),
+                      //     border: Border.all(color: Color(0xffD9D9D9)),
+                      //   ),
+                      //   child: Padding(
+                      //     padding: const EdgeInsets.symmetric(
+                      //       vertical: 20.0,
+                      //       horizontal: 16,
+                      //     ),
+                      //     child: ListView.separated(
+                      //       shrinkWrap: true,
+                      //       physics: NeverScrollableScrollPhysics(),
+                      //       itemCount: steps.length,
+                      //       separatorBuilder: (_, __) => Divider(),
+                      //       itemBuilder: (context, index) {
+                      //         final data = steps[index];
+                      //         final status = data['status'] ?? 0;
+                      //
+                      //         return GestureDetector(
+                      //           onTap: () {
+                      //             if (status == 2) navigateToStep(index);
+                      //           },
+                      //           child: Column(
+                      //             children: [
+                      //               Row(
+                      //                 mainAxisAlignment:
+                      //                     MainAxisAlignment.spaceBetween,
+                      //                 children: [
+                      //                   Text(
+                      //                     data['title'],
+                      //                     style: TextStyle(
+                      //                       fontSize: 14,
+                      //                       fontWeight: FontWeight.w500,
+                      //                     ),
+                      //                   ),
+                      //                   Icon(
+                      //                     getIcon(status),
+                      //                     color: getIconColor(status),
+                      //                     size: 19,
+                      //                   ),
+                      //                 ],
+                      //               ),
+                      //               SizedBox(height: 5),
+                      //             ],
+                      //           ),
+                      //         );
+                      //       },
+                      //     ),
+                      //   ),
+                      // ),
                     ],
                   ),
                 ),
-              ),
-            );
-      }),
+              );
+        }),
+      ),
     );
   }
 

@@ -66,11 +66,16 @@ class _UploadExteriorPhotosState extends State<UploadExteriorPhotos> {
     serviceType = controller.vehicleType.toString() ?? 'Car';
 
     return Scaffold(
-      appBar: AppBar(backgroundColor: AppColors.commonWhite),
       body: Obx(
         () =>
             controller.isLoading.value
-                ? Center(child: Image.asset(AppImages.animation))
+                ? Center(
+                  child: Image.asset(
+                    AppImages.animation,
+                    height: 100,
+                    width: 100,
+                  ),
+                )
                 : SingleChildScrollView(
                   child: SafeArea(
                     child: Padding(
@@ -161,12 +166,14 @@ class _UploadExteriorPhotosState extends State<UploadExteriorPhotos> {
                                         }
                                       },
                                       child: DottedBorder(
-                                     options: RoundedRectDottedBorderOptions(  color: const Color(
-                                      0xff666666,
-                                    ).withOpacity(0.3),
-                                    radius: const Radius.circular(10),
-                                    dashPattern: const [6, 4],
-                                    strokeWidth: 1.5,),
+                                        options: RoundedRectDottedBorderOptions(
+                                          color: const Color(
+                                            0xff666666,
+                                          ).withOpacity(0.3),
+                                          radius: const Radius.circular(10),
+                                          dashPattern: const [6, 4],
+                                          strokeWidth: 1.5,
+                                        ),
                                         child: Container(
                                           height: 130,
                                           width: 97,
@@ -272,7 +279,7 @@ class _UploadExteriorPhotosState extends State<UploadExteriorPhotos> {
       //   },
       //   title: 'Save & Next',
       // ),
-      bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
+      bottomNavigationBar:controller.isLoading.value ? null : CustomBottomNavigation.bottomNavigation(
         buttonColor:
             isButtonDisabled
                 ? Colors.grey
@@ -311,7 +318,7 @@ class _UploadExteriorPhotosState extends State<UploadExteriorPhotos> {
                   // You can re-enable it if needed:
                   // setState(() => isButtonDisabled = false);
                 },
-        title: 'Save & Next',
+        title: Text('Save & Next'),
       ),
     );
   }

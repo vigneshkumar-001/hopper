@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:hopper/Presentation/Authentication/screens/GetStarted_Screens.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 
 import 'Core/Utility/images.dart';
 import 'Presentation/Authentication/screens/Landing_Screens.dart';
+import 'package:get/get.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -11,17 +14,35 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  final ChooseServiceController controller = Get.find();
+  Future<void> loadAndNavigate() async {
+    await controller.getUserDetails();
+    // await Future.delayed(const Duration(seconds: 2));
+
+    // Use mounted check to avoid calling context after dispose
+    // if (!mounted) return;
+    //
+    // controller.handleLandingPageNavigation(context);
+
+  }
+
+  Future<void> getUserDetail() async {
+    await controller.getUserDetails();
+    controller.getUserDetails();
+  }
 
   @override
   void initState() {
     super.initState();
-
-    Future.delayed(const Duration(seconds: 2), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LandingScreens()),
-      );
-    });
+    print('Iam Calling');
+    //getUserDetail();
+     loadAndNavigate();
+     Future.delayed(const Duration(seconds: 3), () {
+       Navigator.pushReplacement(
+         context,
+         MaterialPageRoute(builder: (context) => const GetStartedScreens()),
+       );
+     });
   }
 
   @override

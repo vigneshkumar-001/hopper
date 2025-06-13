@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/basicInfo_controller.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/texts.dart';
 import '../../../Core/Utility/Buttons.dart';
@@ -32,17 +34,26 @@ class DocUpLoadPic extends StatefulWidget {
 
 class _DocUpLoadPicState extends State<DocUpLoadPic> {
   final GuidelinesController controller = Get.put(GuidelinesController());
+  final ChooseServiceController userController = Get.put(
+    ChooseServiceController(),
+  );
+  final BasicInfoController  basicInfoController = Get.put(BasicInfoController());
+
   @override
   void initState() {
     super.initState();
     controller.guideLines('profile-pic');
+    userController.getUserDetails();
+    basicInfoController.fetchAndSetUserData();
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Obx(() {
         if (controller.guidelinesList.isEmpty) {
-          return Center(child: Image.asset(AppImages.animation));
+          return Center(child: Image.asset(AppImages.animation, height: 100,
+            width: 100,));
         }
 
         final guideline = controller.guidelinesList.first;
@@ -132,13 +143,12 @@ class _DocUpLoadPicState extends State<DocUpLoadPic> {
 
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         onTap: () {
-
-           Navigator.push(
-             context,
-             MaterialPageRoute(builder: (context) => TakePicture()),
-           );
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ProfilePicAccess()),
+          );
         },
-        title: 'Take a Photo',
+        title: Text('Take a Photo'),
       ),
     );
   }

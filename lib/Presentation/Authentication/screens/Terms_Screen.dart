@@ -28,11 +28,16 @@ class _TermsScreenState extends State<TermsScreen> {
     controller.getUserDetails();
   }
 
+  Future<void> loadAndNavigate() async {
+    await controller.getUserDetails();
+    controller.handleLandingPageNavigation(Get.context!);
+  }
+
   @override
   void initState() {
     super.initState();
     getUserDetail();
-    // loadAndNavigate();
+    //loadAndNavigate();
   }
 
   bool isChecked = false;
@@ -85,38 +90,38 @@ class _TermsScreenState extends State<TermsScreen> {
         height: 120.h,
         onBackPressed: () => Navigator.pop(context),
 
-       // onNextPressed: () {
-       //   if (isChecked == false) {
-       //     CustomSnackBar.showInfo('Please Accept terms and condition');
-       //   } else {
-       //     Navigator.push(
-       //       context,
-       //       MaterialPageRoute(builder: (context) => ChooseService()),
-       //     );
-       //   }
-       // },
-    onNextPressed: () {
-      if (isChecked && !isNextClicked) {
-        setState(() {
-          isNextClicked = true;
-        });
-        final nextPage =
-            widget.type == 'googleSignIn'
-                ? ProcessingScreen(type: 'googleSignIn')
-                : ProcessingScreen();
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => nextPage),
-        ).then((_) {
-          setState(() {
-            isNextClicked = false;
-          });
-        });
-      } else if (!isChecked) {
-        CustomSnackBar.showInfo('Please Accept terms and condition');
-      }
-      // else (isNextClicked true) do nothing to disable repeated clicks
-    },
+        // onNextPressed: () {
+        //   if (isChecked == false) {
+        //     CustomSnackBar.showInfo('Please Accept terms and condition');
+        //   } else {
+        //     Navigator.push(
+        //       context,
+        //       MaterialPageRoute(builder: (context) => ChooseService()),
+        //     );
+        //   }
+        // },
+        onNextPressed: () {
+          if (isChecked && !isNextClicked) {
+            setState(() {
+              isNextClicked = true;
+            });
+            final nextPage =
+                widget.type == 'googleSignIn'
+                    ? ProcessingScreen(type: 'googleSignIn')
+                    : ProcessingScreen();
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => nextPage),
+            ).then((_) {
+              setState(() {
+                isNextClicked = false;
+              });
+            });
+          } else if (!isChecked) {
+            CustomSnackBar.showInfo('Please Accept terms and condition');
+          }
+          // else (isNextClicked true) do nothing to disable repeated clicks
+        },
         backgroundColor: Colors.white,
         buttonColor:
             isChecked ? AppColors.commonBlack : AppColors.containerColor,

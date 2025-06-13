@@ -59,7 +59,7 @@ class BasicInfoController extends GetxController {
         },
         (response) async {
           isLoading.value = false;
-          CustomSnackBar.showSuccess(response.message);
+          // CustomSnackBar.showSuccess(response.message);
           if (fromCompleteScreen) {
             Navigator.pop(context);
           } else {

@@ -17,25 +17,27 @@ class DriverDocGuideLines extends StatefulWidget {
 }
 
 class _DriverDocGuideLinesState extends State<DriverDocGuideLines> {
-
   final GuidelinesController controller = Get.put(GuidelinesController());
   @override
   void initState() {
     super.initState();
     controller.guideLines('driver-license');
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Obx(() {
-        if (controller.guidelinesList.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
+      body: SafeArea(
+        child: Obx(() {
+          if (controller.guidelinesList.isEmpty) {
+            return const Center(
+              child: CircularProgressIndicator(color: AppColors.commonBlack),
+            );
+          }
 
-        final guideline = controller.guidelinesList.first;
+          final guideline = controller.guidelinesList.first;
 
-        return SingleChildScrollView(
-          child: SafeArea(
+          return SingleChildScrollView(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 25),
               child: Column(
@@ -113,9 +115,9 @@ class _DriverDocGuideLinesState extends State<DriverDocGuideLines> {
                 ],
               ),
             ),
-          ),
-        );
-      }),
+          );
+        }),
+      ),
 
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         onTap: () {
@@ -125,7 +127,7 @@ class _DriverDocGuideLinesState extends State<DriverDocGuideLines> {
           //   MaterialPageRoute(builder: (context) => ChooseService()),
           // );
         },
-        title: 'Take a Photo',
+        title: Text('Take a Photo'),
       ),
     );
   }

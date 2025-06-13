@@ -1,24 +1,27 @@
 import 'dart:convert';
+import 'dart:developer';
+
 import 'dart:io';
-
-import 'package:dartz/dartz.dart';
-import 'package:dio/dio.dart';
-import '../../Core/Constants/log.dart';
-import '../../Presentation/Authentication/models/loginResponse.dart';
-import '../../Presentation/Authentication/models/otp_response.dart';
-import '../../Presentation/OnBoarding/models/baseinfo_response.dart';
-import '../../Presentation/OnBoarding/models/chooseservice_model.dart';
-import '../../Presentation/OnBoarding/models/getuserdetails_models.dart';
-import '../../Presentation/OnBoarding/models/guidelines_Models.dart';
-import '../../Presentation/OnBoarding/models/stateList_Models.dart';
-import '../../Presentation/OnBoarding/models/userImage_models.dart';
-import '../../Presentation/OnBoarding/models/yearandcolor_Models.dart';
-import '../repository/api_constents.dart';
-import '../repository/request.dart';
-import '../../utils/sharedprefsHelper/sharedprefs_handler.dart';
-
+import 'package:hopper/Core/Constants/log.dart';
+import 'package:hopper/Presentation/Authentication/models/loginResponse.dart';
+import 'package:hopper/Presentation/Authentication/models/otp_response.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
+import 'package:hopper/Presentation/OnBoarding/models/baseinfo_response.dart';
+import 'package:hopper/Presentation/OnBoarding/models/chooseservice_model.dart';
+import 'package:hopper/Presentation/OnBoarding/models/getuserdetails_models.dart';
+import 'package:hopper/Presentation/OnBoarding/models/guidelines_Models.dart';
+import 'package:hopper/Presentation/OnBoarding/models/stateList_Models.dart';
+import 'package:hopper/Presentation/OnBoarding/models/userImage_models.dart';
+import 'package:hopper/Presentation/OnBoarding/models/yearandcolor_Models.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
+import 'package:hopper/api/repository/api_constents.dart';
+import 'package:hopper/api/repository/request.dart';
+import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../Presentation/Authentication/controller/authController.dart';
 import '../repository/failure.dart';
+import 'package:dio/dio.dart';
+import 'package:dartz/dartz.dart';
 
 abstract class BaseApiDataSource {
   Future<Either<Failure, LoginResponse>> mobileNumberLogin(
@@ -96,7 +99,7 @@ class ApiDataSource extends BaseApiDataSource {
 
   Future<Either<Failure, LoginResponse>> emailLogin(String emailId) async {
     try {
-      String url = ApiConstents.loginApi;
+      String url = ApiConstents.resendOTP;
 
       dynamic response = await Request.sendRequest(
         url,
@@ -205,20 +208,30 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
-  Future<Either<Failure, OtpResponse>> emailOtp(
-    String otp,
-    String email,
+  Future<Either<Failure, OtpResponse>> emailOtp({
+    required String otp,
+    required String email,
+    required String type,
+}
+
   ) async {
     try {
-      String url = ApiConstents.verifyOtp;
+      String url = ApiConstents.verifyOtpProtect;
 
-      dynamic response = await Request.sendRequest(
-        url,
+      Map<String, dynamic> data;
 
-        {"email": email, "otp": otp, "type": "email"},
-        'Post',
-        false,
-      );
+      if (type == "email") {
+        data = {"email": email, "otp": otp, "type": "email"};
+      } else {
+        data = {
+          "countryCode": countryCodes,
+          "mobileNumber": getMobileNumber,
+          "otp": otp,
+          "type": "Mobile",
+        };
+      }
+
+      dynamic response = await Request.sendRequest(url, data, 'Post', true);
       CommonLogger.log.i(response);
       if (response is Response && response.statusCode == 200) {
         if (response.data['status'] == 200) {
@@ -242,24 +255,37 @@ class ApiDataSource extends BaseApiDataSource {
   }
 
   Future<Either<Failure, OtpResponse>> resendOtp(
-    String mobileNumber,
+    String mobileNumber,{
+      String? type,
+      required String email ,
+  }
     // String otp,
   ) async {
     try {
       String url = ApiConstents.resendOTP;
+      Map<String, dynamic> data;
 
-      dynamic response = await Request.sendRequest(
-        url,
-        {
+      if (type == "Email") {
+        data = {
+          "type": "email",
+          "email": email,
+
+        };
+      }else{
+        data = {
           "type": "Mobile", //or email,
           "mobileNumber": mobileNumber, //email:"nnxnx@mml.com",
           "countryCode": countryCodes,
-        },
+        };
+      }
+      dynamic response = await Request.sendRequest(
+        url,
+        data,
         'Post',
         false,
       );
       if (response is Response && response.statusCode == 200) {
-        if (response.data['status'] == "200") {
+        if (response.data['status'] == 200) {
           final result = OtpResponse.fromJson(response.data);
           return Right(result);
         } else {

@@ -28,8 +28,8 @@ class _ConsentFormsState extends State<ConsentForms> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SingleChildScrollView(
-        child: SafeArea(
+      body: SafeArea(
+        child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
             child: Column(
@@ -219,22 +219,23 @@ class _ConsentFormsState extends State<ConsentForms> {
         ),
       ),
       bottomNavigationBar: Obx(() {
-        if (controller.isLoading.value) {
-          return Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: SizedBox(
-              height: 48,
-              child: Center(child: CircularProgressIndicator()),
-            ),
-          );
-        }
+        final isLoading = controller.isLoading.value;
+        final buttonEnabled = isChecked && !isLoading;
 
-        final buttonEnabled = isChecked; // true if checked, false otherwise
         final buttonColor =
-            buttonEnabled ? AppColors.commonBlack : AppColors.containerColor;
-
+            isLoading
+                ? Colors.white
+                : isChecked
+                ? AppColors.commonBlack
+                : AppColors.containerColor;
         return CustomBottomNavigation.bottomNavigation(
-          title: "Send for Verification",
+          foreGroundColor:
+              controller.isLoading.value ? Colors.black : Colors.white,
+
+          title:
+              controller.isLoading.value
+                  ? Image.asset(AppImages.animation)
+                  : Text("Send for Verification"),
           buttonColor: buttonColor,
           onTap: () {
             if (!isChecked) {
@@ -245,36 +246,6 @@ class _ConsentFormsState extends State<ConsentForms> {
           },
         );
       }),
-
-      // bottomNavigationBar: Obx(
-      //   () =>
-      //       controller.isLoading.value
-      //           ? Padding(
-      //             padding: const EdgeInsets.all(16.0),
-      //             child: SizedBox(
-      //               height: 48,
-      //               child: Center(child: CircularProgressIndicator()),
-      //             ),
-      //           )
-      //           : CustomBottomNavigation.bottomNavigation(
-      //             title: "Send for Verification",
-      //             onTap: () {
-      //               if (!isChecked) {
-      //                 CustomSnackBar.showInfo(
-      //                   'Please agree to the terms to proceed.',
-      //                 );
-      //                 // ScaffoldMessenger.of(context).showSnackBar(
-      //                 //   SnackBar(
-      //                 //     content: Text("Please agree to the terms to proceed."),
-      //                 //     backgroundColor: Colors.red,
-      //                 //   ),
-      //                 // );
-      //                 return;
-      //               }
-      //               controller.sendVerification(context);
-      //             },
-      //           ),
-      // ),
     );
   }
 }

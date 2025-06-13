@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hopper/Core/Constants/Colors.dart';
 import '../../../Core/Constants/texts.dart';
 import '../../../Core/Utility/Buttons.dart';
 import '../../../Core/Utility/ModelBottomSheet.dart';
@@ -121,7 +122,10 @@ class _DriverAddressState extends State<DriverAddress> {
 
                       Get.dialog(
                         Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.commonBlack,
+                          ),
                         ),
                         barrierDismissible: false,
                       );
@@ -162,30 +166,27 @@ class _DriverAddressState extends State<DriverAddress> {
         ),
       ),
       bottomNavigationBar: Obx(
-        () =>
-            controller.isLoading.value
-                ? Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: SizedBox(
-                    height: 48,
-                    child: Center(child: CircularProgressIndicator()),
+        () => CustomBottomNavigation.bottomNavigation(
+          foreGroundColor:
+              controller.isLoading.value ? Colors.black : Colors.white,
+          buttonColor: controller.isLoading.value ? Colors.white : Colors.black,
+
+          title:
+              controller.isLoading.value
+                  ? Image.asset(AppImages.animation)
+                  : Text(
+                    "Save & Next",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                )
-                : CustomBottomNavigation.bottomNavigation(
-                  title: 'Save & Next',
-                  onTap: () async {
-                    if (_formKey.currentState!.validate()) {
-                      await controller.driverDetails(
-                        context,
-                        fromCompleteScreen: widget.fromCompleteScreens,
-                      );
-                      // Navigator.push(
-                      //   context,
-                      //   MaterialPageRoute(builder: (context) => DriverDocGuideLines()),
-                      // );
-                    }
-                  },
-                ),
+          onTap: () async {
+            if (_formKey.currentState!.validate()) {
+              await controller.driverDetails(
+                context,
+                fromCompleteScreen: widget.fromCompleteScreens,
+              );
+            }
+          },
+        ),
       ),
     );
   }

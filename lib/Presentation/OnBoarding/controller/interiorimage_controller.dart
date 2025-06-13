@@ -64,7 +64,6 @@ class InteriorImageController extends GetxController {
       }
     }
 
-    // Upload all URLs to backend
     final ninResult = await apiDataSource.uploadInteriorImage(
       imageUrls: uploadedUrls,
     );
@@ -74,7 +73,7 @@ class InteriorImageController extends GetxController {
         CustomSnackBar.showError(failure.message);
       },
       (success) {
-        CustomSnackBar.showSuccess(success.message);
+        // CustomSnackBar.showSuccess(success.message);
         if (fromCompleteScreen) {
           Navigator.pop(context);
         } else {

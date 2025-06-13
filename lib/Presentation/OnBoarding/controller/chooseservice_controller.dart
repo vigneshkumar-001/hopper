@@ -23,6 +23,7 @@ class ChooseServiceController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
   Rxn<GetUserProfileModel> userProfile = Rxn<GetUserProfileModel>();
   RxBool isLoading = false.obs;
+  RxBool isGetLoading = false.obs;
   RxString serviceType = ''.obs;
 
   @override
@@ -47,9 +48,9 @@ class ChooseServiceController extends GetxController {
           return failure.message; // from ServerFailure('...')
         },
         (response) async {
-
-          isLoading.value = false;
           await getUserDetails();
+          isLoading.value = false;
+
           serviceType.value = response.serviceType;
           CustomSnackBar.showSuccess(response.message);
 
@@ -65,18 +66,18 @@ class ChooseServiceController extends GetxController {
   }
 
   Future<GetUserProfileModel?> getUserDetails() async {
-    isLoading.value = true;
+    isGetLoading.value = true;
 
     try {
       final results = await apiDataSource.getUserDetails();
       return results.fold(
         (failure) {
-          isLoading.value = false;
+          isGetLoading.value = false;
           // CustomSnackBar.showError(failure.message);
           return null;
         },
         (response) {
-          isLoading.value = false;
+          isGetLoading.value = false;
           userProfile.value = response;
           CommonLogger.log.i(userProfile.value);
           CommonLogger.log.i(response);
@@ -86,14 +87,14 @@ class ChooseServiceController extends GetxController {
         },
       );
     } catch (e) {
-      isLoading.value = false;
+      isGetLoading.value = false;
       CustomSnackBar.showError("An error occurred");
       return null;
     }
   }
 
   void handleLandingPageNavigation(BuildContext context) {
-    final landingPage = userProfile.value?.landingPage ?? '';
+    final landingPage = userProfile.value?.landingPage  ;
 
     switch (landingPage) {
       case 0:
@@ -132,7 +133,7 @@ class ChooseServiceController extends GetxController {
       case 12:
         Get.offAll(() => ConsentForms());
         break;
-      case 13:
+      case 14:
         Get.offAll(() => CompletedScreens());
         break;
 

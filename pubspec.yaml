@@ -40,7 +40,7 @@ dependencies:
   camera: ^0.11.1
   permission_handler: ^12.0.0+1
   google_ml_kit: ^0.20.0
-  google_mlkit_face_detection: ^0.13.1
+#  google_mlkit_face_detection: ^0.13.1
   shared_preferences: ^2.5.3
   image: ^4.5.4
   image_picker: ^1.1.2
@@ -57,7 +57,7 @@ dependencies:
   firebase_core: ^3.13.1
   flutter_spinkit: ^5.2.1
   cupertino_icons: ^1.0.8
-  country_picker: ^2.0.27
+  country_picker: any
 
 dev_dependencies:
   flutter_test:
@@ -70,7 +70,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^6.0.0
+  flutter_lints: any
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

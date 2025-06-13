@@ -140,32 +140,40 @@ class _ChooseServiceState extends State<ChooseService> {
         ),
       ),
       bottomNavigationBar: Obx(
-        () =>
-            controller.isLoading.value
-                ? Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: SizedBox(
-                    height: 48,
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                )
-                : CustomBottomNavigation.bottomNavigation(
-                  title: 'Continue',
-              buttonColor: selectedService.isNotEmpty
-                  ? AppColors.commonBlack
-                  : Colors.grey.shade400, // disabled-looking colo
-                  onTap: () async {
-                    if (selectedService.isEmpty) {
-                      CommonLogger.log.e('Not Choosing Any');
-                      CustomSnackBar.showInfo('Choose your Service');
-                    } else {
-                      await controller.chooseServiceType(selectedService);
-                      await controller.getUserDetails();
+            () => CustomBottomNavigation.bottomNavigation(
+          foreGroundColor:
+          controller.isLoading.value ? Colors.black : Colors.white,
 
-                    }
-                  },
-                ),
+          title: controller.isLoading.value
+              ? Image.asset(AppImages.animation,)
+              : const Text('Continue'),
+
+          buttonColor: controller.isLoading.value
+              ? Colors.white
+              : selectedService.isNotEmpty
+              ? AppColors.commonBlack
+              : Colors.grey.shade400,
+
+          onTap: () async {
+            if (selectedService.isEmpty) {
+              CommonLogger.log.e('Not Choosing Any');
+              CustomSnackBar.showInfo('Choose your Service');
+            } else {
+              controller.isLoading.value = true; // Start loading
+              try {
+                await controller.chooseServiceType(selectedService);
+                await controller.getUserDetails();
+              } catch (e) {
+                CommonLogger.log.e('Error: $e');
+                CustomSnackBar.showError('Something went wrong');
+              } finally {
+                controller.isLoading.value = false; // Stop loading
+              }
+            }
+          },
+        ),
       ),
+
     );
   }
 }

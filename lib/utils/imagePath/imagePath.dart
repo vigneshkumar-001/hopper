@@ -7,7 +7,7 @@ class ImageUtils {
     final XFile? image = await _picker.pickImage(
       preferredCameraDevice: CameraDevice.rear,
       source: ImageSource.camera,
-      maxWidth: 1024, // Resize to lower resolution
+      maxWidth: 1024,
       maxHeight: 1024,
       imageQuality: 80,
     );

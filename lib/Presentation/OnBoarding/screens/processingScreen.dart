@@ -155,7 +155,8 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
                     MaterialPageRoute(builder: (context) => nextPage),
                   );
                 },
-                text: "Start Application",
+                text: Text('Start Application'),
+
               ),
             ],
           ),

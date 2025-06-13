@@ -28,5 +28,9 @@ class AppImages {
   static String splashScreen = "assets/images/Splash Screen.png";
   static String lock = "assets/images/lock.png";
   static String redExclamation = "assets/images/redExclamation.png";
-  static String animation = "assets/images/animation.gif";
+  static String animation = "assets/images/loading-light.gif";
+  static String carGif = "assets/images/carGif.gif";
+  static String loadingLightGif = "assets/images/loading-light.gif";
+  static String animation1 = "assets/images/animation.gif.gif";
+  static String loadingDarkGif = "assets/images/loading-dark.gif";
 }

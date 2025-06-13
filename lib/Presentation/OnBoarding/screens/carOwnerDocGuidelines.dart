@@ -40,7 +40,7 @@ class _CarOwnerDocGuideLinesState extends State<CarOwnerDocGuideLines> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(backgroundColor: AppColors.commonWhite),
+      // appBar: AppBar(backgroundColor: AppColors.commonWhite),
       body: SingleChildScrollView(
         child: SafeArea(
           child: Padding(
@@ -128,7 +128,7 @@ class _CarOwnerDocGuideLinesState extends State<CarOwnerDocGuideLines> {
           // _pickImage();
           Navigator.pop(context);
         },
-        title: 'Take a Photo',
+        title: Text('Take a Photo'),
       ),
     );
   }

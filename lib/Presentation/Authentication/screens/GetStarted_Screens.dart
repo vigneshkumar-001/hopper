@@ -5,12 +5,21 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:flutter/material.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/basicInfo.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/carOwnerShip.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/driverAddress.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/interiorUploadPhotos.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/ninScreens.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/profilePicAccess.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/uploadExteriorPhotos.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/vehicleDetails.dart';
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/log.dart';
 import '../../../Core/Utility/Buttons.dart';
 import '../../../Core/Utility/images.dart';
 import '../controller/authController.dart';
-
 
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:get/get.dart';
@@ -25,9 +34,12 @@ class GetStartedScreens extends StatefulWidget {
 }
 
 class _GetStartedScreensState extends State<GetStartedScreens> {
-  final AuthController controller = Get.find<AuthController>();
+  final AuthController controller = Get.put(AuthController());
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final ChooseServiceController chooseServiceController = Get.find();
   String flag = '';
+
+
   void showCountrySelector(BuildContext) {
     showCountryPicker(
       context: context,
@@ -44,6 +56,7 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
     super.initState();
     controller.selectedCountryCode.value = '+234';
     controller.countryCodeController.text = '+234';
+
   }
 
   List<String> scopes = <String>[
@@ -229,7 +242,7 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                           const SizedBox(width: 5),
                           Expanded(
                             flex: 4,
-                            child: TextField(
+                            child: TextFormField(
                               controller: controller.mobileNumber,
                               keyboardType: TextInputType.phone,
                               inputFormatters: [
@@ -245,6 +258,23 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                               ),
+                              // validator: (value) {
+                              //   final code = controller.selectedCountryCode.value;
+                              //
+                              //   if (value == null || value.isEmpty) {
+                              //     controller.errorText.value = 'Please enter your Mobile Number';
+                              //     return ''; // prevents default error message
+                              //   } else if (code == '+91' && value.length != 10) {
+                              //     controller.errorText.value = 'Indian numbers must be exactly 10 digits';
+                              //     return '';
+                              //   } else if (code == '+234' && value.length != 10) {
+                              //     controller.errorText.value = 'Nigerian numbers must be exactly 10 digits';
+                              //     return '';
+                              //   }
+                              //
+                              //   controller.errorText.value = ''; // clear previous error
+                              //   return null;
+                              // },
                               onChanged: (value) {
                                 final code =
                                     controller.selectedCountryCode.value;
@@ -284,171 +314,57 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                                 : const SizedBox(),
                       ),
 
-                      /*     Row(
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xffF1F1F1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: IntlPhoneField(
-                                decoration: const InputDecoration(
-                                  border: InputBorder.none,
-                                ),
-                                initialCountryCode: 'NG',
-                                onCountryChanged: (country) {
-                                  selectedCountryFlag = country.flag;
-                                  flag = country.dialCode;
-                                  controller.selectedCountryCode.value =
-                                      '+${country.dialCode}';
-                                  controller.countryCodeController.text =
-                                      '+${country.dialCode}';
-                                  print(
-                                    'Selected Country Code: +${country.dialCode}',
-                                  );
-                                  print('Selected flag ${flag}');
-                                },
-                                onChanged: (phone) {
-                                  controller.selectedCountryCode.value =
-                                      '+${phone.countryCode}';
-                                  controller.mobileNumber.text = phone.number;
-                                  print('Full Number: ${phone.completeNumber}');
-                                  print('Country Code: ${phone.countryCode}');
-                                },
-
-                                disableLengthCheck: true,
-                                showDropdownIcon: true,
-                                showCountryFlag: true,
-                                dropdownIconPosition: IconPosition.trailing,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Expanded(
-                            flex: 4,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xffF1F1F1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                              ),
-                              alignment: Alignment.centerLeft,
-                              child: TextFormField(
-                                // maxLength: 10,
-
-                                // validator: (value) {
-                                //   String code = controller.selectedCountryCode.value;
-                                //   if (value == null || value.isEmpty) {
-                                //     return 'Please enter your Mobile Number';
-                                //   }
-                                //   if (code == '+91' && value.length != 10) {
-                                //     return 'Indian numbers must be exactly 10 digits';
-                                //   } else if (code == '+234' && value.length != 11) {
-                                //     return 'Nigerian numbers must be exactly 11 digits';
-                                //   }
-                                //
-                                //   return null;
-                                //   // else if (value.length != 11) {
-                                //   //   return 'NIN must be exactly 11 digits';
-                                //   // }
-                                //   return null;
-                                // },
-                                controller: controller.mobileNumber,
-                                onChanged: (value) {
-                                  String code =
-                                      controller.selectedCountryCode.value;
-                                  if (value.isEmpty) {
-                                    controller.errorText.value =
-                                        'Please enter your Mobile Number';
-                                  } else if (code == '+91' &&
-                                      value.length != 10) {
-                                    controller.errorText.value =
-                                        'Indian numbers must be exactly 10 digits';
-                                  } else if (code == '+234' &&
-                                      value.length != 10) {
-                                    controller.errorText.value =
-                                        'Nigerian numbers must be exactly 10 digits';
-                                  } else {
-                                    controller.errorText.value = '';
-                                  }
-                                  _formKey.currentState?.validate();
-                                },
-                                keyboardType: TextInputType.number,
-                                inputFormatters: [
-                                  LengthLimitingTextInputFormatter(
-                                    maxPhoneLength,
-                                  ),
-                                  FilteringTextInputFormatter.digitsOnly,
-                                ],
-                                decoration: InputDecoration(
-                                  hintText: '0000 000 000',
-
-                                  border: InputBorder.none,
-                                ),
-                                style: TextStyle(color: Colors.black),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Obx(
-                            () =>
-                                controller.errorText.value.isNotEmpty
-                                    ? Text(
-                                      controller.errorText.value,
-                                      style: const TextStyle(
-                                        color: Colors.red,
-                                        fontSize: 12,
-                                      ),
-                                    )
-                                    : const SizedBox(),
-                          ),
-                        ],
-                      ),*/
                       SizedBox(height: 30),
                       Obx(() {
-                        return controller.isLoading.value
-                            ? const Center(child: CircularProgressIndicator())
-                            : Buttons.button(
-                              buttonColor: Colors.black,
-                              onTap: () async {
-                                if (_formKey.currentState!.validate()) {
-                                  await controller.login(context);
-                                  // Navigator.push(
-                                  //   context,
-                                  //   MaterialPageRoute(
-                                  //     builder:
-                                  //         (context) => OtpScreens(
-                                  //           mobileNumber:
-                                  //               controller.mobileNumber.text.trim(),
-                                  //         ),
-                                  //   ),
-                                  // );
-                                }
-                              },
-                              text: 'Continue',
-                            );
+                        return Buttons.button(
+                          buttonColor:
+                              controller.isLoading.value
+                                  ? Colors.white
+                                  : Colors.black,
+                          onTap: () async {
+                            final code = controller.selectedCountryCode.value;
+                            final value = controller.mobileNumber.text.trim();
+
+                            // Manual validation
+                            if (value.isEmpty) {
+                              controller.errorText.value =
+                                  'Please enter your Mobile Number';
+                              return;
+                            } else if (code == '+91' && value.length != 10) {
+                              controller.errorText.value =
+                                  'Indian numbers must be exactly 10 digits';
+                              return;
+                            } else if (code == '+234' && value.length != 10) {
+                              controller.errorText.value =
+                                  'Nigerian numbers must be exactly 10 digits';
+                              return;
+                            } else {
+                              controller.errorText.value = ''; // clear error
+                            }
+
+                            // Only call login if validation passes
+                            await controller.login(context);
+                          },
+
+                          text:
+                              controller.isLoading.value
+                                  ? Image.asset(AppImages.animation)
+                                  : Text('Continue'),
+                        );
                       }),
-                      SizedBox(height: 30),
+
                       // ElevatedButton(
                       //   onPressed: () async {
                       //     Navigator.push(
                       //       context,
                       //       MaterialPageRoute(
-                      //         builder: (context) => VehicleDetails(),
+                      //         builder: (context) => ConsentForms (),
                       //       ),
                       //     );
                       //   },
                       //   child: Text('LOG OUT'),
                       // ),
-                      // SizedBox(height: 30),
+                      SizedBox(height: 30),
                       Row(
                         children: [
                           Expanded(
@@ -478,18 +394,20 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                         onTap: () {
                           signInWithApple();
                         },
-                        text: 'Continue with Apple',
+                        text: Text('Continue with Apple'),
                       ),
                       SizedBox(height: 20),
-                      Buttons.button(
+                      Buttons.button(imgHeight: 18,
+                        imgWeight: 18,
                         imagePath: AppImages.google,
+
                         buttonColor: AppColors.containerColor,
                         textColor: AppColors.commonBlack,
 
                         onTap: () {
                           initializeGoogleAuth();
                         },
-                        text: 'Continue with Google',
+                        text: Text('Continue with Google'),
                       ),
 
                       // SizedBox(height: 20),

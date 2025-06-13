@@ -31,15 +31,16 @@ class _VehicleDocGuidLinesState extends State<VehicleDocGuidLines> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Obx(() {
-        if (controller.guidelinesList.isEmpty) {
-          return Center(child: Image.asset(AppImages.animation));
-        }
+      body: SafeArea(
+        child: Obx(() {
+          if (controller.guidelinesList.isEmpty) {
+            return Center(child: Image.asset(AppImages.animation, height: 100,
+              width: 100,));
+          }
 
-        final guideline = controller.guidelinesList.first;
+          final guideline = controller.guidelinesList.first;
 
-        return SingleChildScrollView(
-          child: SafeArea(
+          return SingleChildScrollView(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 25),
               child: Column(
@@ -117,15 +118,15 @@ class _VehicleDocGuidLinesState extends State<VehicleDocGuidLines> {
                 ],
               ),
             ),
-          ),
-        );
-      }),
+          );
+        }),
+      ),
 
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         onTap: () {
           Navigator.pop(context);
         },
-        title: 'Take a Photo',
+        title: Text('Take a Photo'),
       ),
     );
   }

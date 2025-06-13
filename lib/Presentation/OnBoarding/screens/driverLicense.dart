@@ -33,10 +33,10 @@ class _DriverLicenseState extends State<DriverLicense> {
   final DriverLicenseController controller = Get.put(DriverLicenseController());
   final TextEditingController driverLicense = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  bool _isButtonDisabled = false;
   final GuidelinesController guidelinesController = Get.put(
     GuidelinesController(),
   );
-
 
   @override
   void initState() {
@@ -49,12 +49,18 @@ class _DriverLicenseState extends State<DriverLicense> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Obx(
-        () =>
-            controller.isLoading.value
-                ? Center(child: Image.asset(AppImages.animation))
-                : SingleChildScrollView(
-                  child: SafeArea(
+      body: SafeArea(
+        child: Obx(
+          () =>
+              controller.isLoading.value
+                  ? Center(
+                    child: Image.asset(
+                      AppImages.animation,
+                      height: 100,
+                      width: 100,
+                    ),
+                  )
+                  : SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -142,13 +148,15 @@ class _DriverLicenseState extends State<DriverLicense> {
                                     }
                                   },
                                   child: DottedBorder(
-                                    options: RoundedRectDottedBorderOptions(  color: const Color(
-                                      0xff666666,
-                                    ).withOpacity(0.3),
-                                    radius: const Radius.circular(10),
-                                    dashPattern: const [7, 4],
-                                    strokeWidth: 1.5,),
-                                  
+                                    options: RoundedRectDottedBorderOptions(
+                                      color: const Color(
+                                        0xff666666,
+                                      ).withOpacity(0.3),
+                                      radius: const Radius.circular(10),
+                                      dashPattern: const [7, 4],
+                                      strokeWidth: 1.5,
+                                    ),
+
                                     child: Container(
                                       height: 120,
                                       padding: const EdgeInsets.all(10),
@@ -263,12 +271,14 @@ class _DriverLicenseState extends State<DriverLicense> {
                                     }
                                   },
                                   child: DottedBorder(
-                                     options: RoundedRectDottedBorderOptions(  color: const Color(
-                                      0xff666666,
-                                    ).withOpacity(0.3),
-                                    radius: const Radius.circular(10),
-                                    dashPattern: const [7, 4],
-                                    strokeWidth: 1.5,),
+                                    options: RoundedRectDottedBorderOptions(
+                                      color: const Color(
+                                        0xff666666,
+                                      ).withOpacity(0.3),
+                                      radius: const Radius.circular(10),
+                                      dashPattern: const [7, 4],
+                                      strokeWidth: 1.5,
+                                    ),
                                     child: Container(
                                       height: 120,
                                       padding: const EdgeInsets.all(10),
@@ -340,27 +350,47 @@ class _DriverLicenseState extends State<DriverLicense> {
                       ),
                     ),
                   ),
-                ),
+        ),
       ),
-      bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
-        title: 'Save & Next',
-        onTap: () async {
-          if (_formKey.currentState!.validate()) {
-            await controller.driverLicense(
-              fromCompleteScreen: widget.fromCompleteScreens,
-              context,
-              frontImage.isNotEmpty ? File(frontImage) : null,
-              backImage.isNotEmpty ? File(backImage) : null,
-            );
-          }
 
-          //
-          // Navigator.push(
-          //   context,
-          //   MaterialPageRoute(builder: (context) => ChooseService()),
-          // );
-        },
-      ),
+      bottomNavigationBar:
+          controller.isLoading.value
+              ? null
+              : BottomAppBar(
+                color: AppColors.commonWhite,
+                child: Column(
+                  children: [
+                    Buttons.button(
+                      buttonColor: AppColors.commonBlack,
+                      onTap: () async {
+                        if (_isButtonDisabled) return;
+
+                        setState(() {
+                          _isButtonDisabled = true;
+                        });
+                        if (_formKey.currentState!.validate()) {
+                          await controller.driverLicense(
+                            fromCompleteScreen: widget.fromCompleteScreens,
+                            context,
+                            frontImage.isNotEmpty ? File(frontImage) : null,
+                            backImage.isNotEmpty ? File(backImage) : null,
+                          );
+                        }
+                        // Navigator.push(
+                        //   context,
+                        //   MaterialPageRoute(builder: (_) => DriverLicense()),
+                        // );
+
+                        setState(() {
+                          _isButtonDisabled = false;
+                        });
+                      },
+
+                      text: Text('Save & Next'),
+                    ),
+                  ],
+                ),
+              ),
     );
   }
 }

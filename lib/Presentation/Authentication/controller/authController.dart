@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../../../Core/Constants/log.dart';
+import 'package:hopper/Core/Constants/log.dart';
 import 'package:country_picker/country_picker.dart';
 
-import '../../../Core/Utility/snackbar.dart';
-import '../screens/Landing_Screens.dart';
-import '../screens/Otp_Screens.dart';
-import '../screens/Terms_Screen.dart';
-import '../../../api/dataSource/apiDataSource.dart';
-import '../../../api/repository/failure.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
+import 'package:hopper/Presentation/Authentication/screens/Landing_Screens.dart';
+import 'package:hopper/Presentation/Authentication/screens/Otp_Screens.dart';
+import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
+import 'package:hopper/api/dataSource/apiDataSource.dart';
+import 'package:hopper/api/repository/failure.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 var getMobileNumber = '';
@@ -176,7 +176,7 @@ class AuthController extends GetxController {
             MaterialPageRoute(
               builder:
                   (context) => OtpScreens(
-                     emailVerify: 'Email',
+                    emailVerify: 'Email',
                     mobileNumber: email,
                     type: 'basicInfo',
                     email: email,

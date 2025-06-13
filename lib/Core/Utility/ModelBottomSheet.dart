@@ -162,7 +162,7 @@ class CustomBottomSheet {
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        'Select $title',
+                        '$title',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -172,10 +172,19 @@ class CustomBottomSheet {
                       TextField(
                         focusNode: searchFocusNode,
                         controller: searchController,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           hintText: 'Search...',
-                          border: OutlineInputBorder(),
                           prefixIcon: Icon(Icons.search),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(color: Colors.black),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: Colors.black,
+                              width: 2,
+                            ),
+                          ),
+                          border: OutlineInputBorder(), // fallback
                         ),
                         onChanged: (query) {
                           setState(() {
@@ -190,6 +199,7 @@ class CustomBottomSheet {
                           });
                         },
                       ),
+
                       const SizedBox(height: 16),
                       Expanded(
                         child:

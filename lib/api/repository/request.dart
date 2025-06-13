@@ -61,7 +61,7 @@ class Request {
           headers: {"Authorization": token != null ? "Bearer $token" : ""},
           validateStatus: (status) {
             // Allow all status codes below 500 to be handled manually
-            return status != null && status < 500;
+            return status != null && status < 503;
           },
         ),
       );

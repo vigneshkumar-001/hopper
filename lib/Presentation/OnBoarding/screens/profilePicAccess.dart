@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/basicInfo_controller.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/texts.dart';
 import '../../../Core/Utility/Buttons.dart';
@@ -9,6 +11,7 @@ import 'ninScreens.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/takePictureScreen.dart'
     show TakePicture;
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
+import 'package:get/get.dart';
 
 class ProfilePicAccess extends StatefulWidget {
   const ProfilePicAccess({super.key});
@@ -18,6 +21,18 @@ class ProfilePicAccess extends StatefulWidget {
 }
 
 class _ProfilePicAccessState extends State<ProfilePicAccess> {
+  final ChooseServiceController userController = Get.put(
+    ChooseServiceController(),
+  );
+  final BasicInfoController controller = Get.put(BasicInfoController());
+  @override
+  void initState() {
+    super.initState();
+
+    userController.getUserDetails();
+    controller.fetchAndSetUserData();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -34,7 +49,10 @@ class _ProfilePicAccessState extends State<ProfilePicAccess> {
               SizedBox(height: 24),
               Center(
                 child: Text(
-                  'Hello,Oluwaseun Adebayo!',
+                  maxLines: 1,
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis,
+                  'Hello,${controller.name.text}${controller.lastName.text}!',
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
               ),
@@ -55,12 +73,12 @@ class _ProfilePicAccessState extends State<ProfilePicAccess> {
                   ),
                   child: Center(
                     child: DottedBorder(
-                      options: RoundedRectDottedBorderOptions(  color: const Color(
-                                      0xff666666,
-                                    ).withOpacity(0.3),
-                                    radius: const Radius.circular(10),
-                                    dashPattern: const [7, 4],
-                                    strokeWidth: 1.5,),
+                      options: RoundedRectDottedBorderOptions(
+                        color: const Color(0xff666666).withOpacity(0.3),
+                        radius: const Radius.circular(80),
+                        dashPattern: const [7, 4],
+                        strokeWidth: 1.5,
+                      ),
                       child: Container(
                         height: 150,
                         width: 150,
@@ -92,7 +110,7 @@ class _ProfilePicAccessState extends State<ProfilePicAccess> {
                   //   MaterialPageRoute(builder: (context) => NinScreens()),
                   // );
                 },
-                text: 'Save & Next',
+                text: Text('Save & Next'),
               ),
             ],
           ),

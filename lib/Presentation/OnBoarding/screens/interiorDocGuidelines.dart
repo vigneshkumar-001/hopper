@@ -37,18 +37,19 @@ class _InteriorDocGuideLinesState extends State<InteriorDocGuideLines> {
   Widget build(BuildContext context) {
     controller.guideLines(widget.photoLabel);
     return Scaffold(
-      body: Obx(() {
-        if (controller.isLoading.value) {
-          return Center(child: Image.asset(AppImages.animation));
-        }
+      body: SafeArea(
+        child: Obx(() {
+          if (controller.isLoading.value) {
+            return Center(child: Image.asset(AppImages.animation,  height: 100,
+              width: 100,));
+          }
 
-        if (controller.guidelinesList.isEmpty) {
-          return Center(child: Text("No guidelines available"));
-        }
-        final guideline = controller.guidelinesList.first;
+          if (controller.guidelinesList.isEmpty) {
+            return Center(child: Text("No guidelines available"));
+          }
+          final guideline = controller.guidelinesList.first;
 
-        return SingleChildScrollView(
-          child: SafeArea(
+          return SingleChildScrollView(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 25),
               child: Column(
@@ -132,16 +133,16 @@ class _InteriorDocGuideLinesState extends State<InteriorDocGuideLines> {
                 ],
               ),
             ),
-          ),
-        );
-      }),
+          );
+        }),
+      ),
 
       /// ✅ Bottom Button
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         onTap: () {
           Navigator.pop(context);
         },
-        title: 'Take a Photo',
+        title: Text('Take a Photo'),
       ),
     );
   }

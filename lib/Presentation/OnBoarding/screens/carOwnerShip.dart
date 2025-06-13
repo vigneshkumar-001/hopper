@@ -75,8 +75,8 @@ class _CarOwnershipState extends State<CarOwnership> {
       //   return Center(child: CircularProgressIndicator());
       // }
       // final profile = Get.find<ChooseServiceController>().userProfile.value;
-      SingleChildScrollView(
-        child: SafeArea(
+      SafeArea(
+        child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 25),
             child: Form(
@@ -154,7 +154,7 @@ class _CarOwnershipState extends State<CarOwnership> {
                         selectedService == 'Car'
                             ? 'Car Plate Number'
                             : 'Bike Plate Number',
-                    hintText: 'Eg : $defaultPlateNumber',
+                    hintText: 'Enter your plate Name',
                   ),
                 ],
               ),
@@ -164,28 +164,30 @@ class _CarOwnershipState extends State<CarOwnership> {
       ),
 
       bottomNavigationBar: Obx(
-        () =>
-            controller.isLoading.value
-                ? Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: SizedBox(
-                    height: 48,
-                    child: Center(child: CircularProgressIndicator()),
+        () => CustomBottomNavigation.bottomNavigation(
+          foreGroundColor:
+              controller.isLoading.value ? Colors.black : Colors.white,
+          buttonColor: controller.isLoading.value ? Colors.white : Colors.black,
+
+          title:
+              controller.isLoading.value
+                  ? Image.asset(AppImages.animation)
+                  : Text(
+                    "Save & Next",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                )
-                : CustomBottomNavigation.bottomNavigation(
-                  title: "Save & Next",
-                  onTap: () async {
-                    // Get.to(() => ConsentForms());
-                    if (_formKey.currentState!.validate()) {
-                      await controller.carOwnerShip(
-                        context,
-                        selectedService,
-                        fromCompleteScreen: widget.fromCompleteScreens,
-                      );
-                    }
-                  },
-                ),
+
+          onTap: () async {
+            // Get.to(() => ConsentForms());
+            if (_formKey.currentState!.validate()) {
+              await controller.carOwnerShip(
+                context,
+                selectedService,
+                fromCompleteScreen: widget.fromCompleteScreens,
+              );
+            }
+          },
+        ),
       ),
     );
   }

@@ -50,12 +50,13 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
   Widget build(BuildContext context) {
     return Scaffold(
       // appBar: AppBar(backgroundColor: AppColors.commonWhite),
-      body: Obx(
-        () =>
-            controller.isLoading.value
-                ? Center(child: Image.asset(AppImages.animation))
-                : SingleChildScrollView(
-                  child: SafeArea(
+      body: SafeArea(
+        child: Obx(
+          () =>
+              controller.isLoading.value
+                  ? Center(child: Image.asset(AppImages.animation, height: 100,
+                width: 100,))
+                  : SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -232,9 +233,9 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                       ),
                     ),
                   ),
-                ),
+        ),
       ),
-      bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
+      bottomNavigationBar: controller.isLoading.value ? null :  CustomBottomNavigation.bottomNavigation(
         buttonColor:
             isButtonDisabled
                 ? Colors.grey
@@ -273,7 +274,7 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                   //   MaterialPageRoute(builder: (context) => ConsentForms()),
                   // );
                 },
-        title: 'Save & Next',
+        title: Text('Save & Next'),
       ),
     );
   }

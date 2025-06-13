@@ -4,15 +4,22 @@ import '../../../Core/Utility/Buttons.dart';
 
 class CustomBottomNavigation {
   static bottomNavigation({
-    required String title,
+    required Widget title,
+
+
     Color buttonColor = Colors.black,
+    Color foreGroundColor = Colors.black,
     required VoidCallback? onTap,
   }) {
     return BottomAppBar(
       color: AppColors.commonWhite,
       child: Column(
         children: [
-          Buttons.button(buttonColor: buttonColor, onTap: onTap, text: title),
+          Buttons.button(foreGroundColor:foreGroundColor ,
+            buttonColor: buttonColor,
+            onTap: onTap,
+            text: title,
+          ),
         ],
       ),
     );
