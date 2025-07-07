@@ -52,7 +52,7 @@ class ChooseServiceController extends GetxController {
           isLoading.value = false;
 
           serviceType.value = response.serviceType;
-          CustomSnackBar.showSuccess(response.message);
+          // CustomSnackBar.showSuccess(response.message);
 
           Get.to(() => CarOwnership());
 

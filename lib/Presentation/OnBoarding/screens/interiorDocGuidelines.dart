@@ -1,5 +1,4 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/texts.dart';
@@ -22,7 +21,6 @@ class InteriorDocGuideLines extends StatefulWidget {
 }
 
 class _InteriorDocGuideLinesState extends State<InteriorDocGuideLines> {
-
   final GuidelinesController controller = Get.put(GuidelinesController());
 
   @override
@@ -40,8 +38,9 @@ class _InteriorDocGuideLinesState extends State<InteriorDocGuideLines> {
       body: SafeArea(
         child: Obx(() {
           if (controller.isLoading.value) {
-            return Center(child: Image.asset(AppImages.animation,  height: 100,
-              width: 100,));
+            return Center(
+              child: Image.asset(AppImages.animation, height: 100, width: 100),
+            );
           }
 
           if (controller.guidelinesList.isEmpty) {
@@ -112,7 +111,6 @@ class _InteriorDocGuideLinesState extends State<InteriorDocGuideLines> {
                   const SizedBox(height: 24),
                   const Divider(),
 
-                  /// ✅ Things to Avoid
                   Row(
                     children: [
                       Image.asset(AppImages.close, height: 30, width: 30),
@@ -138,11 +136,16 @@ class _InteriorDocGuideLinesState extends State<InteriorDocGuideLines> {
       ),
 
       /// ✅ Bottom Button
-      bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
-        onTap: () {
-          Navigator.pop(context);
-        },
-        title: Text('Take a Photo'),
+      bottomNavigationBar: Obx(
+        () =>
+            controller.isLoading.value
+                ? SizedBox.shrink() // or just null
+                : CustomBottomNavigation.bottomNavigation(
+                  onTap: () {
+                    Navigator.pop(context);
+                  },
+                  title: Text('Take a Photo'),
+                ),
       ),
     );
   }

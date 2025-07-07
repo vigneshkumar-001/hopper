@@ -19,6 +19,7 @@ import 'package:hopper/api/repository/request.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../Presentation/Authentication/controller/authController.dart';
+import '../../Presentation/DriverScreen/models/booking_accept_model.dart';
 import '../repository/failure.dart';
 import 'package:dio/dio.dart';
 import 'package:dartz/dartz.dart';
@@ -212,9 +213,7 @@ class ApiDataSource extends BaseApiDataSource {
     required String otp,
     required String email,
     required String type,
-}
-
-  ) async {
+  }) async {
     try {
       String url = ApiConstents.verifyOtpProtect;
 
@@ -255,35 +254,25 @@ class ApiDataSource extends BaseApiDataSource {
   }
 
   Future<Either<Failure, OtpResponse>> resendOtp(
-    String mobileNumber,{
-      String? type,
-      required String email ,
-  }
+    String mobileNumber, {
+    String? type,
+    required String email,
     // String otp,
-  ) async {
+  }) async {
     try {
       String url = ApiConstents.resendOTP;
       Map<String, dynamic> data;
 
       if (type == "Email") {
-        data = {
-          "type": "email",
-          "email": email,
-
-        };
-      }else{
+        data = {"type": "email", "email": email};
+      } else {
         data = {
           "type": "Mobile", //or email,
           "mobileNumber": mobileNumber, //email:"nnxnx@mml.com",
           "countryCode": countryCodes,
         };
       }
-      dynamic response = await Request.sendRequest(
-        url,
-        data,
-        'Post',
-        false,
-      );
+      dynamic response = await Request.sendRequest(url, data, 'Post', false);
       if (response is Response && response.statusCode == 200) {
         if (response.data['status'] == 200) {
           final result = OtpResponse.fromJson(response.data);
@@ -1013,6 +1002,41 @@ class ApiDataSource extends BaseApiDataSource {
 
       if (response is Response && response.statusCode == 200) {
         final result = GuideLinesResponse.fromJson(response.data);
+        CommonLogger.log.i(response.data);
+        return Right(result);
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message']));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, BookingAcceptModel>> bookingAccept({
+    required String bookingId,
+    required String status,
+  }) async {
+    try {
+      String url = 'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api/users/driver-response';
+
+      final response = await Request.sendRequest(
+        url,
+        {
+          "driverId": "683fed0a00aa693559289fbb",
+          "bookingId": bookingId,
+          "response": status
+        },
+        'Post',
+        false,
+      );
+
+      if (response is Response && response.statusCode == 200) {
+        final result = BookingAcceptModel.fromJson(response.data);
         CommonLogger.log.i(response.data);
         return Right(result);
       } else if (response is Response && response.statusCode == 409) {

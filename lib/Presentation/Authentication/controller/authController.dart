@@ -63,7 +63,7 @@ class AuthController extends GetxController {
           return '';
         },
         (response) {
-          CustomSnackBar.showSuccess(response.message.toString());
+          // CustomSnackBar.showSuccess(response.message.toString());
           if (type == 'basicInfo') {
             Navigator.push(
               context,
@@ -124,17 +124,17 @@ class AuthController extends GetxController {
           accessToken = response.data.token;
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('token', response.data.token);
-          CustomSnackBar.showSuccess(response.message.toString());
+          // CustomSnackBar.showSuccess(response.message.toString());
 
           return ' ';
         },
       );
     } catch (e) {
-      isGoogleLoading.value = false; // Stop loading
+      isGoogleLoading.value = false;
       return ' ';
     }
 
-    isGoogleLoading.value = false; // Stop loading
+    isGoogleLoading.value = false;
     return '';
   }
 
@@ -170,7 +170,7 @@ class AuthController extends GetxController {
           return '';
         },
         (response) {
-          CustomSnackBar.showSuccess(response.message.toString());
+          // CustomSnackBar.showSuccess(response.message.toString());
           Navigator.push(
             context,
             MaterialPageRoute(

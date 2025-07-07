@@ -45,8 +45,8 @@ class _TermsScreenState extends State<TermsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SingleChildScrollView(
-        child: SafeArea(
+      body: SafeArea(
+        child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
             child: Column(
@@ -60,7 +60,7 @@ class _TermsScreenState extends State<TermsScreen> {
                   'Accept Hoppr’s Terms & Review Privacy Notice',
                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                 ),
-
+          
                 RichText(
                   textAlign: TextAlign.center,
                   text: const TextSpan(

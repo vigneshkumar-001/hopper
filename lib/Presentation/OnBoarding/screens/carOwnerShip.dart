@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:dotted_border/dotted_border.dart';
+import 'package:flutter/services.dart';
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/texts.dart';
 import '../../../Core/Utility/Buttons.dart';
@@ -129,6 +130,9 @@ class _CarOwnershipState extends State<CarOwnership> {
                   ),
                   SizedBox(height: 24),
                   CustomTextfield.textField(
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z]')),
+                    ],
                     formKey: _formKey,
                     controller: nameController,
                     validator: (value) {

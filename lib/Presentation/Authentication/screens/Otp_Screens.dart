@@ -37,7 +37,7 @@ class _OtpScreensState extends State<OtpScreens> {
   final formKey = GlobalKey<FormState>();
   String? otpError;
   bool isButtonDisabled = false;
-
+  String email = '';
   StreamController<ErrorAnimationType>? errorController;
   @override
   void dispose() {
@@ -49,18 +49,18 @@ class _OtpScreensState extends State<OtpScreens> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Obx(
-        () =>
-            controller.isLoading.value
-                ? Center(
-                  child: Image.asset(
-                    AppImages.animation,
-                    height: 100,
-                    width: 100,
-                  ),
-                )
-                : SingleChildScrollView(
-                  child: SafeArea(
+      body: SafeArea(
+        child: Obx(
+          () =>
+              controller.isLoading.value
+                  ? Center(
+                    child: Image.asset(
+                      AppImages.animation,
+                      height: 100,
+                      width: 100,
+                    ),
+                  )
+                  : SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -178,11 +178,20 @@ class _OtpScreensState extends State<OtpScreens> {
                               ),
                             ),
                             onPressed: () {
-                              String email  = widget.email ?? '';
-                              controller.resendOtp(widget.mobileNumber,email,widget.emailVerify ?? '');
+                              email = widget.email ?? '';
+                              controller.resendOtp(
+                                widget.mobileNumber,
+                                email,
+                                widget.emailVerify ?? '',
+                              );
                             },
-                            child: Text('Resend code via SMS'),
+                            child: Text(
+                              (widget.email != null && widget.email!.isNotEmpty)
+                                  ? 'Resend code via Email'
+                                  : 'Resend code via SMS',
+                            ),
                           ),
+
                           TextButton(
                             style: TextButton.styleFrom(
                               foregroundColor: Colors.black,
@@ -209,66 +218,68 @@ class _OtpScreensState extends State<OtpScreens> {
                       ),
                     ),
                   ),
-                ),
+        ),
       ),
-      bottomNavigationBar:  controller.isLoading.value ? null :
-      CommonBottomNavigationBar(
-        onBackPressed: () => Navigator.pop(context),
-        // onNextPressed: () async {
-        //   if (formKey.currentState!.validate()) {
-        //     await controller.verifyOtp(context, verifyCode);
-        //   } else {
-        //     errorController?.add(ErrorAnimationType.shake);
-        //   }
-        // },
-        onNextPressed: () async {
-          if (isButtonDisabled) return;
+      bottomNavigationBar:
+          controller.isLoading.value
+              ? null
+              : CommonBottomNavigationBar(
+                onBackPressed: () => Navigator.pop(context),
+                // onNextPressed: () async {
+                //   if (formKey.currentState!.validate()) {
+                //     await controller.verifyOtp(context, verifyCode);
+                //   } else {
+                //     errorController?.add(ErrorAnimationType.shake);
+                //   }
+                // },
+                onNextPressed: () async {
+                  if (isButtonDisabled) return;
 
-          setState(() {
-            otpError = null;
-            isButtonDisabled = true;
-          });
+                  setState(() {
+                    otpError = null;
+                    isButtonDisabled = true;
+                  });
 
-          if (otp.text.length != 4) {
-            errorController?.add(ErrorAnimationType.shake);
-            setState(() {
-              otpError = 'Please enter a valid 4-digit OTP';
-              isButtonDisabled = false;
-            });
-            return;
-          }
+                  if (otp.text.length != 4) {
+                    errorController?.add(ErrorAnimationType.shake);
+                    setState(() {
+                      otpError = 'Please enter a 4-digit OTP';
+                      isButtonDisabled = false;
+                    });
+                    return;
+                  }
 
-          try {
-            if (widget.type ==
-                "basicInfo" /* && widget.emailVerify == "Email"*/ ) {
-              await controller.emailVerifyOtp(
-                emailOrMobile:
-                    widget.emailVerify == "Email" ? "email" : "Mobile",
-                email: widget.email ?? '',
-                context,
-                verifyCode,
-                type: widget.type ?? '',
-              );
-            } else {
-              await controller.verifyOtp(
-                context,
-                verifyCode,
-                type: widget.type ?? '',
-              );
-            }
-          } finally {
-            setState(() {
-              isButtonDisabled = false;
-            });
-          }
-        },
+                  try {
+                    if (widget.type ==
+                        "basicInfo" /* && widget.emailVerify == "Email"*/ ) {
+                      await controller.emailVerifyOtp(
+                        emailOrMobile:
+                            widget.emailVerify == "Email" ? "email" : "Mobile",
+                        email: widget.email ?? '',
+                        context,
+                        verifyCode,
+                        type: widget.type ?? '',
+                      );
+                    } else {
+                      await controller.verifyOtp(
+                        context,
+                        verifyCode,
+                        type: widget.type ?? '',
+                      );
+                    }
+                  } finally {
+                    setState(() {
+                      isButtonDisabled = false;
+                    });
+                  }
+                },
 
-        backgroundColor: Colors.white,
-        buttonColor: Colors.black,
-        containerColor: Colors.grey.shade300,
-        backButtonImage: AppImages.backButton,
-        rightButtonImage: AppImages.rightButton,
-      ),
+                backgroundColor: Colors.white,
+                buttonColor: Colors.black,
+                containerColor: Colors.grey.shade300,
+                backButtonImage: AppImages.backButton,
+                rightButtonImage: AppImages.rightButton,
+              ),
     );
   }
 }

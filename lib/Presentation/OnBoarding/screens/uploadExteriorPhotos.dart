@@ -279,47 +279,50 @@ class _UploadExteriorPhotosState extends State<UploadExteriorPhotos> {
       //   },
       //   title: 'Save & Next',
       // ),
-      bottomNavigationBar:controller.isLoading.value ? null : CustomBottomNavigation.bottomNavigation(
-        buttonColor:
-            isButtonDisabled
-                ? Colors.grey
-                : controller.selectedImages.every(
-                  (img) => img != null && img!.isNotEmpty,
-                )
-                ? AppColors.commonBlack
-                : AppColors.containerColor,
-        onTap:
-            isButtonDisabled
-                ? null
-                : () async {
-                  final selectedImages = controller.selectedImages;
-                  final allSelected = selectedImages.every(
-                    (img) => img != null && img!.isNotEmpty,
-                  );
+      bottomNavigationBar:
+          controller.isLoading.value
+              ? null
+              : CustomBottomNavigation.bottomNavigation(
+                buttonColor:
+                    isButtonDisabled
+                        ? Colors.grey
+                        : controller.selectedImages.every(
+                          (img) => img != null && img.isNotEmpty,
+                        )
+                        ? AppColors.commonBlack
+                        : AppColors.containerColor,
+                onTap:
+                    isButtonDisabled
+                        ? null
+                        : () async {
+                          final selectedImages = controller.selectedImages;
+                          final allSelected = selectedImages.every(
+                            (img) => img != null && img.isNotEmpty,
+                          );
 
-                  if (!allSelected) {
-                    CustomSnackBar.showError(
-                      "Please upload all required images.",
-                    );
-                    return;
-                  }
+                          if (!allSelected) {
+                            CustomSnackBar.showError(
+                              "Please upload all required images.",
+                            );
+                            return;
+                          }
 
-                  setState(() {
-                    isButtonDisabled = true;
-                  });
+                          setState(() {
+                            isButtonDisabled = true;
+                          });
 
-                  await controller.exteriorImageUpload(
-                    serviceType: serviceType,
-                    selectedImages: selectedImages,
-                    context: context,
-                    fromCompleteScreen: widget.fromCompleteScreens,
-                  );
+                          await controller.exteriorImageUpload(
+                            serviceType: serviceType,
+                            selectedImages: selectedImages,
+                            context: context,
+                            fromCompleteScreen: widget.fromCompleteScreens,
+                          );
 
-                  // You can re-enable it if needed:
-                  // setState(() => isButtonDisabled = false);
-                },
-        title: Text('Save & Next'),
-      ),
+                          // You can re-enable it if needed:
+                          // setState(() => isButtonDisabled = false);
+                        },
+                title: Text('Save & Next'),
+              ),
     );
   }
 }

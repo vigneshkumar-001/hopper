@@ -107,6 +107,7 @@
 //   }
 // }
 import 'package:flutter/material.dart';
+import 'package:hopper/Core/Constants/Colors.dart';
 
 class CustomBottomSheet {
   static void showOptionsBottomSheet({
@@ -170,6 +171,7 @@ class CustomBottomSheet {
                       ),
                       const SizedBox(height: 16),
                       TextField(
+                        cursorColor: AppColors.commonBlack,
                         focusNode: searchFocusNode,
                         controller: searchController,
                         decoration: InputDecoration(

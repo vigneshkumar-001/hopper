@@ -23,7 +23,6 @@ class _SplashScreenState extends State<SplashScreen> {
     // if (!mounted) return;
     //
     // controller.handleLandingPageNavigation(context);
-
   }
 
   Future<void> getUserDetail() async {
@@ -36,13 +35,13 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
     print('Iam Calling');
     //getUserDetail();
-     loadAndNavigate();
-     Future.delayed(const Duration(seconds: 3), () {
-       Navigator.pushReplacement(
-         context,
-         MaterialPageRoute(builder: (context) => const GetStartedScreens()),
-       );
-     });
+    loadAndNavigate();
+    Future.delayed(const Duration(seconds: 3), () {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const GetStartedScreens()),
+      );
+    });
   }
 
   @override

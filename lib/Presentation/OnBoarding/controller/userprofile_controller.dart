@@ -46,7 +46,7 @@ class UserProfileController extends GetxController {
           CustomSnackBar.showError(failure.message);
         },
         (success) {
-          CustomSnackBar.showSuccess(success.message);
+          // CustomSnackBar.showSuccess(success.message);
           if (fromCompleteScreen) {
             Navigator.pop(context);
           } else {

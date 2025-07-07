@@ -15,5 +15,21 @@ class AppColors {
   static const dividerColor1 = Color(0xffF1F1F1);
   static const checkBox = Color(0xFFE1E1E2);
   static const errorRed = Color(0xFFEA4335);
+  static const green = Color(0xFFe5f5e9);
+  static const grey = Color(0xFF707072);
+  static final resendBlue = Color(0xff006FD0);
+  static final nBlue = Color(0xff357AE9);
+  static final red = Color(0xffF71609);
+  static final drkGreen = Color(0xff009721);
+  static final directionColor = Color(0xffEEA000);
+  static final directionColor1 = Color(0xffCD8702);
+  static final textColorGrey = Color(0xff828284);
+  static final buttonBorder = Color(0xffA9A8A8);
+  static final shareTripContainer = Color(0xffECECEC5E);
+    static final rideInProgress = Color(0Xff0B9B3C);
+
+
   static final errorBorder = Colors.red;
+
+
 }

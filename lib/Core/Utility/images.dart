@@ -26,11 +26,31 @@ class AppImages {
   static String waitingReview = "assets/images/waitingReview.png";
   static String dummyProfile = "assets/images/dummyProfile.png";
   static String splashScreen = "assets/images/Splash Screen.png";
-  static String lock = "assets/images/lock.png";
   static String redExclamation = "assets/images/redExclamation.png";
+
   static String animation = "assets/images/loading-light.gif";
   static String carGif = "assets/images/carGif.gif";
   static String loadingLightGif = "assets/images/loading-light.gif";
   static String animation1 = "assets/images/animation.gif.gif";
   static String loadingDarkGif = "assets/images/loading-dark.gif";
+
+  static String lock = "assets/images/lock.png";
+  static String search = "assets/images/search.png";
+  static String drawer = "assets/images/drawer.png";
+  static String offlineCar = "assets/images/offlineCar.png";
+  static String bCurrency = "assets/images/bCurrency.png";
+  static String filter = "assets/images/filter.png";
+  static String rightArrow = "assets/images/rightArrow.png";
+  static String notification = "assets/images/notification.png";
+  static String distance = "assets/images/distance.png";
+  static String time = "assets/images/time.png";
+  static String straight = "assets/images/straight.png";
+  static String call = "assets/images/call.png";
+  static String msg = "assets/images/msg.png";
+  static String dummyImg = "assets/images/dummyImg.png";
+  static String getHelp = "assets/images/getHelp.png";
+  static String share = "assets/images/share.png";
+  static String redArrow = "assets/images/redArrow.png";
+  static String reLoaction = "assets/images/reLoaction.png";
+
 }

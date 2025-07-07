@@ -121,7 +121,7 @@ class _VehicleDetailsState extends State<VehicleDetails> {
                               onTap: () {
                                 // Directly show the bottom sheet (no delay!)
                                 CustomBottomSheet.showOptionsBottomSheet(
-                                  title: 'States',
+                                  title: 'Select Brand',
                                   options: stateController.brands,
                                   context: context,
                                   controller: controller.carBrandController,
@@ -191,7 +191,7 @@ class _VehicleDetailsState extends State<VehicleDetails> {
                                   return;
                                 }
                                 CustomBottomSheet.showOptionsBottomSheet(
-                                  title: 'Modal',
+                                  title: 'Select Model',
                                   options: stateController.models,
                                   context: context,
                                   controller: controller.carModelController,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
 
+import 'Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'splash_screen.dart';
 import 'utils/init_Controller.dart';
 import 'package:flutter/services.dart';
@@ -34,7 +35,7 @@ class MyApp extends StatelessWidget {
         theme: ThemeData(scaffoldBackgroundColor: Colors.white),
         debugShowCheckedModeBanner: false,
         // theme: ThemeData(scaffoldBackgroundColor: Colors.white),
-        home: SplashScreen(),
+        home: DriverMainScreen(),
       ),
     );
   }

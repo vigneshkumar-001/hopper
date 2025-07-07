@@ -33,7 +33,7 @@ class AppTexts {
       "Upload 6 photos of your vehicle exterior. Make sure the number plate is clearly visible in one photo.";
   static String requirements = "Requirements:";
   static String limitPhotos =
-      "Upload  6 photos of your vehicle interior. Include clear shots of the dashboard and seats.";
+      "Upload 6 photos of your vehicle interior. Include clear shots of the dashboard and seats.";
   static String requirementsContents1 =
       "Clear front-facing photo against a plain background with no accessories/objects";
   static String requirementsContents2 =

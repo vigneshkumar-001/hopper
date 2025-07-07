@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import '../../Core/Constants/log.dart';
 import '../../Presentation/Authentication/controller/otp_controller.dart';
@@ -18,7 +20,12 @@ class Request {
 
     AuthController authController = getx.Get.find();
     OtpController otpController = getx.Get.find();
-    Dio dio = Dio();
+    Dio dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 15),
+      ),
+    );
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) {
@@ -54,17 +61,24 @@ class Request {
       ),
     );
     try {
-      final response = await dio.post(
-        url,
-        data: body,
-        options: Options(
-          headers: {"Authorization": token != null ? "Bearer $token" : ""},
-          validateStatus: (status) {
-            // Allow all status codes below 500 to be handled manually
-            return status != null && status < 503;
-          },
-        ),
-      );
+      final response = await dio
+          .post(
+            url,
+            data: body,
+            options: Options(
+              headers: {"Authorization": token != null ? "Bearer $token" : ""},
+              validateStatus: (status) {
+                // Allow all status codes below 500 to be handled manually
+                return status != null && status < 503;
+              },
+            ),
+          )
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              throw TimeoutException("Request timed out after 10 seconds");
+            },
+          );
 
       CommonLogger.log.i(
         "RESPONSE \n API: $url \n RESPONSE: ${response.toString()}",

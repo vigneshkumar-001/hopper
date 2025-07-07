@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Utility/images.dart';
 import '../controller/authController.dart';
 import 'package:intl/intl.dart';
 
@@ -96,6 +97,7 @@ class CustomTextfield {
         ),
         SizedBox(height: 8),
         TextFormField(
+          cursorColor: AppColors.commonBlack,
           autovalidateMode: AutovalidateMode.onUserInteraction,
           validator: validator,
           controller: controller,
@@ -184,12 +186,18 @@ class CustomTextfield {
               builder: (context, child) {
                 return Theme(
                   data: ThemeData.light().copyWith(
-                    primaryColor: Colors.blue, // Header color
                     colorScheme: const ColorScheme.light(
+                      primary: AppColors.commonBlack,
                       onPrimary: AppColors.commonWhite,
+                      onSurface: AppColors.commonBlack,
                     ),
-                    dialogBackgroundColor:
-                        AppColors.commonWhite, // Background color
+                    dialogBackgroundColor: AppColors.commonWhite,
+                    textButtonTheme: TextButtonThemeData(
+                      style: TextButton.styleFrom(
+                        foregroundColor:
+                            Colors.black, // ← makes Cancel/OK buttons black
+                      ),
+                    ),
                   ),
                   child: child!,
                 );
@@ -309,6 +317,184 @@ class CustomTextfield {
                 color: Color(0xff333333),
                 height: 1.5,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static plainTextField({
+    VoidCallback? onTap,
+    Widget? suffixIcon,
+    String? initialValue,
+    bool readOnly = true,
+    bool autofocus = true,
+    String? leadingImage,
+    double imgHeight = 10,
+    double imgWidth = 10,
+    Widget? prefixIcon,
+    TextStyle? Style,
+
+    required String title,
+    TextEditingController? controller,
+    ValueChanged<String>? onChanged,
+    TextStyle? hintStyle,
+    Color containerColor = const Color(0xffF1F1F1),
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(15),
+        color: containerColor,
+      ),
+      child: TextFormField(
+        style: Style,
+        cursorHeight: 16,
+        autofocus: autofocus,
+        onChanged: onChanged,
+        onTap: onTap,
+        controller: controller,
+        initialValue: initialValue,
+        readOnly: readOnly,
+        cursorColor: AppColors.commonBlack,
+        decoration: InputDecoration(
+          prefixIcon: Padding(
+            padding: EdgeInsets.symmetric(horizontal: imgHeight),
+            child: Image.asset(
+              leadingImage ?? AppImages.search,
+              height: 5,
+              width: 2,
+            ),
+          ),
+          // focusedBorder: OutlineInputBorder(
+          //   borderSide: BorderSide(color: Colors.black, width: 1.5),
+          //   borderRadius: BorderRadius.circular(4),
+          // ),
+          border: OutlineInputBorder(
+            borderSide: BorderSide.none,
+            borderRadius: BorderRadius.circular(15),
+          ),
+          suffixIcon: suffixIcon,
+          hintText: title,
+          hintStyle:
+              hintStyle ??
+              TextStyle(
+                fontWeight: FontWeight.w500,
+                color: AppColors.commonBlack,
+                fontSize: 16,
+              ),
+          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        ),
+      ),
+    );
+  }
+
+  static Text textWithStyles700(
+    String text, {
+    String? text1,
+    double fontSize = 25,
+    Color? color,
+  }) {
+    return Text(
+      text + (text1 ?? ''),
+      style: TextStyle(
+        color: color,
+        fontWeight: FontWeight.w700,
+        fontSize: fontSize,
+      ),
+    );
+  }
+
+  static Text textWithStyles600(
+    String text, {
+    String? text1,
+    double fontSize = 15,
+    TextAlign textAlign = TextAlign.start,
+    Color? color,
+    int? maxLine = 10,
+  }) {
+    return Text(
+      maxLines: maxLine,
+      overflow: TextOverflow.ellipsis,
+      textAlign: textAlign,
+      text + (text1 ?? ''),
+      style: TextStyle(
+        color: color,
+        letterSpacing: 0.3,
+        fontWeight: FontWeight.w600,
+        fontSize: fontSize,
+      ),
+    );
+  }
+
+  static textWithStylesSmall(
+    String text, {
+    String? text1,
+    TextAlign textAlign = TextAlign.start,
+    FontWeight? fontWeight,
+    double fontSize = 13,
+    Color? colors = Colors.black45,
+  }) {
+    return Text(
+      textAlign: textAlign,
+      text + (text1 ?? ''),
+      style: TextStyle(
+        color: colors,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+      ),
+    );
+  }
+
+  static Widget textWithImage({
+    required String text,
+    String? rightImagePathText,
+    VoidCallback? onTap,
+    String? imagePath,
+    String? rightImagePath,
+    double imageSize = 16,
+    double fontSize = 13,
+    TextAlign textAlign = TextAlign.start,
+    FontWeight? fontWeight,
+    Color? textColor = Colors.black,
+    Color? colors = Colors.black45,
+    Color? imageColors = Colors.black,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (imagePath != null)
+            Image.asset(
+              imagePath,
+              height: imageSize,
+              width: imageSize,
+              color: imageColors,
+            ),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              textAlign: textAlign,
+              style: TextStyle(
+                color: colors,
+                fontSize: fontSize,
+                fontWeight: fontWeight,
+              ),
+            ),
+          ),
+          SizedBox(width: 10),
+          if (rightImagePath != null)
+            Image.asset(rightImagePath, height: imageSize, width: imageSize),
+          Text(
+            rightImagePathText ?? '',
+            style: TextStyle(
+              fontFamily: "Roboto-normal",
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: textColor,
             ),
           ),
         ],

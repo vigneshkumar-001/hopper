@@ -41,8 +41,8 @@ class _DriverAddressState extends State<DriverAddress> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SingleChildScrollView(
-        child: SafeArea(
+      body: SafeArea(
+        child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 25),
             child: Form(
@@ -91,7 +91,7 @@ class _DriverAddressState extends State<DriverAddress> {
                     onTap: () {
                       // Directly show the bottom sheet (no delay!)
                       CustomBottomSheet.showOptionsBottomSheet(
-                        title: 'States',
+                        title: 'Select States',
                         options: stateController.states,
                         context: context,
                         controller: controller.stateController,

@@ -51,7 +51,7 @@ class OtpController extends GetxController {
             print("✅ isVerified: ${isVerified.value}");
 
             Navigator.pop(context);
-          } else {
+          } else { isLoading.value = false;
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => TermsScreen()),
@@ -64,7 +64,7 @@ class OtpController extends GetxController {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('token', response.data.token);
           // await prefs.setString('userId', response.userId);
-          CustomSnackBar.showSuccess(response.message);
+          // CustomSnackBar.showSuccess(response.message);
           // await loadAndNavigate(context);
 
           return response.message;
@@ -118,7 +118,7 @@ class OtpController extends GetxController {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('token', response.data.token);
           // await prefs.setString('userId', response.userId);
-          CustomSnackBar.showSuccess(response.message);
+          // CustomSnackBar.showSuccess(response.message);
           // await loadAndNavigate(context);
 
           return response.message;
@@ -159,7 +159,7 @@ class OtpController extends GetxController {
           // final prefs = await SharedPreferences.getInstance();
           // await prefs.setString('token', response.data.token);
           // // await prefs.setString('userId', response. data.);
-          CustomSnackBar.showSuccess(response.message);
+          // CustomSnackBar.showSuccess(response.message);
 
           return response.message;
         },

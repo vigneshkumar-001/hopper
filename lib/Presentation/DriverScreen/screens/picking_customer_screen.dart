@@ -1,0 +1,818 @@
+import 'dart:async';
+import 'package:action_slider/action_slider.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/log.dart';
+import '../../../Core/Utility/Buttons.dart';
+import '../../../utils/map/google_map.dart';
+import '../../../utils/map/route_info.dart';
+
+class PickingCustomerScreen extends StatefulWidget {
+  const PickingCustomerScreen({super.key});
+
+  @override
+  State<PickingCustomerScreen> createState() => _PickingCustomerScreenState();
+}
+
+class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
+  LatLng origin = LatLng(9.9303, 78.0945);
+  LatLng destination = LatLng(9.9342, 78.1824);
+  GoogleMapController? _mapController;
+  bool driverReached = false;
+  bool arrivedAtPickup = true;
+  String directionText = '';
+  String distance = '';
+  List<LatLng> polylinePoints = [];
+  StreamSubscription<Position>? positionStream;
+  int _seconds = 59;
+  late Timer _timer;
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_seconds > 0) {
+        setState(() => _seconds--);
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  String get timerText {
+    final m = (_seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (_seconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+    positionStream = Geolocator.getPositionStream().listen((Position position) {
+      setState(() {
+        origin = LatLng(position.latitude, position.longitude);
+      });
+
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
+      );
+    });
+
+    loadRoute();
+  }
+
+  @override
+  void dispose() {
+    positionStream?.cancel();
+    _timer.cancel();
+    super.dispose();
+  }
+
+  Future<void> loadRoute() async {
+    final result = await getRouteInfo(origin: origin, destination: destination);
+
+    setState(() {
+      directionText = result['direction'];
+      distance = result['distance'];
+      polylinePoints = decodePolyline(result['polyline']);
+    });
+  }
+
+  String parseHtmlString(String htmlText) {
+    return htmlText
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&');
+  }
+
+  String maneuver = '';
+  void _goToCurrentLocation() async {
+    Position position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+
+    final latLng = LatLng(position.latitude, position.longitude);
+
+    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(latLng, 17));
+  }
+
+  String getManeuverIcon(maneuver) {
+    switch (maneuver) {
+      case "turn-right":
+        return 'assets/images/straight.png';
+      case "turn-left":
+        return 'assets/images/straight.png';
+      case "straight":
+        return 'assets/images/straight.png';
+      case "merge":
+        return 'assets/images/straight.png';
+      case "roundabout-left":
+        return 'assets/images/straight.png';
+      case "roundabout-right":
+        return 'assets/images/straight.png';
+      default:
+        return 'assets/images/straight.png';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: CommonGoogleMap(
+                initialPosition: origin,
+                markers: {
+                  Marker(markerId: MarkerId('start'), position: origin),
+                  Marker(markerId: MarkerId('end'), position: destination),
+                },
+                polylines: {
+                  Polyline(
+                    polylineId: PolylineId("route"),
+                    color: AppColors.commonBlack,
+                    width: 5,
+                    points: polylinePoints,
+                  ),
+                },
+              ),
+            ),
+
+            // SizedBox(
+            //   height: 650,
+            //   child: CommonGoogleMap(
+            //     initialPosition: origin, // any LatLng
+            //     markers: {
+            //       Marker(markerId: MarkerId('start'), position: origin),
+            //       Marker(markerId: MarkerId('end'), position: destination),
+            //     },
+            //     polylines: {
+            //       Polyline(
+            //         polylineId: PolylineId("route"),
+            //         color: AppColors.nBlue,
+            //         width: 5,
+            //         points: polylinePoints,
+            //       ),
+            //     },
+            //   ),
+            // ),
+            // Positioned(
+            //   top: arrivedAtPickup ? 350 : 550,
+            //   right: 10,
+            //   child: FloatingActionButton(
+            //     mini: true,
+            //     backgroundColor: Colors.white,
+            //     shape: RoundedRectangleBorder(
+            //       borderRadius: BorderRadius.circular(30),
+            //     ),
+            //     onPressed: _goToCurrentLocation,
+            //     child: const Icon(Icons.my_location, color: Colors.black),
+            //   ),
+            // ),
+            Positioned(
+              top: arrivedAtPickup ? 300 : 450,
+              right: 10,
+              child: Column(
+                children: [
+                  FloatingActionButton(
+                    mini: true,
+                    backgroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    onPressed: _goToCurrentLocation,
+                    child: const Icon(Icons.my_location, color: Colors.black),
+                  ),
+                  const SizedBox(height: 12),
+                  FloatingActionButton(
+                    mini: true,
+                    backgroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    onPressed: _goToCurrentLocation,
+                    child: Image.asset(
+                      AppImages.reLoaction,
+                      height: 25,
+                      width: 25,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 20,
+              left: 10,
+              right: 10,
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 1,
+                    child: Container(
+                      height: 100,
+
+                      color: AppColors.directionColor,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 20,
+                          horizontal: 10,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              getManeuverIcon(maneuver),
+                              height: 32,
+                              width: 32,
+                            ),
+
+                            SizedBox(height: 5),
+                            CustomTextfield.textWithStyles600(
+                              distance,
+                              color: AppColors.commonWhite,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Container(
+                      height: 100,
+                      color: AppColors.directionColor1,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 20,
+                          horizontal: 10,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            CustomTextfield.textWithStyles600(
+                              maxLine: 2,
+                              '${parseHtmlString(directionText)}',
+                              fontSize: 13,
+                              color: AppColors.commonWhite,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            Stack(
+              children: [
+                DraggableScrollableSheet(
+                  key: ValueKey(arrivedAtPickup),
+                  initialChildSize: arrivedAtPickup ? 0.50 : 0.30,
+                  minChildSize: arrivedAtPickup ? 0.5 : 0.30,
+                  maxChildSize: arrivedAtPickup ? 0.65 : 0.30,
+                  // initialChildSize: 0.50, // Start with 80% height
+                  // minChildSize: 0.5, // Can collapse to 40%
+                  // maxChildSize: 0.65, // Can expand up to 95% height
+                  builder: (context, scrollController) {
+                    return Container(
+                      decoration: BoxDecoration(color: Colors.white),
+                      child: ListView(
+                        controller: scrollController,
+                        children: [
+                          const SizedBox(height: 10),
+
+                          if (!arrivedAtPickup) ...[
+                            Column(
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                  ),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: AppColors.red.withOpacity(0.1),
+                                    ),
+                                    child: ListTile(
+                                      trailing: Image.asset(
+                                        AppImages.redArrow,
+                                        height: 20,
+                                        width: 20,
+                                      ),
+                                      leading: Image.asset(
+                                        AppImages.close,
+                                        height: 20,
+                                        width: 20,
+                                      ),
+                                      title: CustomTextfield.textWithStyles600(
+                                        fontSize: 14,
+                                        color: AppColors.red,
+                                        'Tap to cancel the ride, If rider don’t show up',
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                                ListTile(
+                                  trailing: GestureDetector(
+                                    onTap: () {},
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: AppColors.commonBlack
+                                            .withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(30),
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(10),
+                                        child: Image.asset(
+                                          AppImages.msg,
+                                          height: 25,
+                                          width: 25,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  leading: GestureDetector(
+                                    onTap: () async {
+                                      const phoneNumber = 'tel:+918248191110';
+                                      CommonLogger.log.i(phoneNumber);
+                                      final Uri url = Uri.parse(phoneNumber);
+                                      if (await canLaunchUrl(url)) {
+                                        await launchUrl(url);
+                                      } else {
+                                        // Optionally show a toast/snackbar
+                                        print('Could not launch dialer');
+                                      }
+                                    },
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: AppColors.commonBlack
+                                            .withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(30),
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(10),
+                                        child: Image.asset(
+                                          AppImages.call,
+                                          height: 25,
+                                          width: 25,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                  title: Center(
+                                    child: CustomTextfield.textWithStyles600(
+                                      fontSize: 20,
+                                      'Waiting for the Rider',
+                                    ),
+                                  ),
+                                  subtitle: Center(
+                                    child: CustomTextfield.textWithStylesSmall(
+                                      fontSize: 14,
+                                      colors: AppColors.textColorGrey,
+                                      'Rebecca Davis',
+                                    ),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 10,
+                                  ),
+                                  child: ActionSlider.standard(
+                                    action: (controller) async {
+                                      controller.loading();
+
+                                      await Future.delayed(
+                                        const Duration(seconds: 1),
+                                      ); // optional loading delay
+
+                                      controller.success();
+
+                                      // Delay to let success animation finish before navigating
+                                      await Future.delayed(
+                                        const Duration(milliseconds: 300),
+                                      );
+
+                                      // Navigate to the next screen
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder:
+                                              (context) => VerifyRiderScreen(),
+                                        ), // replace with your widget
+                                      );
+                                    },
+
+                                    height: 50,
+                                    backgroundColor: const Color(0xFF1C1C1C),
+                                    toggleColor: Colors.white,
+                                    icon: const Icon(
+                                      Icons.double_arrow,
+                                      color: Colors.black,
+                                      size: 28,
+                                    ),
+                                    child: const Text(
+                                      'Swipe to Start Ride',
+                                      style: TextStyle(
+                                        color: Color(
+                                          0xFFD6F1FF,
+                                        ), // light blue text
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    // action: (controller) async {
+                                    //   controller.loading();
+                                    //   await Future.delayed(
+                                    //     const Duration(seconds: 3),
+                                    //   );
+                                    //   controller.success();
+                                    // },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ] else ...[
+                            Center(
+                              child: Container(
+                                width: 60,
+                                height: 5,
+
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[400],
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+                            if (!driverReached) ...[
+                              Column(
+                                children: [
+                                  ListTile(
+                                    trailing: GestureDetector(
+                                      onTap: () {},
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: AppColors.commonBlack
+                                              .withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(
+                                            30,
+                                          ),
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(10),
+                                          child: Image.asset(
+                                            AppImages.msg,
+                                            height: 25,
+                                            width: 25,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    leading: GestureDetector(
+                                      onTap: () async {
+                                        const phoneNumber = 'tel:+918248191110';
+                                        CommonLogger.log.i(phoneNumber);
+                                        final Uri url = Uri.parse(phoneNumber);
+                                        if (await canLaunchUrl(url)) {
+                                          await launchUrl(url);
+                                        } else {
+                                          // Optionally show a toast/snackbar
+                                          print('Could not launch dialer');
+                                        }
+                                      },
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: AppColors.commonBlack
+                                              .withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(
+                                            30,
+                                          ),
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(10),
+                                          child: Image.asset(
+                                            AppImages.call,
+                                            height: 25,
+                                            width: 25,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+
+                                    title: Center(
+                                      child: CustomTextfield.textWithStyles600(
+                                        fontSize: 20,
+                                        '4 min Away',
+                                      ),
+                                    ),
+                                    subtitle: Center(
+                                      child:
+                                          CustomTextfield.textWithStylesSmall(
+                                            fontSize: 14,
+                                            colors: AppColors.textColorGrey,
+                                            'Picking up Rebbeca',
+                                          ),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 5,
+                                      horizontal: 15,
+                                    ),
+                                    child: Divider(
+                                      color: AppColors.dividerColor1,
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 5,
+                                      horizontal: 15,
+                                    ),
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          driverReached = !driverReached;
+                                        });
+                                      },
+                                      child: Row(
+                                        children: [
+                                          Image.asset(
+                                            AppImages.dummyImg,
+                                            height: 45,
+                                            width: 45,
+                                          ),
+                                          SizedBox(width: 15),
+                                          CustomTextfield.textWithStyles600(
+                                            'Rebecca Davis',
+                                            fontSize: 20,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 5,
+                                      horizontal: 15,
+                                    ),
+                                    child: Divider(
+                                      color: AppColors.dividerColor1,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 15),
+                                ],
+                              ),
+                            ] else ...[
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                ),
+                                child: Column(
+                                  children: [
+                                    Buttons.button(
+                                      buttonColor: AppColors.resendBlue,
+                                      borderRadius: 8,
+                                      onTap: () {
+                                        setState(() {
+                                          arrivedAtPickup = !arrivedAtPickup;
+                                        });
+                                      },
+                                      text: Text('Arrived at Pickup Point'),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          driverReached = !driverReached;
+                                        });
+                                      },
+                                      child: Row(
+                                        children: [
+                                          Image.asset(
+                                            AppImages.dummyImg,
+                                            height: 45,
+                                            width: 45,
+                                          ),
+                                          SizedBox(width: 15),
+                                          CustomTextfield.textWithStyles600(
+                                            'Rebecca Davis',
+                                            fontSize: 20,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 15),
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: AppColors.containerColor1,
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 30,
+                                          vertical: 10,
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            CustomTextfield.textWithImage(
+                                              colors: AppColors.commonBlack,
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 12,
+                                              text: 'Get Help',
+                                              imagePath: AppImages.getHelp,
+                                            ),
+                                            SizedBox(
+                                              height: 20,
+                                              child: VerticalDivider(),
+                                            ),
+                                            CustomTextfield.textWithImage(
+                                              colors: AppColors.commonBlack,
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 12,
+                                              text: 'Share Trip Status',
+                                              imagePath: AppImages.share,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                  ],
+                                ),
+                              ),
+                            ],
+
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 15,
+                                    ),
+                                    child: CustomTextfield.textWithStyles600(
+                                      'Ride Details',
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  Row(
+                                    children: [
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            40,
+                                          ),
+                                          color: AppColors.commonBlack
+                                              .withOpacity(0.1),
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(4),
+                                          child: Icon(
+                                            Icons.circle,
+                                            color: AppColors.commonBlack,
+                                            size: 10,
+                                          ),
+                                        ),
+                                      ),
+                                      SizedBox(width: 20),
+                                      Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          CustomTextfield.textWithStyles600(
+                                            fontSize: 16,
+                                            'Pickup',
+                                          ),
+                                          CustomTextfield.textWithStylesSmall(
+                                            colors: AppColors.textColorGrey,
+                                            '4, Gana Street, Maitama, Abuja, FCTLagos',
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 20),
+                                  Row(
+                                    children: [
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            40,
+                                          ),
+                                          color: AppColors.commonBlack
+                                              .withOpacity(0.1),
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(4),
+                                          child: Icon(
+                                            Icons.circle,
+                                            color: AppColors.grey,
+                                            size: 10,
+                                          ),
+                                        ),
+                                      ),
+                                      SizedBox(width: 20),
+                                      Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          CustomTextfield.textWithStyles600(
+                                            fontSize: 16,
+                                            'Drop off - Constitution Ave',
+                                          ),
+                                          CustomTextfield.textWithStylesSmall(
+                                            colors: AppColors.textColorGrey,
+                                            '143, Constitution Ave, Abuja',
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  SizedBox(height: 20),
+                                  Buttons.button(
+                                    borderColor: AppColors.buttonBorder,
+                                    buttonColor: AppColors.commonWhite,
+                                    borderRadius: 8,
+
+                                    textColor: AppColors.commonBlack,
+
+                                    onTap: () {
+                                      Buttons.showDialogBox(context: context);
+                                    },
+                                    text: Text('Stop New Ride Request'),
+                                  ),
+                                  SizedBox(height: 10),
+                                  Buttons.button(
+                                    borderRadius: 8,
+
+                                    buttonColor: AppColors.red,
+
+                                    onTap: () {
+                                      Buttons.showCancelRideBottomSheet(
+                                        context,
+                                      );
+                                    },
+                                    text: Text('Cancel this Ride'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                if (!arrivedAtPickup)
+                  Positioned(
+                    bottom: 220,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 22,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(30),
+                          border: Border.all(
+                            color: AppColors.commonBlack.withOpacity(0.2),
+                            width: 6,
+                          ),
+                        ),
+                        child: Text(
+                          timerText,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

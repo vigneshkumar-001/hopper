@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../../Presentation/Authentication/widgets/textFields.dart';
+import '../Constants/Colors.dart';
 import 'images.dart';
 
 class Buttons {
@@ -15,9 +17,11 @@ class Buttons {
     double? size = double.infinity,
     double? imgHeight = 24,
     double? imgWeight = 24,
+    double? borderRadius = 4,
 
     Color? buttonColor,
     Color? foreGroundColor,
+    Color? borderColor,
     Color? textColor = Colors.white,
     bool? isLoading,
     bool hasBorder = false,
@@ -33,11 +37,13 @@ class Buttons {
           shape:
               hasBorder
                   ? RoundedRectangleBorder(
-                    side: const BorderSide(color: Color(0xff3F5FF2)),
-                    borderRadius: BorderRadius.circular(4),
+                    side: BorderSide(color: Color(0xff3F5FF2)),
+                    borderRadius: BorderRadius.circular(borderRadius!),
                   )
                   : RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4),
+                    side: BorderSide(color: borderColor ?? Colors.transparent),
+
+                    borderRadius: BorderRadius.circular(borderRadius!),
                   ),
           elevation: 0,
           fixedSize: Size(150.w, 40.h),
@@ -48,7 +54,11 @@ class Buttons {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (imagePath != null) ...[
-              Image.asset(imagePath, height: imgHeight!.sp, width: imgWeight!.sp),
+              Image.asset(
+                imagePath,
+                height: imgHeight!.sp,
+                width: imgWeight!.sp,
+              ),
               SizedBox(width: 10.w),
             ],
             DefaultTextStyle(
@@ -124,6 +134,180 @@ class Buttons {
     return GestureDetector(
       onTap: () => Navigator.pop(context),
       child: Image.asset(AppImages.backButton, height: 18),
+    );
+  }
+
+  static showDialogBox({required BuildContext context}) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Column(
+            children: [
+              Image.asset(AppImages.close, height: 40, width: 40),
+              SizedBox(height: 10),
+              CustomTextfield.textWithStyles600('Stop new Ride Request?'),
+            ],
+          ),
+          content: CustomTextfield.textWithStylesSmall(
+            fontWeight: FontWeight.w500,
+            textAlign: TextAlign.center,
+            'You won’t receive any new request and you’ll be offline',
+          ),
+          backgroundColor: AppColors.commonWhite,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: Buttons.button(
+                    buttonColor: AppColors.commonWhite,
+                    textColor: AppColors.commonBlack,
+                    borderRadius: 8,
+                    borderColor: AppColors.buttonBorder,
+
+                    onTap: () {
+                      Navigator.pop(context);
+                    },
+                    text: CustomTextfield.textWithStyles600("Don't Stop"),
+                  ),
+                ),
+                SizedBox(width: 5),
+                Expanded(
+                  child: Buttons.button(
+                    buttonColor: AppColors.errorRed,
+                    borderRadius: 8,
+
+                    onTap: () {
+                      Navigator.pop(context);
+                    },
+                    text: CustomTextfield.textWithStyles600('Yes'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  static void showCancelRideBottomSheet(BuildContext context) {
+    String? selectedReason;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return DraggableScrollableSheet(
+              maxChildSize: 0.63,
+              minChildSize: 0.5,
+              initialChildSize: 0.62,
+              builder: (context, scrollController) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(25),
+                    ),
+                  ),
+                  padding: const EdgeInsets.all(20),
+                  child: ListView(
+                    controller: scrollController,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      CustomTextfield.textWithStyles600(
+                        textAlign: TextAlign.center,
+                        fontSize: 20,
+                        "Share the reason for cancelling the ride",
+                      ),
+                      const SizedBox(height: 5),
+                      CustomTextfield.textWithStylesSmall(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        textAlign: TextAlign.center,
+                        "Choose an issue",
+                      ),
+                      const SizedBox(height: 25),
+
+                      ...[
+                        'No face cover or mask',
+                        'Can’t find the rider',
+                        'Nowhere to stop',
+                        'Rider’s items don’t fit',
+                        'Too many riders',
+                      ].map((reason) {
+                        final isSelected = selectedReason == reason;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Buttons.button(
+                            borderColor:
+                                isSelected
+                                    ? AppColors.commonBlack
+                                    : AppColors.buttonBorder,
+                            buttonColor:
+                                isSelected
+                                    ? AppColors.containerColor
+                                    : AppColors.commonWhite,
+                            borderRadius: 8,
+                            textColor: AppColors.commonBlack,
+                            onTap: () {
+                              setState(() => selectedReason = reason);
+                            },
+                            text: Text(reason),
+                          ),
+                        );
+                      }).toList(),
+
+                      const SizedBox(height: 10),
+                      Buttons.button(
+                        buttonColor:
+                            selectedReason == null
+                                ? AppColors.containerColor
+                                : AppColors.commonBlack,
+                        borderRadius: 8,
+                        onTap: () {
+                          if (selectedReason != null) {
+                            Navigator.pop(context);
+                            print('Submitted reason: $selectedReason');
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "Please select a reason before submitting",
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        text: Text('Submit Feedback'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }

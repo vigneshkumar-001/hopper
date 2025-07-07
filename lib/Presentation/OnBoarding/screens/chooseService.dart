@@ -140,19 +140,21 @@ class _ChooseServiceState extends State<ChooseService> {
         ),
       ),
       bottomNavigationBar: Obx(
-            () => CustomBottomNavigation.bottomNavigation(
+        () => CustomBottomNavigation.bottomNavigation(
           foreGroundColor:
-          controller.isLoading.value ? Colors.black : Colors.white,
+              controller.isLoading.value ? Colors.black : Colors.white,
 
-          title: controller.isLoading.value
-              ? Image.asset(AppImages.animation,)
-              : const Text('Continue'),
+          title:
+              controller.isLoading.value
+                  ? Image.asset(AppImages.animation)
+                  : const Text('Continue'),
 
-          buttonColor: controller.isLoading.value
-              ? Colors.white
-              : selectedService.isNotEmpty
-              ? AppColors.commonBlack
-              : Colors.grey.shade400,
+          buttonColor:
+              controller.isLoading.value
+                  ? Colors.white
+                  : selectedService.isNotEmpty
+                  ? AppColors.commonBlack
+                  : Colors.grey.shade400,
 
           onTap: () async {
             if (selectedService.isEmpty) {
@@ -173,7 +175,6 @@ class _ChooseServiceState extends State<ChooseService> {
           },
         ),
       ),
-
     );
   }
 }

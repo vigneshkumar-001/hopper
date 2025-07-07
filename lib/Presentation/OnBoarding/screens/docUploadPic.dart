@@ -37,7 +37,9 @@ class _DocUpLoadPicState extends State<DocUpLoadPic> {
   final ChooseServiceController userController = Get.put(
     ChooseServiceController(),
   );
-  final BasicInfoController  basicInfoController = Get.put(BasicInfoController());
+  final BasicInfoController basicInfoController = Get.put(
+    BasicInfoController(),
+  );
 
   @override
   void initState() {
@@ -50,16 +52,17 @@ class _DocUpLoadPicState extends State<DocUpLoadPic> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Obx(() {
-        if (controller.guidelinesList.isEmpty) {
-          return Center(child: Image.asset(AppImages.animation, height: 100,
-            width: 100,));
-        }
+      body: SafeArea(
+        child: Obx(() {
+          if (controller.guidelinesList.isEmpty) {
+            return Center(
+              child: Image.asset(AppImages.animation, height: 100, width: 100),
+            );
+          }
 
-        final guideline = controller.guidelinesList.first;
+          final guideline = controller.guidelinesList.first;
 
-        return SingleChildScrollView(
-          child: SafeArea(
+          return SingleChildScrollView(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 25),
               child: Column(
@@ -137,9 +140,9 @@ class _DocUpLoadPicState extends State<DocUpLoadPic> {
                 ],
               ),
             ),
-          ),
-        );
-      }),
+          );
+        }),
+      ),
 
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         onTap: () {

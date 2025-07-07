@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:flutter/material.dart';
+import 'package:hopper/Presentation/Authentication/screens/Otp_Screens.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/basicInfo.dart';
@@ -39,12 +40,68 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
   final ChooseServiceController chooseServiceController = Get.find();
   String flag = '';
 
-
-  void showCountrySelector(BuildContext) {
+  void showCountrySelector(BuildContext context) {
     showCountryPicker(
       context: context,
+      showSearch: true,
       showPhoneCode: true,
       searchAutofocus: true,
+      countryListTheme: CountryListThemeData(
+        flagSize: 25,
+        backgroundColor: Colors.white,
+        // textStyle: TextStyle(fontSize: 16, color: Colors.blueGrey),
+        bottomSheetHeight: 550, // Optional. Country list modal height
+        //Optional. Sets the border radius for the bottomsheet.
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(30.0),
+          topRight: Radius.circular(30.0),
+        ),
+        searchTextStyle: TextStyle(color: Colors.black),
+        //Optional. Styles the search field.
+        inputDecoration: InputDecoration(
+          hintText: 'Search',
+          hintStyle: TextStyle(color: Colors.grey),
+          prefixIcon: Icon(Icons.search, color: Colors.black),
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: Colors.black),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: Colors.black, width: 2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+
+          border: OutlineInputBorder(
+            borderSide: BorderSide(
+              color: const Color(0xFF8C98A8).withOpacity(0.2),
+            ),
+          ),
+        ),
+      ),
+      // countryListTheme: CountryListThemeData(
+      //   inputDecoration: InputDecoration(
+      //     hintText: 'Search',
+      //     hintStyle: TextStyle(color: Colors.grey),
+      //     prefixIcon: Icon(Icons.search, color: Colors.black),
+      //     enabledBorder: OutlineInputBorder(
+      //       borderSide: BorderSide(color: Colors.black),
+      //       borderRadius: BorderRadius.circular(8),
+      //     ),
+      //     focusedBorder: OutlineInputBorder(
+      //       borderSide: BorderSide(color: Colors.black, width: 2),
+      //       borderRadius: BorderRadius.circular(8),
+      //     ),
+      //     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      //   ),
+      //
+      //   searchTextStyle: TextStyle(color: Colors.black),
+      //   // Optional sheet styling
+      //   borderRadius: BorderRadius.only(
+      //     topLeft: Radius.circular(12),
+      //     topRight: Radius.circular(12),
+      //   ),
+      // ),
       onSelect: (Country country) {
         controller.setSelectedCountry(country);
       },
@@ -56,7 +113,6 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
     super.initState();
     controller.selectedCountryCode.value = '+234';
     controller.countryCodeController.text = '+234';
-
   }
 
   List<String> scopes = <String>[
@@ -160,325 +216,336 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 20,
-                ),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    children: [
-                      Center(
-                        child: Image.asset(
-                          AppImages.roundCar,
-                          height: 80,
-                          width: 80,
-                        ),
-                      ),
-                      SizedBox(height: 20),
-                      Text(
-                        'Get Started with Hoppr',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 24,
-                        ),
-                      ),
-                      SizedBox(height: 30),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text('Mobile number'),
-                      ),
-                      SizedBox(height: 5),
+    return WillPopScope(
+      onWillPop: ()async{
+        return true;
 
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: GestureDetector(
-                              onTap: () => showCountrySelector(context),
-                              child: Obx(
-                                () => Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 15,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xffF1F1F1),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        selectedCountryFlag.isEmpty
-                                            ? '🇳🇬'
-                                            : selectedCountryFlag,
-                                        style: const TextStyle(fontSize: 18),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        controller
-                                                .selectedCountryCode
-                                                .value
-                                                .isEmpty
-                                            ? '+--'
-                                            : controller
-                                                .selectedCountryCode
-                                                .value,
-                                        style: const TextStyle(fontSize: 16),
-                                      ),
-                                      const Icon(Icons.arrow_drop_down),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Stack(
+            children: [
+              SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 20,
+                  ),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      children: [
+                        Center(
+                          child: Image.asset(
+                            AppImages.roundCar,
+                            height: 80,
+                            width: 80,
                           ),
-                          const SizedBox(width: 5),
-                          Expanded(
-                            flex: 4,
-                            child: TextFormField(
-                              controller: controller.mobileNumber,
-                              keyboardType: TextInputType.phone,
-                              inputFormatters: [
-                                LengthLimitingTextInputFormatter(10),
-                                FilteringTextInputFormatter.digitsOnly,
-                              ],
-                              decoration: InputDecoration(
-                                hintText: 'Enter mobile number',
-                                filled: true,
-                                fillColor: const Color(0xffF1F1F1),
-                                border: OutlineInputBorder(
-                                  borderSide: BorderSide.none,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                              // validator: (value) {
-                              //   final code = controller.selectedCountryCode.value;
-                              //
-                              //   if (value == null || value.isEmpty) {
-                              //     controller.errorText.value = 'Please enter your Mobile Number';
-                              //     return ''; // prevents default error message
-                              //   } else if (code == '+91' && value.length != 10) {
-                              //     controller.errorText.value = 'Indian numbers must be exactly 10 digits';
-                              //     return '';
-                              //   } else if (code == '+234' && value.length != 10) {
-                              //     controller.errorText.value = 'Nigerian numbers must be exactly 10 digits';
-                              //     return '';
-                              //   }
-                              //
-                              //   controller.errorText.value = ''; // clear previous error
-                              //   return null;
-                              // },
-                              onChanged: (value) {
-                                final code =
-                                    controller.selectedCountryCode.value;
-                                if (value.isEmpty) {
-                                  controller.errorText.value =
-                                      'Please enter your Mobile Number';
-                                } else if (code == '+91' &&
-                                    value.length != 10) {
-                                  controller.errorText.value =
-                                      'Indian numbers must be exactly 10 digits';
-                                } else if (code == '+234' &&
-                                    value.length != 10) {
-                                  controller.errorText.value =
-                                      'Nigerian numbers must be exactly 10 digits';
-                                } else {
-                                  controller.errorText.value = '';
-                                }
-                              },
-                            ),
+                        ),
+                        SizedBox(height: 20),
+                        Text(
+                          'Get Started with Hoppr',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 24,
                           ),
-                        ],
-                      ),
+                        ),
+                        SizedBox(height: 30),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Mobile number'),
+                        ),
+                        SizedBox(height: 5),
 
-                      Obx(
-                        () =>
-                            controller.errorText.value.isNotEmpty
-                                ? Align(
-                                  alignment: Alignment.centerRight,
-                                  child: Text(
-                                    controller.errorText.value,
-                                    style: const TextStyle(
-                                      color: Colors.red,
-                                      fontSize: 10,
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: GestureDetector(
+                                onTap: () => showCountrySelector(context),
+                                child: Obx(
+                                  () => Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 15,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xffF1F1F1),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          selectedCountryFlag.isEmpty
+                                              ? '🇳🇬'
+                                              : selectedCountryFlag,
+                                          style: const TextStyle(fontSize: 18),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          controller
+                                                  .selectedCountryCode
+                                                  .value
+                                                  .isEmpty
+                                              ? '+--'
+                                              : controller
+                                                  .selectedCountryCode
+                                                  .value,
+                                          style: const TextStyle(fontSize: 16),
+                                        ),
+                                        const Icon(Icons.arrow_drop_down),
+                                      ],
                                     ),
                                   ),
-                                )
-                                : const SizedBox(),
-                      ),
-
-                      SizedBox(height: 30),
-                      Obx(() {
-                        return Buttons.button(
-                          buttonColor:
-                              controller.isLoading.value
-                                  ? Colors.white
-                                  : Colors.black,
-                          onTap: () async {
-                            final code = controller.selectedCountryCode.value;
-                            final value = controller.mobileNumber.text.trim();
-
-                            // Manual validation
-                            if (value.isEmpty) {
-                              controller.errorText.value =
-                                  'Please enter your Mobile Number';
-                              return;
-                            } else if (code == '+91' && value.length != 10) {
-                              controller.errorText.value =
-                                  'Indian numbers must be exactly 10 digits';
-                              return;
-                            } else if (code == '+234' && value.length != 10) {
-                              controller.errorText.value =
-                                  'Nigerian numbers must be exactly 10 digits';
-                              return;
-                            } else {
-                              controller.errorText.value = ''; // clear error
-                            }
-
-                            // Only call login if validation passes
-                            await controller.login(context);
-                          },
-
-                          text:
-                              controller.isLoading.value
-                                  ? Image.asset(AppImages.animation)
-                                  : Text('Continue'),
-                        );
-                      }),
-
-                      // ElevatedButton(
-                      //   onPressed: () async {
-                      //     Navigator.push(
-                      //       context,
-                      //       MaterialPageRoute(
-                      //         builder: (context) => ConsentForms (),
-                      //       ),
-                      //     );
-                      //   },
-                      //   child: Text('LOG OUT'),
-                      // ),
-                      SizedBox(height: 30),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Divider(
-                              endIndent: 5,
-                              color: AppColors.dividerColor,
-                            ),
-                          ),
-                          Text(
-                            'or',
-                            style: TextStyle(color: AppColors.dividerColor),
-                          ),
-                          Expanded(
-                            child: Divider(
-                              indent: 5,
-                              color: AppColors.dividerColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 30),
-                      Buttons.button(
-                        imagePath: AppImages.apple,
-                        buttonColor: AppColors.containerColor,
-                        textColor: AppColors.commonBlack,
-
-                        onTap: () {
-                          signInWithApple();
-                        },
-                        text: Text('Continue with Apple'),
-                      ),
-                      SizedBox(height: 20),
-                      Buttons.button(imgHeight: 18,
-                        imgWeight: 18,
-                        imagePath: AppImages.google,
-
-                        buttonColor: AppColors.containerColor,
-                        textColor: AppColors.commonBlack,
-
-                        onTap: () {
-                          initializeGoogleAuth();
-                        },
-                        text: Text('Continue with Google'),
-                      ),
-
-                      // SizedBox(height: 20),
-                      // Buttons.button(
-                      //   imagePath: AppImages.mail,
-                      //   buttonColor: AppColors.containerColor,
-                      //   textColor: AppColors.commonBlack,
-                      //
-                      //   onTap: () {},
-                      //   text: 'Continue with Mail',
-                      // ),
-                      SizedBox(height: 40),
-                      Text(
-                        'By proceeding, you consent to get calls, WhatsApp or SMS/RCS messages, including by automated dialler, from Hoppr and its affiliates to the number provided. Text "STOP" to 23453 to opt out.',
-                        style: TextStyle(
-                          color: AppColors.textColor,
-                          fontSize: 12,
-                        ),
-                      ),
-                      SizedBox(height: 30),
-
-                      RichText(
-                        text: const TextSpan(
-                          style: TextStyle(color: Colors.black, fontSize: 12),
-                          children: [
-                            TextSpan(
-                              text:
-                                  "This site is protected by reCAPTCHA and the Google ",
-                            ),
-                            TextSpan(
-                              text: "Privacy Policy ",
-                              style: TextStyle(
-                                color: Color(0xff686868),
-                                fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                            TextSpan(text: " and "),
-                            TextSpan(
-                              text: "Terms of Service",
-                              style: TextStyle(
-                                color: Color(0xff686868),
-                                fontWeight: FontWeight.bold,
+                            const SizedBox(width: 5),
+                            Expanded(
+                              flex: 4,
+                              child: TextFormField(
+                                cursorColor: AppColors.commonBlack,
+                                controller: controller.mobileNumber,
+                                keyboardType: TextInputType.phone,
+                                inputFormatters: [
+                                  LengthLimitingTextInputFormatter(10),
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                decoration: InputDecoration(
+                                  hintText: 'Enter mobile number',
+                                  filled: true,
+                                  fillColor: const Color(0xffF1F1F1),
+                                  border: OutlineInputBorder(
+                                    borderSide: BorderSide.none,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                                // validator: (value) {
+                                //   final code = controller.selectedCountryCode.value;
+                                //
+                                //   if (value == null || value.isEmpty) {
+                                //     controller.errorText.value = 'Please enter your Mobile Number';
+                                //     return ''; // prevents default error message
+                                //   } else if (code == '+91' && value.length != 10) {
+                                //     controller.errorText.value = 'Indian numbers must be exactly 10 digits';
+                                //     return '';
+                                //   } else if (code == '+234' && value.length != 10) {
+                                //     controller.errorText.value = 'Nigerian numbers must be exactly 10 digits';
+                                //     return '';
+                                //   }
+                                //
+                                //   controller.errorText.value = ''; // clear previous error
+                                //   return null;
+                                // },
+                                onChanged: (value) {
+                                  final code =
+                                      controller.selectedCountryCode.value;
+                                  if (value.isEmpty) {
+                                    controller.errorText.value =
+                                        'Please enter your Mobile Number';
+                                  } else if (code == '+91' &&
+                                      value.length != 10) {
+                                    controller.errorText.value =
+                                        'Indian numbers must be exactly 10 digits';
+                                  } else if (code == '+234' &&
+                                      value.length != 10) {
+                                    controller.errorText.value =
+                                        'Nigerian numbers must be exactly 10 digits';
+                                  } else {
+                                    controller.errorText.value = '';
+                                  }
+                                },
                               ),
                             ),
-                            TextSpan(text: " apply"),
                           ],
                         ),
-                      ),
-                    ],
+
+                        Obx(
+                          () =>
+                              controller.errorText.value.isNotEmpty
+                                  ? Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      controller.errorText.value,
+                                      style: const TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  )
+                                  : const SizedBox(),
+                        ),
+
+                        SizedBox(height: 30),
+                        Obx(() {
+                          return Buttons.button(
+                            buttonColor:
+                                controller.isLoading.value
+                                    ? Colors.white
+                                    : Colors.black,
+                            onTap: () async {
+                              final code = controller.selectedCountryCode.value;
+                              final value = controller.mobileNumber.text.trim();
+
+                              // Manual validation
+                              if (value.isEmpty) {
+                                controller.errorText.value =
+                                    'Please enter your Mobile Number';
+                                return;
+                              } else if (code == '+91' && value.length != 10) {
+                                controller.errorText.value =
+                                    'Indian numbers must be exactly 10 digits';
+                                return;
+                              } else if (code == '+234' && value.length != 10) {
+                                controller.errorText.value =
+                                    'Nigerian numbers must be exactly 10 digits';
+                                return;
+                              } else {
+                                controller.errorText.value = ''; // clear error
+                              }
+
+                              // Only call login if validation passes
+                              await controller.login(context);
+                            },
+
+                            text:
+                                controller.isLoading.value
+                                    ? Image.asset(AppImages.animation)
+                                    : Text('Continue'),
+                          );
+                        }),
+
+                         ElevatedButton(
+                           onPressed: () async {
+                             Navigator.push(
+                               context,
+                               MaterialPageRoute(
+                                 builder: (context) => OtpScreens (mobileNumber: 'mobileNumber'),
+                               ),
+                             );
+                           },
+                           child: Text('LOG OUT'),
+                         ),
+                        SizedBox(height: 30),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Divider(
+                                endIndent: 5,
+                                color: AppColors.dividerColor,
+                              ),
+                            ),
+                            Text(
+                              'or',
+                              style: TextStyle(color: AppColors.dividerColor),
+                            ),
+                            Expanded(
+                              child: Divider(
+                                indent: 5,
+                                color: AppColors.dividerColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 30),
+                        Buttons.button(
+                          imagePath: AppImages.apple,
+                          buttonColor: AppColors.containerColor,
+                          textColor: AppColors.commonBlack,
+
+                          onTap: () {
+                            signInWithApple();
+                          },
+                          text: Text('Continue with Apple'),
+                        ),
+                        SizedBox(height: 20),
+                        Buttons.button(
+                          imgHeight: 18,
+                          imgWeight: 18,
+                          imagePath: AppImages.google,
+
+                          buttonColor: AppColors.containerColor,
+                          textColor: AppColors.commonBlack,
+
+                          onTap: () {
+                            initializeGoogleAuth();
+                          },
+                          text: Text('Continue with Google'),
+                        ),
+
+                        // SizedBox(height: 20),
+                        // Buttons.button(
+                        //   imagePath: AppImages.mail,
+                        //   buttonColor: AppColors.containerColor,
+                        //   textColor: AppColors.commonBlack,
+                        //
+                        //   onTap: () {},
+                        //   text: 'Continue with Mail',
+                        // ),
+                        SizedBox(height: 40),
+                        Text(
+                          'By proceeding, you consent to get calls, WhatsApp or SMS/RCS messages, including by automated dialler, from Hoppr and its affiliates to the number provided. Text "STOP" to 23453 to opt out.',
+                          style: TextStyle(
+                            color: AppColors.textColor,
+                            fontSize: 12,
+                          ),
+                        ),
+                        SizedBox(height: 30),
+
+                        RichText(
+                          text: const TextSpan(
+                            style: TextStyle(color: Colors.black, fontSize: 12),
+                            children: [
+                              TextSpan(
+                                text:
+                                    "This site is protected by reCAPTCHA and the Google ",
+                              ),
+                              TextSpan(
+                                text: "Privacy Policy ",
+                                style: TextStyle(
+                                  color: Color(0xff686868),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              TextSpan(text: " and "),
+                              TextSpan(
+                                text: "Terms of Service",
+                                style: TextStyle(
+                                  color: Color(0xff686868),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              TextSpan(text: " apply"),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
 
-          Obx(() {
-            return controller.isGoogleLoading.value
-                ? Positioned.fill(
-                  child: Container(
-                    color: Colors.black.withOpacity(0.2),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: const Center(
-                        child: SpinKitCircle(color: Colors.black45, size: 50.0),
+              Obx(() {
+                return controller.isGoogleLoading.value
+                    ? Positioned.fill(
+                      child: Container(
+                        color: Colors.black.withOpacity(0.2),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: const Center(
+                            child: SpinKitCircle(
+                              color: Colors.black45,
+                              size: 50.0,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                )
-                : const SizedBox.shrink();
-          }),
-        ],
+                    )
+                    : const SizedBox.shrink();
+              }),
+            ],
+          ),
+        ),
       ),
     );
   }
