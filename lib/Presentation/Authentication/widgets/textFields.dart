@@ -329,7 +329,7 @@ class CustomTextfield {
     Widget? suffixIcon,
     String? initialValue,
     bool readOnly = true,
-    bool autofocus = true,
+
     String? leadingImage,
     double imgHeight = 10,
     double imgWidth = 10,
@@ -350,7 +350,7 @@ class CustomTextfield {
       child: TextFormField(
         style: Style,
         cursorHeight: 16,
-        autofocus: autofocus,
+
         onChanged: onChanged,
         onTap: onTap,
         controller: controller,

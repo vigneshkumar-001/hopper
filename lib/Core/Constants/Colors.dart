@@ -27,6 +27,7 @@ class AppColors {
   static final buttonBorder = Color(0xffA9A8A8);
   static final shareTripContainer = Color(0xffECECEC5E);
     static final rideInProgress = Color(0Xff0B9B3C);
+    static final timerBorderColor = Color(0XffE74700);
 
 
   static final errorBorder = Colors.red;

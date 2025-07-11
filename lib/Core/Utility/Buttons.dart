@@ -194,7 +194,10 @@ class Buttons {
     );
   }
 
-  static void showCancelRideBottomSheet(BuildContext context) {
+  static void showCancelRideBottomSheet(
+    BuildContext context, {
+    required Function(String selectedReason) onConfirmCancel,
+  }) {
     String? selectedReason;
 
     showModalBottomSheet(
@@ -208,16 +211,16 @@ class Buttons {
         return StatefulBuilder(
           builder: (context, setState) {
             return DraggableScrollableSheet(
-              maxChildSize: 0.63,
+              maxChildSize: 0.65,
               minChildSize: 0.5,
-              initialChildSize: 0.62,
+              initialChildSize: 0.65,
               builder: (context, scrollController) {
                 return Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(25),
-                    ),
+                    // borderRadius: BorderRadius.vertical(
+                    //   top: Radius.circular(25),
+                    // ),
                   ),
                   padding: const EdgeInsets.all(20),
                   child: ListView(
@@ -284,11 +287,14 @@ class Buttons {
                                 ? AppColors.containerColor
                                 : AppColors.commonBlack,
                         borderRadius: 8,
-                        onTap: () {
+                        onTap: () async {
                           if (selectedReason != null) {
+                            await onConfirmCancel(
+                              selectedReason!,
+                            ); // ⬅️ callback with selected reason
                             Navigator.pop(context);
-                            print('Submitted reason: $selectedReason');
                           } else {
+                            // Show a warning if no reason selected
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text(
@@ -298,6 +304,7 @@ class Buttons {
                             );
                           }
                         },
+
                         text: Text('Submit Feedback'),
                       ),
                     ],

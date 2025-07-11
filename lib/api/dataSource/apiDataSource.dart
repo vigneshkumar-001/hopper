@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Presentation/Authentication/models/loginResponse.dart';
 import 'package:hopper/Presentation/Authentication/models/otp_response.dart';
+import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/models/baseinfo_response.dart';
 import 'package:hopper/Presentation/OnBoarding/models/chooseservice_model.dart';
@@ -20,6 +21,8 @@ import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../Presentation/Authentication/controller/authController.dart';
 import '../../Presentation/DriverScreen/models/booking_accept_model.dart';
+import '../../Presentation/DriverScreen/models/driver_online_status_model.dart';
+import '../../Presentation/DriverScreen/models/get_todays_activity_models.dart';
 import '../repository/failure.dart';
 import 'package:dio/dio.dart';
 import 'package:dartz/dartz.dart';
@@ -1022,14 +1025,15 @@ class ApiDataSource extends BaseApiDataSource {
     required String status,
   }) async {
     try {
-      String url = 'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api/users/driver-response';
+      String url =
+          'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api/users/driver-response';
 
       final response = await Request.sendRequest(
         url,
         {
-          "driverId": "683fed0a00aa693559289fbb",
+          "driverId": "683fed0a00aa693559289fbc",
           "bookingId": bookingId,
-          "response": status
+          "response": status,
         },
         'Post',
         false,
@@ -1041,6 +1045,194 @@ class ApiDataSource extends BaseApiDataSource {
         return Right(result);
       } else if (response is Response && response.statusCode == 409) {
         return Left(ServerFailure(response.data['message']));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, BookingAcceptModel>> otpRequest({
+    required String bookingId,
+  }) async {
+    try {
+      String url = ApiConstents.generateOtp;
+
+      final response = await Request.sendRequest(
+        url,
+        {"bookingId": bookingId},
+        'Post',
+        false,
+      );
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          final result = BookingAcceptModel.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, BookingAcceptModel>> otpInsert({
+    required String bookingId,
+    required String enteredOtp,
+  }) async {
+    try {
+      String url = ApiConstents.rideVerifyOtp;
+
+      final response = await Request.sendRequest(
+        url,
+        {"bookingId": bookingId, "enteredOtp": enteredOtp},
+        'Post',
+        false,
+      );
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          final result = BookingAcceptModel.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, DriverOnlineStatusModel>> driverOnlineStatus({
+    required bool onlineStatus,
+  }) async {
+    try {
+      String url = ApiConstents.driverOnlineStatus;
+
+      final response = await Request.sendRequest(
+        url,
+        {"onlineStatus": onlineStatus},
+        'Post',
+        false,
+      );
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          final result = DriverOnlineStatusModel.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, GetTodayActivityModels>> todayActivity() async {
+    try {
+      String url = ApiConstents.todayStatus;
+
+      final response = await Request.sendGetRequest(url, {}, 'Get', false);
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          CommonLogger.log.i("Parsing response data: ${response.data}");
+          final result = GetTodayActivityModels.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, WeeklyChallengeModels>> weeklyChallenge() async {
+    try {
+      String url = ApiConstents.weeklyChallenge;
+
+      final response = await Request.sendGetRequest(url, {}, 'Get', false);
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          CommonLogger.log.i("Parsing response data: ${response.data}");
+          final result = WeeklyChallengeModels.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, BookingAcceptModel>> cancelBooking({
+    required String reason,
+  }) async {
+    try {
+      String url = ApiConstents. cancelBooking;
+
+      final response = await Request.sendRequest(
+        url,
+        {"rejectedReason": reason, "driverId": "683fed0a00aa693559289fbc"},
+        'Post',
+        false,
+      );
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          CommonLogger.log.i("Parsing response data: ${response.data}");
+          final result = BookingAcceptModel.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
       } else if (response is Response) {
         return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
       } else {

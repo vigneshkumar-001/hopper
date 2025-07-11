@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:action_slider/action_slider.dart';
+import 'package:flutter/services.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,6 +14,7 @@ import '../../../Core/Constants/log.dart';
 import '../../../Core/Utility/Buttons.dart';
 import '../../../utils/map/google_map.dart';
 import '../../../utils/map/route_info.dart';
+import '../../../utils/netWorkHandling/network_handling_screen.dart';
 import 'cash_collected_screen.dart';
 
 class RideStatsScreen extends StatefulWidget {
@@ -37,7 +39,16 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
   @override
   void initState() {
     super.initState();
-
+    Future.delayed(Duration(milliseconds: 100), () {
+      FocusManager.instance.primaryFocus?.unfocus();
+    });
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark, // Or light
+      ),
+    );
     positionStream = Geolocator.getPositionStream().listen((Position position) {
       setState(() {
         origin = LatLng(position.latitude, position.longitude);
@@ -107,12 +118,41 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Stack(
+    return NoInternetOverlay(
+      child: Scaffold(
+        body: Stack(
           children: [
-            Positioned.fill(
+            //  CommonGoogleMap(
+            //   initialPosition: origin,
+            //   markers: {
+            //     Marker(markerId: MarkerId('start'), position: origin),
+            //     Marker(markerId: MarkerId('end'), position: destination),
+            //   },
+            //   polylines: {
+            //     Polyline(
+            //       polylineId: PolylineId("route"),
+            //       color: AppColors.commonBlack,
+            //       width: 5,
+            //       points: polylinePoints,
+            //     ),
+            //   },
+            // ),
+            SizedBox(
+              height: 650,
               child: CommonGoogleMap(
+                // onMapCreated: () {
+                //   String style = await DefaultAssetBundle.of(
+                //     context,
+                //   ).loadString('assets/map_style/map_style.json');
+                //   _mapController!.setMapStyle(style);
+                // },
+                onMapCreated: (controller) async {
+                  _mapController = controller;
+                  String style = await DefaultAssetBundle.of(
+                    context,
+                  ).loadString('assets/map_style/map_style1.json');
+                  _mapController!.setMapStyle(style);
+                },
                 initialPosition: origin,
                 markers: {
                   Marker(markerId: MarkerId('start'), position: origin),
@@ -128,28 +168,9 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                 },
               ),
             ),
-
-            // SizedBox(
-            //   height: 650,
-            //   child: CommonGoogleMap(
-            //     initialPosition: origin, // any LatLng
-            //     markers: {
-            //       Marker(markerId: MarkerId('start'), position: origin),
-            //       Marker(markerId: MarkerId('end'), position: destination),
-            //     },
-            //     polylines: {
-            //       Polyline(
-            //         polylineId: PolylineId("route"),
-            //         color: AppColors.nBlue,
-            //         width: 5,
-            //         points: polylinePoints,
-            //       ),
-            //     },
-            //   ),
-            // ),
             // Existing FAB
             Positioned(
-              top: driverCompletedRide ? 550 : 350,
+              top: driverCompletedRide ? 550 : 450,
               right: 10,
               child: Column(
                 children: [
@@ -162,26 +183,12 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                     onPressed: _goToCurrentLocation,
                     child: const Icon(Icons.my_location, color: Colors.black),
                   ),
-                  const SizedBox(height: 12),
-                  FloatingActionButton(
-                    mini: true,
-                    backgroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    onPressed: _goToCurrentLocation,
-                    child: Image.asset(
-                      AppImages.reLoaction,
-                      height: 25,
-                      width: 25,
-                    ),
-                  ),
                 ],
               ),
             ),
 
             Positioned(
-              top: 20,
+              top: 45,
               left: 10,
               right: 10,
               child: Row(
@@ -244,13 +251,13 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
               ),
             ),
             DraggableScrollableSheet(
-              initialChildSize: driverCompletedRide ? 0.2 : 0.80,
+              initialChildSize: driverCompletedRide ? 0.27 : 0.75,
               minChildSize:
-                  driverCompletedRide ? 0.2 : 0.5, // Can collapse to 40%
+                  driverCompletedRide ? 0.25 : 0.40, // Can collapse to 40%
               maxChildSize:
                   driverCompletedRide
-                      ? 0.2
-                      : 0.80, // Can expand up to 95% height
+                      ? 0.30
+                      : 0.75, // Can expand up to 95% height
               // initialChildSize:  0.80, // Start with 80% height
               // minChildSize: 0.5, // Can collapse to 40%
               // maxChildSize: 0.80, // Can expand up to 95% height
@@ -258,16 +265,14 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                 return Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(30),
-                      topRight: Radius.circular(30),
-                    ),
+                    // borderRadius: BorderRadius.only(
+                    //   topLeft: Radius.circular(30),
+                    //   topRight: Radius.circular(30),
+                    // ),
                   ),
                   child: ListView(
                     controller: scrollController,
                     children: [
-                      const SizedBox(height: 10),
-
                       Center(
                         child: Container(
                           width: 60,
@@ -360,12 +365,12 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                   ),
                                   SizedBox(width: 20),
                                   Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       CustomTextfield.textWithStyles600(
-                                        color: AppColors.commonBlack
-                                            .withOpacity(0.5),
+                                        color: AppColors.commonBlack.withOpacity(
+                                          0.5,
+                                        ),
                                         fontSize: 16,
                                         'Pickup',
                                       ),
@@ -398,8 +403,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                   ),
                                   SizedBox(width: 20),
                                   Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       CustomTextfield.textWithStyles600(
                                         fontSize: 16,
@@ -491,7 +495,10 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                 buttonColor: AppColors.red,
 
                                 onTap: () {
-                                  Buttons.showCancelRideBottomSheet(context);
+                                  Buttons.showCancelRideBottomSheet(
+                                    context,
+                                    onConfirmCancel: (reason) {},
+                                  );
                                 },
                                 text: Text('Cancel this Ride'),
                               ),
@@ -517,7 +524,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                               ],
                             ),
                             CustomTextfield.textWithStylesSmall(
-                               fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w500,
                               'Dropping off Rebecca',
                             ),
                             Padding(
@@ -544,8 +551,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder:
-                                          (context) => CashCollectedScreen(),
+                                      builder: (context) => CashCollectedScreen(),
                                     ), // replace with your widget
                                   );
                                 },

@@ -23,11 +23,14 @@ Future<Map<String, dynamic>> getRouteInfo({
     final polyline = route['overview_polyline']['points'];
     final directionText = steps[0]['html_instructions'];
     final distance = steps[0]['distance']['text'];
+    final maneuver = steps[0]['maneuver'] ?? 'straight';
 
     return {
       "direction": directionText,
       "distance": distance,
       "polyline": polyline,
+      "maneuver": maneuver,
+
     };
   } else {
     throw Exception('Failed to fetch route');

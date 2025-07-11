@@ -51,6 +51,11 @@ class AppImages {
   static String getHelp = "assets/images/getHelp.png";
   static String share = "assets/images/share.png";
   static String redArrow = "assets/images/redArrow.png";
+  static String movingCar = "assets/images/movingCar.png";
+  static String movingCar1 = "assets/images/movingCar1.png";
   static String reLoaction = "assets/images/reLoaction.png";
+  static String driverCarMove = "assets/images/driverCarMove.png";
+  static String graph = "assets/images/graph.png";
+  static String no_internet = "assets/images/no_internet.png";
 
 }

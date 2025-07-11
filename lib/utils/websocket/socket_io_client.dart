@@ -40,17 +40,11 @@ class SocketService {
   }
 
   void registerDriver(String driverId) {
-    emit('register-driver', {
-      'driverId': driverId,
-      'type': 'driver',
-    });
+    emit('register-driver', {'driverId': driverId, 'type': 'driver'});
   }
 
   void joinBooking(String bookingId, String userId) {
-    emit('join-booking', {
-      'bookingId': bookingId,
-      'userId': userId,
-    });
+    emit('join-booking', {'bookingId': bookingId, 'userId': userId});
   }
 
   void on(String event, Function(dynamic) callback) {

@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import '../Presentation/Authentication/controller/authController.dart';
+import '../Presentation/Authentication/controller/network_handling_controller.dart';
 import '../Presentation/Authentication/controller/otp_controller.dart';
 import '../Presentation/DriverScreen/controller/driver_status_controller.dart';
 import '../Presentation/OnBoarding/controller/basicInfo_controller.dart';
@@ -16,6 +17,7 @@ import '../Presentation/OnBoarding/controller/userprofile_controller.dart';
 import '../Presentation/OnBoarding/controller/vehicledetails_controller.dart';
 
 Future<void> initController() async {
+  Get.lazyPut(() => NetworkController());
   Get.lazyPut(() => AuthController());
   // Get.lazyPut(() => OtpController());
   Get.lazyPut(() => OtpController(), fenix: true);

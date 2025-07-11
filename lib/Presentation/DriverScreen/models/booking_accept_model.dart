@@ -1,19 +1,19 @@
-class  BookingAcceptModel  {
+class BookingAcceptModel {
   final int status;
   final String message;
-  final BookingAcceptedData data;
+  final BookingAcceptedData? data;
 
-  BookingAcceptModel({
-    required this.status,
-    required this.message,
-    required this.data,
-  });
+  BookingAcceptModel({required this.status, required this.message, this.data});
 
   factory BookingAcceptModel.fromJson(Map<String, dynamic> json) {
     return BookingAcceptModel(
-      status: json['status'],
-      message: json['message'],
-      data: BookingAcceptedData.fromJson(json['data']),
+      status: json['status'] ?? 0,
+      message: json['message'] ?? '',
+      data:
+          json['data'] != null
+              ? BookingAcceptedData.fromJson(json['data'])
+              : null,
+      // data: BookingAcceptedData.fromJson(json['data']),
     );
   }
 }

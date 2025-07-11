@@ -29,7 +29,8 @@ class OtpController extends GetxController {
     BuildContext context,
     String otp, {
     String? type,
-  }) async {
+  }) async
+  {
     isLoading.value = true;
     CommonLogger.log.i(type);
     try {
