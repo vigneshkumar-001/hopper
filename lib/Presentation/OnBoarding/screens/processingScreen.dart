@@ -23,7 +23,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
 
   final List<Map<String, dynamic>> carSteps = [
     {'title': 'Basic Info', 'image': AppImages.lock},
-    {'title': 'Driver Address Details','image': AppImages.lock},
+    {'title': 'Driver Address Details', 'image': AppImages.lock},
     {'title': 'Profile Photo', 'image': AppImages.lock},
     {'title': 'Identify Verification', 'image': AppImages.lock},
     {'title': 'Driver License', 'image': AppImages.lock},
@@ -50,7 +50,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
 
     final isCar =
         profile?.serviceType ==
-        'Car'; // or add a .toLowerCase() check if needed
+        'Car';
     final serviceType = isCar ? 'Car' : 'Bike';
 
     if (serviceType == 'Bike') {
@@ -121,7 +121,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
                                     ),
                                     if (!isBasicInfo)
                                       Image.asset(
-                                        item['image']?? '',
+                                        item['image'] ?? '',
                                         height: 20,
                                         width: 20,
                                       ),
@@ -156,7 +156,6 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
                   );
                 },
                 text: Text('Start Application'),
-
               ),
             ],
           ),

@@ -57,5 +57,7 @@ class AppImages {
   static String driverCarMove = "assets/images/driverCarMove.png";
   static String graph = "assets/images/graph.png";
   static String no_internet = "assets/images/no_internet.png";
+  static String star = "assets/images/star.png";
+  static String starFill = "assets/images/starFill.png";
 
 }

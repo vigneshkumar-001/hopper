@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
+import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
@@ -96,7 +97,9 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                   child: Buttons.button(
                     borderRadius: 7,
                     buttonColor: AppColors.commonBlack,
-                    onTap: () {},
+                    onTap: () {
+                      _showRatingBottomSheet(context);
+                    },
                     text: Text('Cash Collected'),
                   ),
                 ),
@@ -105,6 +108,134 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  void _showRatingBottomSheet(BuildContext context) {
+    int selectedRating = 0;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      // shape: const RoundedRectangleBorder(
+      //   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      // ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return SingleChildScrollView(
+              child: Column(
+                children: [
+                  const SizedBox(height: 20),
+                  Center(
+                    child: Container(
+                      width: 60,
+                      height: 5,
+
+                      decoration: BoxDecoration(
+                        color: Colors.grey[400],
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 50),
+                    child: Column(
+                      children: [
+                        Image.asset(AppImages.dummyImg, height: 65, width: 65),
+                        const SizedBox(height: 20),
+                        CustomTextfield.textWithStyles600(
+                          textAlign: TextAlign.center,
+                          fontSize: 20,
+                          'Rate your Experience with Rebecca?',
+                        ),
+                        const SizedBox(height: 25),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 40),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: List.generate(5, (index) {
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    selectedRating = index + 1;
+                                  });
+                                  CommonLogger.log.i(selectedRating);
+                                },
+                                child: Image.asset(
+                                  index < selectedRating
+                                      ? AppImages.starFill
+                                      : AppImages.star,
+                                  height: 48,
+                                  width: 48,
+                                  color:
+                                      index < selectedRating
+                                          ? AppColors.commonBlack
+                                          : AppColors.buttonBorder,
+                                ),
+                              );
+                              return IconButton(
+                                icon: Icon(
+                                  Icons.star,
+                                  size: 45,
+                                  color:
+                                      index < selectedRating
+                                          ? AppColors.commonBlack
+                                          : AppColors.containerColor,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    selectedRating = index + 1;
+                                  });
+                                },
+                              );
+                            }),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Buttons.button(
+                                  borderRadius: 8,
+                                  textColor: AppColors.commonBlack,
+                                  borderColor: AppColors.buttonBorder,
+                                  buttonColor: AppColors.commonWhite,
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                  },
+                                  text: Text('Close'),
+                                ),
+                              ),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Buttons.button(
+                                  borderRadius: 8,
+                                  buttonColor: AppColors.commonBlack,
+                                  onTap: () {
+                                    selectedRating;
+                                    CommonLogger.log.i(selectedRating);
+                                    Navigator.pop(context);
+                                  },
+                                  text: Text('Rate Ride'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

@@ -46,17 +46,13 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
     SystemChrome.setSystemUIOverlayStyle(
       SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark, // Or light
+        statusBarIconBrightness: Brightness.dark,
       ),
     );
     positionStream = Geolocator.getPositionStream().listen((Position position) {
       setState(() {
         origin = LatLng(position.latitude, position.longitude);
       });
-
-      _mapController?.animateCamera(
-        CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)),
-      );
     });
 
     loadRoute();
@@ -94,7 +90,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
 
     final latLng = LatLng(position.latitude, position.longitude);
 
-    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(latLng, 17));
+    _mapController?.animateCamera(CameraUpdate.newLatLng(latLng));
   }
 
   String getManeuverIcon(maneuver) {
@@ -148,11 +144,45 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                 // },
                 onMapCreated: (controller) async {
                   _mapController = controller;
+
+                  // Optional: apply custom map style
                   String style = await DefaultAssetBundle.of(
                     context,
                   ).loadString('assets/map_style/map_style1.json');
                   _mapController!.setMapStyle(style);
+
+                  // Wait briefly to ensure map is ready
+                  await Future.delayed(const Duration(milliseconds: 300));
+
+                  // Fit bounds (auto zoom)
+                  LatLngBounds bounds = LatLngBounds(
+                    southwest: LatLng(
+                      origin.latitude < destination.latitude
+                          ? origin.latitude
+                          : destination.latitude,
+                      origin.longitude < destination.longitude
+                          ? origin.longitude
+                          : destination.longitude,
+                    ),
+                    northeast: LatLng(
+                      origin.latitude > destination.latitude
+                          ? origin.latitude
+                          : destination.latitude,
+                      origin.longitude > destination.longitude
+                          ? origin.longitude
+                          : destination.longitude,
+                    ),
+                  );
+
+                  // Apply bounds with padding
+                  _mapController!.animateCamera(
+                    CameraUpdate.newLatLngBounds(
+                      bounds,
+                      70,
+                    ), // 70 is padding in pixels
+                  );
                 },
+
                 initialPosition: origin,
                 markers: {
                   Marker(markerId: MarkerId('start'), position: origin),
@@ -251,9 +281,8 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
               ),
             ),
             DraggableScrollableSheet(
-              initialChildSize: driverCompletedRide ? 0.27 : 0.75,
-              minChildSize:
-                  driverCompletedRide ? 0.25 : 0.40, // Can collapse to 40%
+              initialChildSize: driverCompletedRide ? 0.28 : 0.75,
+              minChildSize: driverCompletedRide ? 0.25 : 0.40,
               maxChildSize:
                   driverCompletedRide
                       ? 0.30
@@ -365,12 +394,12 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                   ),
                                   SizedBox(width: 20),
                                   Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       CustomTextfield.textWithStyles600(
-                                        color: AppColors.commonBlack.withOpacity(
-                                          0.5,
-                                        ),
+                                        color: AppColors.commonBlack
+                                            .withOpacity(0.5),
                                         fontSize: 16,
                                         'Pickup',
                                       ),
@@ -403,7 +432,8 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                   ),
                                   SizedBox(width: 20),
                                   Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       CustomTextfield.textWithStyles600(
                                         fontSize: 16,
@@ -523,10 +553,12 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 10),
                             CustomTextfield.textWithStylesSmall(
                               fontWeight: FontWeight.w500,
                               'Dropping off Rebecca',
                             ),
+                            const SizedBox(height: 5),
                             Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 20,
@@ -551,7 +583,8 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) => CashCollectedScreen(),
+                                      builder:
+                                          (context) => CashCollectedScreen(),
                                     ), // replace with your widget
                                   );
                                 },
@@ -567,7 +600,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                 child: const Text(
                                   'Complete Ride',
                                   style: TextStyle(
-                                    color: Color(0xFFD6F1FF), // light blue text
+                                    color: AppColors.commonWhite,
                                     fontSize: 20,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -581,6 +614,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                 // },
                               ),
                             ),
+                            const SizedBox(height: 10),
                           ],
                         ),
                       ],

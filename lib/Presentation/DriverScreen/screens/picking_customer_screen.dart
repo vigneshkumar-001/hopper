@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:action_slider/action_slider.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -41,7 +42,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   LatLng? nextPoint; // 📌
   LatLng? lastPosition;
   bool isAnimating = false;
-
+  Marker? _carMarker;
   GoogleMapController? _mapController;
   bool driverReached = false;
   final DriverStatusController driverStatusController = Get.put(
@@ -57,6 +58,16 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   Timer? _timer;
 
   bool showRedTimer = false;
+
+  Future<void> _loadMarkerIcons() async {
+    carIcon = await BitmapDescriptor.asset(
+      height: 70,
+      const ImageConfiguration(size: Size(50, 50)),
+      AppImages.movingCar,
+    );
+
+    setState(() {});
+  }
 
   void _startTimer() {
     _timer?.cancel();
@@ -94,6 +105,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
       ),
     );
     _loadMarkerIcons();
+
     _getInitialDriverLocation(); // Will call loadRoute after getting location
     // _startTimer();
   }
@@ -169,22 +181,68 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     positionStream = Geolocator.getPositionStream(
       locationSettings: LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 5, // updates every 5 meters
+        distanceFilter: 5,
       ),
     ).listen((position) {
       final current = LatLng(position.latitude, position.longitude);
 
-      if (lastPosition == null || !isAnimating) {
-        _animateCarTo(current);
+      // Avoid animation if driver has not moved significantly
+      if (lastPosition != null) {
+        final distanceMoved = Geolocator.distanceBetween(
+          lastPosition!.latitude,
+          lastPosition!.longitude,
+          current.latitude,
+          current.longitude,
+        );
+
+        if (distanceMoved < 8) {
+          print("🔴 Ignored minor movement: $distanceMoved m");
+          return;
+        }
       }
 
+      if (!isAnimating) {
+        if (isOffRoute(current)) {
+          print("🧭 Off route! Recalculating...");
+          _fetchUpdatedRoute(current); // 👇 This fetches a new route
+        }
+
+        _animateCarTo(current);
+      }
+      fitBoundsToDriverAndPickup();
+      // Always update last known position
       lastPosition = current;
     });
   }
 
+  Future<void> _fetchUpdatedRoute(LatLng currentLocation) async {
+    final result = await getRouteInfo(
+      origin: currentLocation,
+      destination: widget.pickupLocation,
+    );
+
+    setState(() {
+      polylinePoints = decodePolyline(result['polyline']);
+      directionText = result['direction'];
+      distance = result['distance'];
+      maneuver = result['maneuver'];
+
+      if (polylinePoints.length >= 2) {
+        nextPoint = polylinePoints[1];
+      } else if (polylinePoints.length == 1) {
+        nextPoint = polylinePoints[0];
+      }
+    });
+  }
+
+  bool _isSameLocation(LatLng a, LatLng b) {
+    return (a.latitude - b.latitude).abs() < 0.00001 &&
+        (a.longitude - b.longitude).abs() < 0.00001;
+  }
+
   Future<void> _animateCarTo(LatLng to) async {
-    if (driverLocation == null) {
-      setState(() => driverLocation = to);
+    if (driverLocation == null || _isSameLocation(driverLocation!, to)) {
+      print("⚠️ Skipping animation: same location");
       return;
     }
 
@@ -202,11 +260,10 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
       setState(() {
         driverLocation = LatLng(lat, lng);
       });
-
-      _mapController?.animateCamera(CameraUpdate.newLatLng(driverLocation!));
     }
 
     isAnimating = false;
+
     _updateRemainingPolyline(to);
   }
 
@@ -268,19 +325,6 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     return (bearing * (180 / pi) + 360) % 360;
   }
 
-  // void _trackDriverLocation() {
-  //   positionStream = Geolocator.getPositionStream().listen((Position position) {
-  //     final newPosition = LatLng(position.latitude, position.longitude);
-  //     // loadRoute();
-  //     setState(() {
-  //       origin = newPosition;
-  //       _updateRemainingPolyline(newPosition);
-  //     });
-  //     _mapController?.animateCamera(
-  //       CameraUpdate.newLatLngZoom(newPosition, 16),
-  //     );
-  //   });
-  // }
   void _goToCurrentLocation() async {
     Position position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
@@ -289,7 +333,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     final latLng = LatLng(position.latitude, position.longitude);
     CommonLogger.log.i('Current Loc :${latLng}');
 
-    _mapController?.animateCamera(CameraUpdate.newLatLng(latLng));
+    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(latLng, 17));
   }
 
   String parseHtmlString(String htmlText) {
@@ -331,15 +375,43 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     }
   }
 
-  Future<void> _loadMarkerIcons() async {
-    carIcon = await BitmapDescriptor.asset(
-      height: 80,
+  void fitBoundsToDriverAndPickup() {
+    if (_mapController == null ||
+        driverLocation == null ||
+        widget.pickupLocation == null)
+      return;
 
-      const ImageConfiguration(size: Size(48, 48)),
-      AppImages.movingCar,
+    final bounds = LatLngBounds(
+      southwest: LatLng(
+        min(driverLocation!.latitude, widget.pickupLocation.latitude),
+        min(driverLocation!.longitude, widget.pickupLocation.longitude),
+      ),
+      northeast: LatLng(
+        max(driverLocation!.latitude, widget.pickupLocation.latitude),
+        max(driverLocation!.longitude, widget.pickupLocation.longitude),
+      ),
     );
 
-    setState(() {});
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(bounds, 80), // adjust padding
+    );
+  }
+
+  bool isOffRoute(LatLng currentLocation) {
+    if (polylinePoints.isEmpty) return true;
+
+    for (final point in polylinePoints) {
+      final distance = Geolocator.distanceBetween(
+        currentLocation.latitude,
+        currentLocation.longitude,
+        point.latitude,
+        point.longitude,
+      );
+
+      if (distance < 20) return false; // within 20 meters = on route
+    }
+
+    return true; // 🚨 Off the route
   }
 
   @override
@@ -356,13 +428,10 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                   nextPoint ?? widget.pickupLocation,
                 )
                 : 0,
-
-        // rotation: driverLocation != null
-        //     ? _getBearing(driverLocation!, nextPoint ?? widget.pickupLocation)
-        //     : 0.0,
         anchor: const Offset(0.5, 0.5),
         flat: true,
       ),
+
       Marker(
         markerId: const MarkerId('pickup'),
         position: widget.pickupLocation,
@@ -380,6 +449,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                 myLocationEnabled: false,
                 onMapCreated: (controller) async {
                   _mapController = controller;
+                  fitBoundsToDriverAndPickup();
                   String style = await DefaultAssetBundle.of(
                     context,
                   ).loadString('assets/map_style/map_style1.json');
@@ -483,7 +553,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                   key: ValueKey(arrivedAtPickup),
                   initialChildSize:
                       arrivedAtPickup
-                          ? (showRedTimer ? 0.45 : 0.65)
+                          ? (showRedTimer ? 0.45 : 0.50)
                           : (showRedTimer ? 0.35 : 0.30),
 
                   minChildSize:

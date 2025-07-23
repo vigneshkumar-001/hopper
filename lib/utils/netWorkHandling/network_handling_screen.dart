@@ -35,7 +35,7 @@ class NoInternetOverlay extends StatelessWidget {
                           Image.asset(AppImages.no_internet, width: 250),
                           const SizedBox(height: 30),
                           const Text(
-                            "Oops! Can’t move forward!",
+                            "couldn't connect to the network",
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -58,7 +58,7 @@ class NoInternetOverlay extends StatelessWidget {
                               await netController.checkConnectionNow();
 
                               if (netController.isConnected.value) {
-                                // Internet back: optionally show success
+                                Get.closeAllSnackbars();
                                 Get.snackbar(
                                   "Online",
                                   "You're back online!",
@@ -68,6 +68,7 @@ class NoInternetOverlay extends StatelessWidget {
                                 );
                               } else {
                                 // Still offline
+                                Get.closeAllSnackbars();
                                 Get.snackbar(
                                   "Still offline",
                                   "Please check your internet connection.",

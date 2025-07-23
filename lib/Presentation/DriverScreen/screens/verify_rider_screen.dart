@@ -65,7 +65,7 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
         body: SafeArea(
           child: Obx(() {
             return driverStatusController.isLoading.value
-                ? Center(child: AppLoader.circularLoader())
+                ? Center(child: AppLoader.appLoader())
                 : Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 15,

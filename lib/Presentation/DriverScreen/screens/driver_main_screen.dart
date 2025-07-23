@@ -50,10 +50,10 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
 
         double rotation = getFixedRotation(_heading);
         String direction = getDirectionLabel(_heading);
-
-        print(
-          "🧭 Heading: $_heading°, Snapped: $rotation°, Direction: $direction",
-        );
+        //
+        // print(
+        //   "🧭 Heading: $_heading°, Snapped: $rotation°, Direction: $direction",
+        // );
 
         _updateCarMarker();
       }
@@ -99,8 +99,8 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
   }
 
   Future<void> _loadCustomCarIcon() async {
-    _carIcon = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(30, 30)),
+    _carIcon = await BitmapDescriptor.asset(
+      const ImageConfiguration(size: Size(37, 37)),
       AppImages.driverCarMove,
     );
   }
@@ -852,7 +852,7 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                             //   MaterialPageRoute(
                                             //     builder:
                                             //         (context) =>
-                                            //             CompassMapScreen(),
+                                            //             UberCloneMainScreen(),
                                             //   ),
                                             // );
                                             Navigator.push(
