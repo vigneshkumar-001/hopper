@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
+import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
+import 'package:hopper/utils/websocket/socket_io_client.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:flutter/material.dart';
@@ -24,11 +26,13 @@ import 'package:get/get.dart';
 class PickingCustomerScreen extends StatefulWidget {
   final LatLng pickupLocation;
   final LatLng driverLocation;
+  final String bookingId;
 
   const PickingCustomerScreen({
     Key? key,
     required this.pickupLocation,
     required this.driverLocation,
+    required this.bookingId,
   }) : super(key: key);
 
   @override
@@ -36,25 +40,49 @@ class PickingCustomerScreen extends StatefulWidget {
 }
 
 class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
-  // LatLng origin = LatLng(9.9302859, 78.0954996);
-  // LatLng destination = LatLng(9.956145099999999, 78.18620899999999);
   LatLng? driverLocation;
-  LatLng? nextPoint; // 📌
+  late SocketService socketService;
+  LatLng? nextPoint;
+  bool showArrivedButton = false;
+  late LatLng customerFroms;
+  String customerFrom = '';
+  String CUSTOMERNAME = '';
+  String CUSTOMERPHN = '';
+  String DISTANCE = '';
+  String DRIVERTIME = '';
+  String RIDEDISTANCEINMETERS = '';
+  String ESTIMATEDRIDETIMEINMIN = '';
+
+  // late LatLng customerTo;
+  String customerTo = '';
+  late LatLng driverCurrentLatLng;
+  String profilePic = '';
+  String custName = '';
+  String plateNumber = '';
+  String driverName = '';
+  String carDetails = '';
+  bool isDriverConfirmed = false;
+  String pickupAddress = '';
+  String dropoffAddress = '';
+
+  String driverProfilePic = '';
+  List<String> carExteriorImages = [];
   LatLng? lastPosition;
   bool isAnimating = false;
   Marker? _carMarker;
   GoogleMapController? _mapController;
   bool driverReached = false;
+  bool arrivedAtPickup = true;
   final DriverStatusController driverStatusController = Get.put(
     DriverStatusController(),
   );
-  bool arrivedAtPickup = true;
+
   String directionText = '';
   BitmapDescriptor? carIcon;
   String distance = '';
   List<LatLng> polylinePoints = [];
   StreamSubscription<Position>? positionStream;
-  int _seconds = 59;
+  int _seconds = 300;
   Timer? _timer;
 
   bool showRedTimer = false;
@@ -71,7 +99,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 
   void _startTimer() {
     _timer?.cancel();
-    _seconds = 300; // 5 minutes
+    _seconds = 300;
     showRedTimer = false;
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -94,9 +122,161 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     return '$m:$s';
   }
 
+  String formatDistance(String distanceInMetersStr) {
+    double meters = double.tryParse(distanceInMetersStr) ?? 0.0;
+    double kilometers = meters / 1000;
+    return '${kilometers.toStringAsFixed(1)} km';
+  }
+
+  String formatDuration(String minutesStr) {
+    int minutes = int.tryParse(minutesStr) ?? 0;
+    int hours = minutes ~/ 60;
+    int remainingMinutes = minutes % 60;
+
+    if (hours > 0) {
+      return '$hours hr ${remainingMinutes} min';
+    } else {
+      return '$remainingMinutes min';
+    }
+  }
+
+  Future<String> getAddressFromLatLng(double lat, double lng) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      Placemark place = placemarks[0];
+      return "${place.name}, ${place.locality}, ${place.administrativeArea}";
+    } catch (e) {
+      return "Location not available";
+    }
+  }
+
+  Future<void> _initSocketAndLocation() async {
+    socketService = SocketService();
+    socketService.on('joined-booking', (data) async {
+      if (!mounted) return;
+      JoinedBookingData().setData(data);
+      CommonLogger.log.i("🚕 Joined booking data: $data");
+
+      // Extract driver & vehicle details
+      final vehicle = data['vehicle'] ?? {};
+      final String driverId = data['driverId'] ?? '';
+      final String driverFullName = data['driverName'] ?? '';
+      final double rating =
+          double.tryParse(data['driverRating'].toString()) ?? 0.0;
+      final String color = vehicle['color'] ?? '';
+      final String model = vehicle['model'] ?? '';
+      final String customerName = data['customerName'] ?? '';
+      final String customerPhone = data['customerPhone'] ?? '';
+      final String driverDistanceInMeters =
+          data['driverDistanceInMeters']?.toString() ?? '';
+      final String estimatedArrivalTimeInMin =
+          data['estimatedArrivalTimeInMin']?.toString() ?? '';
+      final String rideDistanceInMeters =
+          data['rideDistanceInMeters']?.toString() ?? '';
+      final String estimatedRideTimeInMin =
+          data['estimatedRideTimeInMin']?.toString() ?? '';
+      final String type = vehicle['type'] ?? '';
+      final String plate = vehicle['plateNumber'] ?? '';
+      final bool driverAccepted = data['driver_accept_status'] == true;
+      final customerLoc = data['customerLocation'];
+      double fromLat = customerLoc['fromLatitude'];
+      double fromLng = customerLoc['fromLongitude'];
+      double toLat = customerLoc['toLatitude'];
+      double toLng = customerLoc['toLongitude'];
+
+      final LatLng customerFromLatLng = LatLng(
+        customerLoc['fromLatitude'],
+        customerLoc['fromLongitude'],
+      );
+      final LatLng customerToLatLng = LatLng(
+        customerLoc['toLatitude'],
+        customerLoc['toLongitude'],
+      );
+
+      final driverLocation = data['driverLocation'];
+      final LatLng driverLatLng = LatLng(
+        driverLocation['latitude'],
+        driverLocation['longitude'],
+      );
+
+      // Extract profile and car photo
+      final String picUrl = data['profilePic'] ?? '';
+
+      final List<dynamic> carPhotos = List.from(
+        data['carExteriorPhotos'] ?? [],
+      );
+      String pickupAddrs = await getAddressFromLatLng(fromLat, fromLng);
+      String dropoffAddrs = await getAddressFromLatLng(toLat, toLng);
+      setState(() {
+        plateNumber = plate;
+        driverName = '$driverFullName';
+        carDetails = '$color - $type $model';
+        isDriverConfirmed = driverAccepted;
+        pickupAddress = pickupAddrs;
+
+        customerFrom = pickupAddrs;
+        CUSTOMERNAME = customerName;
+        CUSTOMERPHN = customerPhone;
+        DISTANCE = formatDistance(driverDistanceInMeters);
+        DRIVERTIME = formatDuration(estimatedArrivalTimeInMin);
+        RIDEDISTANCEINMETERS = formatDistance(rideDistanceInMeters);
+        ESTIMATEDRIDETIMEINMIN = formatDuration(estimatedRideTimeInMin);
+        customerTo = dropoffAddrs;
+        driverCurrentLatLng = driverLatLng;
+        driverProfilePic = profilePic;
+        carExteriorImages = carPhotos.map((e) => e.toString()).toList();
+      });
+
+      CommonLogger.log.i("🚕 Driver confirmed: $driverAccepted");
+      CommonLogger.log.i("🚕 Driver name: $driverFullName");
+      CommonLogger.log.i("🚕 Plate number: $plate");
+    });
+
+    // Debug: See all events
+    socketService.socket.onAny((event, data) {
+      CommonLogger.log.i('📦 [onAny] $event: $data');
+    });
+
+    // Listen to the exact event name
+    socketService.on('driver-arrived', (data) {
+      final status = data['status'];
+      if (status == true || status.toString() == 'true') {
+        if (!mounted) return;
+        setState(() {
+          driverReached = true;
+        });
+
+        // arrivedAtPickup = false;
+        CommonLogger.log.i('🚦 arrivedAtPickup updated to false');
+      }
+      // if (data['status'].toString() == 'true') {
+      //
+      //
+      //
+      //   driverReached = true;
+      //     arrivedAtPickup = true;
+      //
+      //
+      //
+      //   CommonLogger.log.i('🚦 arrivedAtPickup updated to false');
+      // }
+      CommonLogger.log.i('🚗 Driver arrived: $data');
+    });
+
+    if (!socketService.connected) {
+      socketService.connect();
+      socketService.onConnect(() {
+        CommonLogger.log.i("✅ Socket connected");
+      });
+    } else {
+      CommonLogger.log.i("✅ Socket already connected");
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(
       SystemUiOverlayStyle(
@@ -104,9 +284,10 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
         statusBarIconBrightness: Brightness.dark, // Or light
       ),
     );
+    _initSocketAndLocation();
     _loadMarkerIcons();
 
-    _getInitialDriverLocation(); // Will call loadRoute after getting location
+    _getInitialDriverLocation();
     // _startTimer();
   }
 
@@ -393,7 +574,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     );
 
     _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 80), // adjust padding
+      CameraUpdate.newLatLngBounds(bounds, 60), // adjust padding
     );
   }
 
@@ -669,7 +850,6 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                       if (await canLaunchUrl(url)) {
                                         await launchUrl(url);
                                       } else {
-                                        // Optionally show a toast/snackbar
                                         print('Could not launch dialer');
                                       }
                                     },
@@ -700,7 +880,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                     child: CustomTextfield.textWithStylesSmall(
                                       fontSize: 14,
                                       colors: AppColors.textColorGrey,
-                                      'Rebecca Davis',
+                                      CUSTOMERNAME,
                                     ),
                                   ),
                                 ),
@@ -718,8 +898,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                       final message =
                                           await driverStatusController
                                               .otpRequest(
+                                                custName: CUSTOMERNAME,
                                                 context,
-                                                bookingId: '574636',
+                                                bookingId: widget.bookingId,
                                               );
 
                                       if (message != null) {
@@ -825,7 +1006,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                     title: Center(
                                       child: CustomTextfield.textWithStyles600(
                                         fontSize: 20,
-                                        '4 min Away',
+                                        '$DRIVERTIME Away',
                                       ),
                                     ),
                                     subtitle: Center(
@@ -833,7 +1014,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                           CustomTextfield.textWithStylesSmall(
                                             fontSize: 14,
                                             colors: AppColors.textColorGrey,
-                                            'Picking up Rebbeca',
+                                            'Picking up $CUSTOMERNAME',
                                           ),
                                     ),
                                   ),
@@ -866,7 +1047,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                           ),
                                           SizedBox(width: 15),
                                           CustomTextfield.textWithStyles600(
-                                            'Rebecca Davis',
+                                            CUSTOMERNAME,
                                             fontSize: 20,
                                           ),
                                         ],
@@ -898,7 +1079,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                       borderRadius: 8,
                                       onTap: () {
                                         setState(() {
-                                          arrivedAtPickup = !arrivedAtPickup;
+                                          arrivedAtPickup = false;
                                           _seconds = 300;
                                         });
                                         _startTimer();
@@ -908,9 +1089,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                     const SizedBox(height: 20),
                                     GestureDetector(
                                       onTap: () {
-                                        setState(() {
-                                          driverReached = !driverReached;
-                                        });
+                                        // setState(() {
+                                        //   driverReached = !driverReached;
+                                        // });
                                       },
                                       child: Row(
                                         children: [
@@ -921,7 +1102,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                           ),
                                           SizedBox(width: 15),
                                           CustomTextfield.textWithStyles600(
-                                            'Rebecca Davis',
+                                            CUSTOMERNAME,
                                             fontSize: 20,
                                           ),
                                         ],
@@ -1006,19 +1187,22 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                         ),
                                       ),
                                       SizedBox(width: 20),
-                                      Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          CustomTextfield.textWithStyles600(
-                                            fontSize: 16,
-                                            'Pickup',
-                                          ),
-                                          CustomTextfield.textWithStylesSmall(
-                                            colors: AppColors.textColorGrey,
-                                            '4, Gana Street, Maitama, Abuja, FCTLagos',
-                                          ),
-                                        ],
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            CustomTextfield.textWithStyles600(
+                                              fontSize: 16,
+                                              'Pickup',
+                                            ),
+                                            CustomTextfield.textWithStylesSmall(
+                                              colors: AppColors.textColorGrey,
+                                              maxLine: 2,
+                                              customerFrom,
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -1043,19 +1227,22 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                         ),
                                       ),
                                       SizedBox(width: 20),
-                                      Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          CustomTextfield.textWithStyles600(
-                                            fontSize: 16,
-                                            'Drop off - Constitution Ave',
-                                          ),
-                                          CustomTextfield.textWithStylesSmall(
-                                            colors: AppColors.textColorGrey,
-                                            '143, Constitution Ave, Abuja',
-                                          ),
-                                        ],
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            CustomTextfield.textWithStyles600(
+                                              fontSize: 16,
+                                              'Drop off - Constitution Ave',
+                                            ),
+                                            CustomTextfield.textWithStylesSmall(
+                                              customerTo,
+                                              colors: AppColors.textColorGrey,
+                                              maxLine: 2,
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ],
                                   ),

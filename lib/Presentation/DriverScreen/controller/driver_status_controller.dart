@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
-
+import 'package:hopper/Presentation/DriverScreen/screens/cash_collected_screen.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
-
+import 'package:hopper/utils/websocket/socket_io_client.dart';
 import '../../../Core/Utility/snackbar.dart';
 import '../models/get_todays_activity_models.dart';
 import '../screens/picking_customer_screen.dart';
@@ -17,10 +17,12 @@ import '../screens/verify_rider_screen.dart';
 class DriverStatusController extends GetxController {
   var isOnline = true.obs;
   RxBool isLoading = false.obs;
-
+  final socketService = SocketService();
   Rxn<TodayActivityData> todayStatusData = Rxn<TodayActivityData>();
   Rxn<WeeklyActivityData> weeklyStatusData = Rxn<WeeklyActivityData>();
   ApiDataSource apiDataSource = ApiDataSource();
+  final tripDistanceInMeters = 0.0.obs;
+  final tripDurationInMin = 0.obs;
 
   @override
   void onInit() {
@@ -55,10 +57,31 @@ class DriverStatusController extends GetxController {
         },
         (response) {
           // CustomSnackBar.showSuccess(response.message.toString());
+          final bookingData = {
+            'bookingId': response.data?.bookingId,
+            'userId': response.data?.driverId,
+          };
+
+          // Log the data
+          CommonLogger.log.i("📤 Join booking data: $bookingData");
+
+          if (socketService.connected) {
+            socketService.emit('join-booking', bookingData);
+            CommonLogger.log.i(
+              "✅ Socket already connected, emitted join-booking",
+            );
+          } else {
+            socketService.onConnect(() {
+              CommonLogger.log.i("✅ Socket connected, emitting join-booking");
+              socketService.emit('join-booking', bookingData);
+            });
+          }
 
           CommonLogger.log.i(response.data);
+
           Get.to(
             PickingCustomerScreen(
+              bookingId: bookingId,
               pickupLocation: pickupLocation,
               driverLocation: driverLocation,
             ),
@@ -79,6 +102,7 @@ class DriverStatusController extends GetxController {
   Future<String?> otpRequest(
     BuildContext context, {
     required String bookingId,
+    required String custName,
   }) async {
     isLoading.value = true;
     try {
@@ -101,8 +125,52 @@ class DriverStatusController extends GetxController {
 
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => VerifyRiderScreen()),
+            MaterialPageRoute(
+              builder:
+                  (context) => VerifyRiderScreen(
+                    bookingId: bookingId,
+                    custName: custName,
+                  ),
+            ),
           );
+        },
+      );
+
+      return resultMessage;
+    } catch (e) {
+      isLoading.value = false;
+      return 'Something went wrong';
+    }
+  }
+
+  Future<String?> completeRideRequest(
+    BuildContext context, {
+    required String bookingId,
+  }) async {
+    isLoading.value = true;
+    try {
+      final results = await apiDataSource.completeRideRequest(
+        bookingId: bookingId,
+      );
+
+      String? resultMessage;
+
+      results.fold(
+        (failure) {
+          isLoading.value = false;
+          CustomSnackBar.showError(failure.message);
+          resultMessage = null;
+        },
+        (response) {
+          isLoading.value = false;
+          // CustomSnackBar.showSuccess(response.message);
+          CommonLogger.log.i(response.message);
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => CashCollectedScreen()),
+          );
+
+          resultMessage = response.message;
         },
       );
 

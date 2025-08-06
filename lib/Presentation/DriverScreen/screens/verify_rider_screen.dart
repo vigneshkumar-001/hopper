@@ -17,7 +17,9 @@ import 'package:pin_code_fields/pin_code_fields.dart';
 import 'package:get/get.dart';
 
 class VerifyRiderScreen extends StatefulWidget {
-  const VerifyRiderScreen({super.key});
+  final String bookingId;
+  final String custName;
+  const VerifyRiderScreen({super.key, required this.bookingId, required this.custName});
 
   @override
   State<VerifyRiderScreen> createState() => _VerifyRiderScreenState();
@@ -96,7 +98,7 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
 
                               Text(
                                 textAlign: TextAlign.center,
-                                'Enter the Rebecca’s Verification Code ',
+                                'Enter the ${widget.custName}’s Verification Code ',
                                 style: TextStyle(
                                   color: AppColors.commonBlack,
                                   fontSize: 25,
@@ -440,7 +442,7 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                             final result = await driverStatusController
                                 .otpInsert(
                                   context,
-                                  bookingId: '574636',
+                                  bookingId: widget.bookingId,
                                   otp: enteredOtp,
                                 );
 
@@ -456,13 +458,13 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                 Navigator.pushReplacement(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => RideStatsScreen(),
+                                    builder: (_) => RideStatsScreen(bookingId : widget.bookingId),
                                   ),
                                 );
                               }
                             }
                           },
-                          text: Text('Verify Rebecca'),
+                          text: Text('Verify ${widget.custName}'),
                         ),
                       ),
                     ],

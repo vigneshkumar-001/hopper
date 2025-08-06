@@ -34,8 +34,8 @@ class MyApp extends StatelessWidget {
       child: GetMaterialApp(
         theme: ThemeData(scaffoldBackgroundColor: Colors.white),
         debugShowCheckedModeBanner: false,
-        // theme: ThemeData(scaffoldBackgroundColor: Colors.white),
-        home: DriverMainScreen(),
+
+        home: SplashScreen(),
       ),
     );
   }

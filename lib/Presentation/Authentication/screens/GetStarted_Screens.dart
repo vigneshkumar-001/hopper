@@ -217,9 +217,8 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      onWillPop: ()async{
+      onWillPop: () async {
         return true;
-
       },
       child: Scaffold(
         body: SafeArea(
@@ -415,17 +414,17 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                           );
                         }),
 
-                         ElevatedButton(
-                           onPressed: () async {
-                             Navigator.push(
-                               context,
-                               MaterialPageRoute(
-                                 builder: (context) => OtpScreens (mobileNumber: 'mobileNumber'),
-                               ),
-                             );
-                           },
-                           child: Text('LOG OUT'),
-                         ),
+                        // ElevatedButton(
+                        //   onPressed: () async {
+                        //     Navigator.push(
+                        //       context,
+                        //       MaterialPageRoute(
+                        //         builder: (context) => OtpScreens (mobileNumber: 'mobileNumber'),
+                        //       ),
+                        //     );
+                        //   },
+                        //   child: Text('LOG OUT'),
+                        // ),
                         SizedBox(height: 30),
                         Row(
                           children: [
@@ -454,7 +453,7 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                           textColor: AppColors.commonBlack,
 
                           onTap: () {
-                            signInWithApple();
+                            // signInWithApple();
                           },
                           text: Text('Continue with Apple'),
                         ),
@@ -468,7 +467,7 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                           textColor: AppColors.commonBlack,
 
                           onTap: () {
-                            initializeGoogleAuth();
+                            //initializeGoogleAuth();
                           },
                           text: Text('Continue with Google'),
                         ),

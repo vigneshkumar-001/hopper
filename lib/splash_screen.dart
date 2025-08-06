@@ -25,11 +25,6 @@ class _SplashScreenState extends State<SplashScreen> {
     // controller.handleLandingPageNavigation(context);
   }
 
-  Future<void> getUserDetail() async {
-    await controller.getUserDetails();
-    controller.getUserDetails();
-  }
-
   @override
   void initState() {
     super.initState();

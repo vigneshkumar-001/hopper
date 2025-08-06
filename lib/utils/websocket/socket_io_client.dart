@@ -1,3 +1,4 @@
+import 'package:hopper/Core/Constants/log.dart';
 import 'package:logger/logger.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
@@ -6,7 +7,9 @@ class SocketService {
   factory SocketService() => _instance;
 
   late IO.Socket _socket;
+  IO.Socket get socket => _socket;
   bool _initialized = false;
+  bool get connected => _socket.connected;
 
   SocketService._internal();
 
@@ -24,7 +27,7 @@ class SocketService {
           .setTransports(['websocket', 'polling'])
           .enableReconnection()
           .enableAutoConnect()
-          .setReconnectionAttempts(999999) // ✅ Unlimited attempts
+          .setReconnectionAttempts(999999)
           .setReconnectionDelay(1000)
           .build(),
     );
@@ -37,6 +40,19 @@ class SocketService {
     _socket.onError((err) => print("⚠️ General error: $err"));
 
     _socket.onAny((event, data) => print("📦 [onAny] $event: $data"));
+  }
+
+  void connect() {
+    if (_initialized && _socket.disconnected) {
+      _socket.connect();
+    }
+  }
+
+  void onConnect(Function() callback) {
+    _socket.onConnect((_) {
+      CommonLogger.log.i("📡 onConnect triggered");
+      callback();
+    });
   }
 
   void registerDriver(String driverId) {

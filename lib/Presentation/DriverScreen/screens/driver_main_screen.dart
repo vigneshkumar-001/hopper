@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_compass/flutter_compass.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:hopper/Core/Constants/log.dart';
+import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/picking_customer_screen.dart';
+import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
@@ -17,8 +20,6 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 
-import 'campus_screen.dart';
-
 class DriverMainScreen extends StatefulWidget {
   const DriverMainScreen({super.key});
 
@@ -32,11 +33,14 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
   );
   LatLng? _currentPosition;
   GoogleMapController? _mapController;
+  bool _isAcceptingRide = false;
+
   bool isOnline = false;
   bool driverAccepted = false;
   Map<String, dynamic>? bookingRequestData;
   double _heading = 0;
   Marker? _carMarker;
+  late SocketService socketService;
   StreamSubscription<Position>? _positionStream;
   StreamSubscription<CompassEvent>? _compassStream;
 
@@ -44,6 +48,7 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
   void _startCompass() {
     _compassStream = FlutterCompass.events?.listen((event) {
       if (event.heading != null) {
+        if (!mounted) return;
         setState(() {
           _heading = event.heading!;
         });
@@ -114,13 +119,6 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
   Color getTextColor({Color color = Colors.black}) =>
       statusController.isOnline.value ? color : Colors.black;
 
-  // Future<void> currentLocation() async {
-  //   Position position = await Geolocator.getCurrentPosition();
-  //   setState(() {
-  //     _currentPosition = LatLng(position.latitude, position.longitude);
-  //   });
-  //
-  // }
   void _goToCurrentLocation() async {
     Position position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
@@ -180,7 +178,6 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
     }
   }
 
-  // 🔁 Reusable dialog method
   void _showPermissionDialog(
     BuildContext context, {
     bool openSettings = false,
@@ -217,21 +214,25 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
   }
 
   late StreamSubscription<Position> _locationStream;
-  final String driverId = '683fed0a00aa693559289fbc';
+  String? driverId;
   String? _currentBookingId;
-  @override
-  void initState() {
-    super.initState();
-    _loadCustomCarIcon();
-    _startCompass();
-    final socketService = SocketService();
+  String? pickupAddress;
+  String? dropAddress;
 
-    // 1. Initialize socket
+  Future<void> _initSocketAndLocation() async {
+    driverId = await SharedPrefHelper.getDriverId();
+
+    if (driverId == null) {
+      CommonLogger.log.e('Driver ID is null! Cannot initialize socket.');
+      return;
+    }
+
+    socketService = SocketService();
+
     socketService.initSocket(
       'https://hoppr-face-two-dbe557472d7f.herokuapp.com',
     );
 
-    // 2. Register and Listen
     socketService.on('connect', (_) {
       CommonLogger.log.i('🟢 Connected to socket');
 
@@ -244,9 +245,7 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
       _locationStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          // distanceFilter: 10,
           distanceFilter: 0, // Emit even without movement
-          // timeLimit: Duration(seconds: 5), // optional max time
         ),
       ).listen((position) {
         final locationData = {
@@ -262,53 +261,56 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
       });
     });
 
-    socketService.on('location-updated', (data) {
-      CommonLogger.log.i('📦 location-updated: $data');
-    });
-
-    // 5. Listen for booking request
-    socketService.on('booking-request', (data) {
+    socketService.on('booking-request', (data) async {
       CommonLogger.log.i('📦 Booking Request: $data');
       _currentBookingId = data['bookingId'];
-      // Show modal if needed
+
+      // Get lat/lng from incoming data
+      final pickup = data['pickupLocation'];
+      final drop = data['dropLocation'];
+
+      // Convert to address
+      pickupAddress = await getAddressFromLatLng(
+        pickup['latitude'],
+        pickup['longitude'],
+      );
+      dropAddress = await getAddressFromLatLng(
+        drop['latitude'],
+        drop['longitude'],
+      );
+      if (!mounted) return;
       setState(() {
-        bookingRequestData = data; // set the data to show Draggable Sheet
+        bookingRequestData = data;
       });
-      CommonLogger.log.i('📦 bookingRequestData : $bookingRequestData');
+
+      CommonLogger.log.i('📍 Pickup: $pickupAddress');
+      CommonLogger.log.i('📍 Drop: $dropAddress');
     });
 
-    // 6. Booking accepted event
-    socketService.on('driver-accepted', (data) {
-      CommonLogger.log.i('✅ Driver accepted booking: $data');
-      _currentBookingId = data['bookingId'];
-      socketService.emit('join-booking', {
-        'bookingId': _currentBookingId,
-        'userId': data['userId'],
-      });
-    });
-
-    // 7. Listen for arrival event
-    socketService.on('driver-arrived', (data) {
-      CommonLogger.log.i('🚗 Driver arrived: $data');
-    });
-
-    // 8. New chat message
-    socketService.on('booking-message', (data) {
-      CommonLogger.log.i('💬 Message: $data');
-    });
-
-    // 9. Handle cancellation
-    socketService.on('driver-cancelled', (data) {
-      CommonLogger.log.i('❌ Booking Cancelled: ${data['reason']}');
-    });
-
-    // // 10. Optional: handle disconnect
-    // socketService.on('disconnect', (_) {
-    //   CommonLogger.log.i('🔴 Disconnected from socket');
+    // socketService.on('driver-arrived', (data) {
+    //   CommonLogger.log.i('🚗 Driver arrived: $data');
     // });
 
-    // Initialize location tracking (if needed)
+    // Initialize location tracking if needed
     _initLocation(context);
+  }
+
+  Future<String> getAddressFromLatLng(double lat, double lng) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      Placemark place = placemarks[0];
+      return "${place.name}, ${place.locality}, ${place.administrativeArea}";
+    } catch (e) {
+      return "Location not available";
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _initSocketAndLocation();
+    _loadCustomCarIcon();
+    _startCompass();
   }
 
   bool status = true;
@@ -598,7 +600,8 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                           SizedBox(width: 8),
                                                           Expanded(
                                                             child: Text(
-                                                              '${bookingRequestData!['pickupLocation']}',
+                                                              pickupAddress ??
+                                                                  'Fetching address...',
                                                             ),
                                                           ),
                                                         ],
@@ -614,7 +617,8 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                           SizedBox(width: 8),
                                                           Expanded(
                                                             child: Text(
-                                                              '${bookingRequestData!['dropLocation']}',
+                                                              dropAddress ??
+                                                                  'Fetching address...',
                                                             ),
                                                           ),
                                                         ],
@@ -656,7 +660,7 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                             width: 10,
                                                           ),
                                                           Text(
-                                                            '1',
+                                                            '${bookingRequestData!['sharedCount']}',
                                                             style: TextStyle(
                                                               fontWeight:
                                                                   FontWeight
@@ -748,95 +752,118 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                           borderRadius: 10,
                                                           buttonColor:
                                                               AppColors.red,
-                                                          onTap: () {
-                                                            final bookingId =
-                                                                bookingRequestData!['bookingId'];
-                                                            CommonLogger.log.i(
-                                                              bookingId,
-                                                            );
+                                                          onTap:
+                                                              statusController
+                                                                      .isLoading
+                                                                      .value
+                                                                  ? null
+                                                                  : () {
+                                                                    final bookingId =
+                                                                        bookingRequestData!['bookingId'];
+                                                                    CommonLogger
+                                                                        .log
+                                                                        .i(
+                                                                          bookingId,
+                                                                        );
 
-                                                            // Get.to(
-                                                            //   PickingCustomerScreen(),
-                                                            // );
-                                                            // statusController
-                                                            //     .bookingAccept(
-                                                            //       context,
-                                                            //       bookingId:
-                                                            //           bookingId,
-                                                            //       status:
-                                                            //           'REJECT',
-                                                            //
-                                                            //
-                                                            //     );
-                                                            setState(() {
-                                                              bookingRequestData =
-                                                                  null;
-                                                            });
-                                                          },
+                                                                    // Get.to(
+                                                                    //   PickingCustomerScreen(),
+                                                                    // );
+                                                                    // statusController
+                                                                    //     .bookingAccept(
+                                                                    //       context,
+                                                                    //       bookingId:
+                                                                    //           bookingId,
+                                                                    //       status:
+                                                                    //           'REJECT',
+                                                                    //
+                                                                    //
+                                                                    //     );
+                                                                    setState(() {
+                                                                      bookingRequestData =
+                                                                          null;
+                                                                    });
+                                                                  },
                                                           text: Text('Decline'),
                                                         ),
                                                       ),
                                                       SizedBox(width: 20),
-                                                      Expanded(
-                                                        child: Buttons.button(
-                                                          borderRadius: 10,
-                                                          buttonColor:
-                                                              AppColors
-                                                                  .drkGreen,
-                                                          onTap: () async {
-                                                            final bookingId =
-                                                                bookingRequestData!['bookingId'];
+                                                      Obx(() {
+                                                        return Expanded(
+                                                          child: Buttons.button(
+                                                            borderRadius: 10,
+                                                            buttonColor:
+                                                                AppColors
+                                                                    .drkGreen,
+                                                            onTap:
+                                                                statusController
+                                                                        .isLoading
+                                                                        .value
+                                                                    ? null
+                                                                    : () async {
+                                                                      try {
+                                                                        final bookingId =
+                                                                            bookingRequestData!['bookingId'];
 
-                                                            final pickup = LatLng(
-                                                              bookingRequestData!['pickupLocation']['latitude'],
-                                                              bookingRequestData!['pickupLocation']['longitude'],
-                                                            );
+                                                                        final pickup = LatLng(
+                                                                          bookingRequestData!['pickupLocation']['latitude'],
+                                                                          bookingRequestData!['pickupLocation']['longitude'],
+                                                                        );
 
-                                                            final position =
-                                                                await Geolocator.getCurrentPosition(
-                                                                  desiredAccuracy:
-                                                                      LocationAccuracy
-                                                                          .high,
-                                                                );
+                                                                        final position = await Geolocator.getCurrentPosition(
+                                                                          desiredAccuracy:
+                                                                              LocationAccuracy.high,
+                                                                        );
 
-                                                            final driverLocation =
-                                                                LatLng(
-                                                                  position
-                                                                      .latitude,
-                                                                  position
-                                                                      .longitude,
-                                                                );
+                                                                        final driverLocation = LatLng(
+                                                                          position
+                                                                              .latitude,
+                                                                          position
+                                                                              .longitude,
+                                                                        );
 
-                                                            CommonLogger.log.i(
-                                                              'Pickup: ${bookingRequestData!['pickupLocation']}',
-                                                            );
-                                                            CommonLogger.log.i(
-                                                              'Drop: ${bookingRequestData!['dropLocation']}',
-                                                            );
-
-                                                            CommonLogger.log.i(
-                                                              bookingId,
-                                                            );
-
-                                                            // Get.to(
-                                                            //   PickingCustomerScreen(),
-                                                            // );
-                                                            statusController
-                                                                .bookingAccept(
-                                                                  context,
-                                                                  bookingId:
-                                                                      bookingId,
-                                                                  status:
-                                                                      'ACCEPT',
-                                                                  pickupLocation:
-                                                                      pickup,
-                                                                  driverLocation:
-                                                                      driverLocation,
-                                                                );
-                                                          },
-                                                          text: Text('Accept'),
-                                                        ),
-                                                      ),
+                                                                        await statusController.bookingAccept(
+                                                                          context,
+                                                                          bookingId:
+                                                                              bookingId,
+                                                                          status:
+                                                                              'ACCEPT',
+                                                                          pickupLocation:
+                                                                              pickup,
+                                                                          driverLocation:
+                                                                              driverLocation,
+                                                                        );
+                                                                        setState(() {
+                                                                          bookingRequestData =
+                                                                              null;
+                                                                        });
+                                                                      } catch (
+                                                                        e
+                                                                      ) {
+                                                                        CommonLogger
+                                                                            .log
+                                                                            .e(
+                                                                              "Booking accept failed: $e",
+                                                                            );
+                                                                      }
+                                                                    },
+                                                            text:
+                                                                statusController
+                                                                        .isLoading
+                                                                        .value
+                                                                    ? SizedBox(
+                                                                      height:
+                                                                          20,
+                                                                      width: 20,
+                                                                      child:
+                                                                          AppLoader.circularLoader(),
+                                                                    )
+                                                                    : Text(
+                                                                      'Accept',
+                                                                    ),
+                                                          ),
+                                                        );
+                                                      }),
                                                     ],
                                                   ),
                                                 ),
@@ -855,24 +882,24 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                             //             UberCloneMainScreen(),
                                             //   ),
                                             // );
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder:
-                                                    (
-                                                      context,
-                                                    ) => PickingCustomerScreen(
-                                                      pickupLocation: LatLng(
-                                                        9.956145099999999,
-                                                        78.18620899999999,
-                                                      ),
-                                                      driverLocation: LatLng(
-                                                        9.956145099999999,
-                                                        78.18620899999999,
-                                                      ),
-                                                    ),
-                                              ),
-                                            );
+                                            /* Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder:
+                                                (
+                                                  context,
+                                                ) => PickingCustomerScreen(
+                                                  pickupLocation: LatLng(
+                                                    9.956145099999999,
+                                                    78.18620899999999,
+                                                  ),
+                                                  driverLocation: LatLng(
+                                                    9.956145099999999,
+                                                    78.18620899999999,
+                                                  ),
+                                                ),
+                                          ),
+                                        );*/
                                           },
                                           child: Container(
                                             width: double.infinity,
@@ -1145,39 +1172,6 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                               ),
                                             ),
                                             const SizedBox(height: 20),
-                                            // Container(
-                                            //   decoration: BoxDecoration(
-                                            //     borderRadius:
-                                            //         BorderRadius.circular(5),
-                                            //     color: AppColors.containerColor
-                                            //         .withOpacity(0.6),
-                                            //   ),
-                                            //   child: Padding(
-                                            //     padding: const EdgeInsets.all(10),
-                                            //     child: Row(
-                                            //       children: [
-                                            //         Image.asset(
-                                            //           AppImages.filter,
-                                            //           width: 24,
-                                            //           height: 24,
-                                            //         ), // set fixed size
-                                            //         const SizedBox(width: 10),
-                                            //         Expanded(
-                                            //           child:
-                                            //               CustomTextfield.textWithStyles600(
-                                            //                 'Driving Preferences',
-                                            //               ),
-                                            //         ),
-                                            //         const SizedBox(width: 10),
-                                            //         Image.asset(
-                                            //           AppImages.rightArrow,
-                                            //           width: 24,
-                                            //           height: 24,
-                                            //         ),
-                                            //       ],
-                                            //     ),
-                                            //   ),
-                                            // ),
                                           ],
                                         ),
                                       ),

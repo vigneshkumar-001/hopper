@@ -30,12 +30,12 @@ Future<Map<String, dynamic>> getRouteInfo({
       "distance": distance,
       "polyline": polyline,
       "maneuver": maneuver,
-
     };
   } else {
     throw Exception('Failed to fetch route');
   }
 }
+
 List<LatLng> decodePolyline(String encoded) {
   List<LatLng> points = [];
   int index = 0, len = encoded.length;

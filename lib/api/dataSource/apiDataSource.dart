@@ -1025,16 +1025,13 @@ class ApiDataSource extends BaseApiDataSource {
     required String status,
   }) async {
     try {
+      final driverId = await SharedPrefHelper.getDriverId();
       String url =
           'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api/users/driver-response';
 
       final response = await Request.sendRequest(
         url,
-        {
-          "driverId": "683fed0a00aa693559289fbc",
-          "bookingId": bookingId,
-          "response": status,
-        },
+        {"driverId": driverId, "bookingId": bookingId, "response": status},
         'Post',
         false,
       );
@@ -1068,6 +1065,34 @@ class ApiDataSource extends BaseApiDataSource {
         'Post',
         false,
       );
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          final result = BookingAcceptModel.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, BookingAcceptModel>> completeRideRequest({
+    required String bookingId,
+  }) async {
+    try {
+      String url = ApiConstents.completeRide(booking: bookingId);
+
+      final response = await Request.sendRequest(url, {}, 'Post', false);
 
       if (response is Response && response.statusCode == 200) {
         if (response.data != null && response.data is Map<String, dynamic>) {
@@ -1127,7 +1152,9 @@ class ApiDataSource extends BaseApiDataSource {
     required bool onlineStatus,
   }) async {
     try {
-      String url = ApiConstents.driverOnlineStatus;
+      final driverId = await SharedPrefHelper.getDriverId();
+
+      String url = ApiConstents.driverOnlineStatus(driverId: driverId ?? '');
 
       final response = await Request.sendRequest(
         url,
@@ -1158,7 +1185,8 @@ class ApiDataSource extends BaseApiDataSource {
 
   Future<Either<Failure, GetTodayActivityModels>> todayActivity() async {
     try {
-      String url = ApiConstents.todayStatus;
+      final driverId = await SharedPrefHelper.getDriverId();
+      String url = ApiConstents.todayStatus(driverId: driverId ?? '');
 
       final response = await Request.sendGetRequest(url, {}, 'Get', false);
 
@@ -1185,7 +1213,8 @@ class ApiDataSource extends BaseApiDataSource {
 
   Future<Either<Failure, WeeklyChallengeModels>> weeklyChallenge() async {
     try {
-      String url = ApiConstents.weeklyChallenge;
+      final driverId = await SharedPrefHelper.getDriverId();
+      String url = ApiConstents.weeklyChallenge(driverId: driverId ?? '');
 
       final response = await Request.sendGetRequest(url, {}, 'Get', false);
 
@@ -1214,11 +1243,12 @@ class ApiDataSource extends BaseApiDataSource {
     required String reason,
   }) async {
     try {
-      String url = ApiConstents. cancelBooking;
+      final driverId = await SharedPrefHelper.getDriverId();
+      String url = ApiConstents.cancelBooking;
 
       final response = await Request.sendRequest(
         url,
-        {"rejectedReason": reason, "driverId": "683fed0a00aa693559289fbc"},
+        {"rejectedReason": reason, "driverId": driverId},
         'Post',
         false,
       );

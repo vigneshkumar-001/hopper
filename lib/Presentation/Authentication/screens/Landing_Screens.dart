@@ -105,7 +105,7 @@ class _LandingScreensState extends State<LandingScreens> {
                             ),
                           ),
                           onPressed: () {
-                              loadAndNavigate();
+                            loadAndNavigate();
                             Navigator.push(
                               context,
                               MaterialPageRoute(

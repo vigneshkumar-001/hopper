@@ -4,6 +4,7 @@ import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
 
@@ -218,7 +219,13 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                   onTap: () {
                                     selectedRating;
                                     CommonLogger.log.i(selectedRating);
-                                    Navigator.pop(context);
+                                    Navigator.pushReplacement(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (context) => DriverMainScreen(),
+                                      ),
+                                    );
                                   },
                                   text: Text('Rate Ride'),
                                 ),

@@ -56,16 +56,18 @@ class OtpResponse {
 class OtpVerificationData {
   final String userStatus;
   final String token;
+  final String driverId;
 
-  OtpVerificationData({required this.userStatus, required this.token});
+  OtpVerificationData({required this.userStatus, required this.token,required this.driverId});
 
   factory OtpVerificationData.fromJson(Map<String, dynamic> json) {
     return OtpVerificationData(
       userStatus: json['userStatus'] ?? '',
       token: json['token'] ?? '',
+      driverId: json['driverId'] ?? '',
     );
   }
   Map<String, dynamic> toJson() {
-    return {'userStatus': userStatus, 'token': token};
+    return {'userStatus': userStatus, 'token': token,'driverId': driverId};
   }
 }

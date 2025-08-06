@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 import 'package:hopper/api/repository/failure.dart';
@@ -10,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class OtpController extends GetxController {
   String accessToken = '';
+  String driverId = '';
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
   final RxBool isVerified = false.obs;
@@ -29,8 +31,7 @@ class OtpController extends GetxController {
     BuildContext context,
     String otp, {
     String? type,
-  }) async
-  {
+  }) async {
     isLoading.value = true;
     CommonLogger.log.i(type);
     try {
@@ -47,23 +48,30 @@ class OtpController extends GetxController {
         },
         (response) async {
           // 681889f5a36e808c5056d290
-          if (type == 'basicInfo') {
-            isVerified.value = response.status == 200;
-            print("✅ isVerified: ${isVerified.value}");
-
-            Navigator.pop(context);
-          } else { isLoading.value = false;
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => TermsScreen()),
-            );
-          }
+          // if (type == 'basicInfo') {
+          //   isVerified.value = response.status == 200;
+          //   print("✅ isVerified: ${isVerified.value}");
+          //
+          //   Navigator.pop(context);
+          // } else { isLoading.value = false;
+          //   Navigator.pushReplacement(
+          //     context,
+          //     MaterialPageRoute(builder: (context) => TermsScreen()),
+          //   );
+          // }
+          FocusScope.of(context).unfocus();
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => DriverMainScreen()),
+          );
           isLoading.value = false;
           accessToken = response.data.token;
+          driverId = response.data.driverId;
 
           CommonLogger.log.i('Response = $accessToken');
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('token', response.data.token);
+          await prefs.setString('driverId', response.data.driverId);
           // await prefs.setString('userId', response.userId);
           // CustomSnackBar.showSuccess(response.message);
           // await loadAndNavigate(context);
@@ -137,11 +145,18 @@ class OtpController extends GetxController {
     controller.handleLandingPageNavigation(Get.context!);
   }
 
-  Future<String?> resendOtp(String mobileNumber,String email,String type) async {
-
+  Future<String?> resendOtp(
+    String mobileNumber,
+    String email,
+    String type,
+  ) async {
     isLoading.value = true;
     try {
-      final results = await apiDataSource.resendOtp(mobileNumber,type: type, email: email);
+      final results = await apiDataSource.resendOtp(
+        mobileNumber,
+        type: type,
+        email: email,
+      );
 
       return results.fold(
         (failure) {
@@ -173,6 +188,7 @@ class OtpController extends GetxController {
 
   void clearState() {
     accessToken = '';
+
     isVerified.value = false;
     isEmailVerified.value = false;
   }

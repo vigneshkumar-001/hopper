@@ -39,10 +39,22 @@ class _OtpScreensState extends State<OtpScreens> {
   bool isButtonDisabled = false;
   String email = '';
   StreamController<ErrorAnimationType>? errorController;
+  late FocusNode otpFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    otpFocusNode = FocusNode();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      otpFocusNode.requestFocus();
+    });
+  }
+
   @override
   void dispose() {
     otp.dispose();
-
+    otpFocusNode.dispose();
     super.dispose();
   }
 
@@ -84,9 +96,14 @@ class _OtpScreensState extends State<OtpScreens> {
                           Form(
                             key: formKey,
                             child: PinCodeTextField(
-                              autoFocus: true,
+                              focusNode: otpFocusNode,
+                              onCompleted: (value) async {
+                                FocusScope.of(
+                                  context,
+                                ).unfocus();
+                              },
+                              autoFocus: otp.text.isEmpty,
                               appContext: context,
-
                               // pastedTextStyle: TextStyle(
                               //   color: Colors.green.shade600,
                               //   fontWeight: FontWeight.bold,

@@ -433,9 +433,13 @@ class CustomTextfield {
     TextAlign textAlign = TextAlign.start,
     FontWeight? fontWeight,
     double fontSize = 13,
+        int? maxLine = 10,
     Color? colors = Colors.black45,
+
   }) {
     return Text(
+      maxLines: maxLine,
+      overflow: TextOverflow.ellipsis,
       textAlign: textAlign,
       text + (text1 ?? ''),
       style: TextStyle(

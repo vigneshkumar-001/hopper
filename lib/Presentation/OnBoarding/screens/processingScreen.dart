@@ -48,9 +48,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
   void initState() {
     super.initState();
 
-    final isCar =
-        profile?.serviceType ==
-        'Car';
+    final isCar = profile?.serviceType == 'Car';
     final serviceType = isCar ? 'Car' : 'Bike';
 
     if (serviceType == 'Bike') {

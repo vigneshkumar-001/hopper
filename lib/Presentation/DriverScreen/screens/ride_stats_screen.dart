@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:action_slider/action_slider.dart';
 import 'package:flutter/services.dart';
-import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
-import 'package:url_launcher/url_launcher.dart';
-
+import 'package:geocoding/geocoding.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
+import 'package:hopper/utils/websocket/socket_io_client.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -16,9 +18,11 @@ import '../../../utils/map/google_map.dart';
 import '../../../utils/map/route_info.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
 import 'cash_collected_screen.dart';
+import 'package:get/get.dart';
 
 class RideStatsScreen extends StatefulWidget {
-  const RideStatsScreen({super.key});
+  final String bookingId;
+  const RideStatsScreen({super.key, required this.bookingId});
 
   @override
   State<RideStatsScreen> createState() => _RideStatsScreenState();
@@ -28,13 +32,31 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
   LatLng origin = LatLng(9.9303, 78.0945);
   LatLng destination = LatLng(9.9342, 78.1824);
   GoogleMapController? _mapController;
-  bool driverReached = false;
-  bool arrivedAtPickup = true;
+  final DriverStatusController driverStatusController = Get.put(
+    DriverStatusController(),
+  );
+  String customerFrom = '';
+  String customerTo = '';
+  Marker? _movingMarker;
+  LatLng? _lastDriverPosition;
+
+  late SocketService socketService;
+
   bool driverCompletedRide = false;
   String directionText = '';
   String distance = '';
+  bool _cameraInitialized = false;
+
+  String driverName = '';
+  String custName = '';
   List<LatLng> polylinePoints = [];
   StreamSubscription<Position>? positionStream;
+  LatLng? bookingFromLocation;
+  LatLng? bookingToLocation;
+  late BitmapDescriptor carIcon;
+  Timer? _autoFollowTimer;
+  bool _userInteractingWithMap = false;
+  bool _autoFollowEnabled = true;
 
   @override
   void initState() {
@@ -49,13 +71,188 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
         statusBarIconBrightness: Brightness.dark,
       ),
     );
-    positionStream = Geolocator.getPositionStream().listen((Position position) {
+    driverReachedDestination();
+    positionStream = Geolocator.getPositionStream(
+      locationSettings: LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      ),
+    ).listen((Position position) async {
+      final currentLatLng = LatLng(position.latitude, position.longitude);
+
+      animateMarker(currentLatLng);
+
       setState(() {
-        origin = LatLng(position.latitude, position.longitude);
+        origin = currentLatLng;
       });
+
+      if (_autoFollowEnabled && _mapController != null) {
+        _mapController!.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: currentLatLng,
+              zoom: 16,
+              tilt: 45,
+              bearing: getRotation(_lastDriverPosition!, currentLatLng),
+            ),
+          ),
+        );
+      }
+
+      await updateRoute();
     });
 
+    _initSocketAndLocation();
+    _loadMarkerIcons();
     loadRoute();
+  }
+
+  String formatDistance(double meters) {
+    double kilometers = meters / 1000;
+    return '${kilometers.toStringAsFixed(1)} Km';
+  }
+
+  String formatDuration(int minutes) {
+    int hours = minutes ~/ 60;
+    int remainingMinutes = minutes % 60;
+    return hours > 0
+        ? '$hours hr $remainingMinutes min'
+        : '$remainingMinutes min';
+  }
+
+  Future<void> driverReachedDestination() async {
+    socketService = SocketService();
+    socketService.on('driver-reached-destination', (data) async {
+      final status = data['status'];
+      if (status == true || status.toString() == 'true') {
+        if (!mounted) return;
+        setState(() {
+          driverCompletedRide = true;
+        });
+
+        // arrivedAtPickup = false;
+        CommonLogger.log.i(
+          '🚦 driver-reached-destination updated to false $data',
+        );
+      }
+    });
+    socketService.on('driver-location', (data) async {
+      CommonLogger.log.i('driver-location : $data');
+
+      if (data != null) {
+        if (data['tripDistanceInMeters'] != null) {
+          driverStatusController.tripDistanceInMeters.value =
+              double.tryParse('${data['tripDistanceInMeters']}') ?? 0.0;
+        }
+
+        if (data['estimatedTripDurationInMin'] != null) {
+          driverStatusController.tripDurationInMin.value =
+              int.tryParse('${data['estimatedTripDurationInMin']}') ?? 0;
+        }
+      }
+    });
+
+    // Debug: See all events
+    socketService.socket.onAny((event, data) {
+      CommonLogger.log.i('📦 [onAny] $event: $data');
+    });
+
+    if (!socketService.connected) {
+      socketService.connect();
+      socketService.onConnect(() {
+        CommonLogger.log.i("✅ Socket connected");
+      });
+    } else {
+      CommonLogger.log.i("✅ Socket already connected");
+    }
+  }
+
+  double getRotation(LatLng start, LatLng end) {
+    final lat1 = start.latitude;
+    final lon1 = start.longitude;
+    final lat2 = end.latitude;
+    final lon2 = end.longitude;
+
+    final dLon = lon2 - lon1;
+
+    final y = math.sin(dLon) * math.cos(lat2);
+    final x =
+        math.cos(lat1) * math.sin(lat2) -
+        math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
+
+    final bearing = math.atan2(y, x);
+
+    return (bearing * 180 / math.pi + 360) % 360;
+  }
+
+  Future<void> animateMarker(LatLng newPosition) async {
+    if (_mapController == null || carIcon == null) return;
+
+    final rotation = getRotation(
+      _lastDriverPosition ?? newPosition,
+      newPosition,
+    );
+
+    setState(() {
+      _movingMarker = Marker(
+        markerId: MarkerId("moving_car"),
+        position: newPosition,
+        icon: carIcon,
+        anchor: Offset(0.5, 0.5),
+        rotation: rotation,
+        flat: true,
+      );
+    });
+
+    _lastDriverPosition = newPosition;
+  }
+
+  Future<void> _loadMarkerIcons() async {
+    carIcon = await BitmapDescriptor.asset(
+      height: 70,
+      const ImageConfiguration(size: Size(50, 50)),
+      AppImages.movingCar,
+    );
+
+    setState(() {});
+  }
+
+  Future<String> getAddressFromLatLng(double lat, double lng) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      Placemark place = placemarks[0];
+      return "${place.name}, ${place.locality}, ${place.administrativeArea}";
+    } catch (e) {
+      return "Location not available";
+    }
+  }
+
+  Future<void> _initSocketAndLocation() async {
+    final joinedData = JoinedBookingData().getData();
+
+    if (joinedData != null) {
+      final customerLoc = joinedData['customerLocation'];
+      final fromLat = customerLoc['fromLatitude'];
+      final fromLng = customerLoc['fromLongitude'];
+      final toLat = customerLoc['toLatitude'];
+      final toLng = customerLoc['toLongitude'];
+      final String driverFullName = joinedData['driverName'] ?? '';
+      final String customerName = joinedData['customerName'] ?? '';
+      final String customerPhone = joinedData['customerPhone'] ?? '';
+
+      bookingFromLocation = LatLng(fromLat, fromLng);
+      bookingToLocation = LatLng(toLat, toLng);
+
+      final fromAddress = await getAddressFromLatLng(fromLat, fromLng);
+      final toAddress = await getAddressFromLatLng(toLat, toLng);
+
+      setState(() {
+        customerFrom = fromAddress;
+        customerTo = toAddress;
+        driverName = '$driverFullName';
+        custName = customerName;
+      });
+    }
   }
 
   @override
@@ -65,8 +262,26 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
     super.dispose();
   }
 
+  Future<void> updateRoute() async {
+    final result = await getRouteInfo(
+      origin: origin,
+      destination: bookingToLocation!,
+    );
+
+    setState(() {
+      directionText = result['direction'];
+      distance = result['distance'];
+      polylinePoints = decodePolyline(result['polyline']);
+    });
+  }
+
   Future<void> loadRoute() async {
-    final result = await getRouteInfo(origin: origin, destination: destination);
+    if (bookingFromLocation == null || bookingToLocation == null) return;
+
+    final result = await getRouteInfo(
+      origin: bookingFromLocation!,
+      destination: bookingToLocation!,
+    );
 
     setState(() {
       directionText = result['direction'];
@@ -90,7 +305,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
 
     final latLng = LatLng(position.latitude, position.longitude);
 
-    _mapController?.animateCamera(CameraUpdate.newLatLng(latLng));
+    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(latLng, 16));
   }
 
   String getManeuverIcon(maneuver) {
@@ -118,24 +333,22 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
       child: Scaffold(
         body: Stack(
           children: [
-            //  CommonGoogleMap(
-            //   initialPosition: origin,
-            //   markers: {
-            //     Marker(markerId: MarkerId('start'), position: origin),
-            //     Marker(markerId: MarkerId('end'), position: destination),
-            //   },
-            //   polylines: {
-            //     Polyline(
-            //       polylineId: PolylineId("route"),
-            //       color: AppColors.commonBlack,
-            //       width: 5,
-            //       points: polylinePoints,
-            //     ),
-            //   },
-            // ),
             SizedBox(
               height: 650,
               child: CommonGoogleMap(
+                onCameraMoveStarted: () {
+                  _userInteractingWithMap = true;
+                  _autoFollowEnabled = false;
+
+                  _autoFollowTimer?.cancel(); // cancel any existing timers
+
+                  // Start 10-second timer to re-enable auto-follow
+                  _autoFollowTimer = Timer(Duration(seconds: 10), () {
+                    _autoFollowEnabled = true;
+                    _userInteractingWithMap = false;
+                  });
+                },
+
                 // onMapCreated: () {
                 //   String style = await DefaultAssetBundle.of(
                 //     context,
@@ -145,14 +358,13 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                 onMapCreated: (controller) async {
                   _mapController = controller;
 
-                  // Optional: apply custom map style
                   String style = await DefaultAssetBundle.of(
                     context,
                   ).loadString('assets/map_style/map_style1.json');
                   _mapController!.setMapStyle(style);
 
                   // Wait briefly to ensure map is ready
-                  await Future.delayed(const Duration(milliseconds: 300));
+                  await Future.delayed(const Duration(milliseconds: 600));
 
                   // Fit bounds (auto zoom)
                   LatLngBounds bounds = LatLngBounds(
@@ -173,21 +385,33 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                           : destination.longitude,
                     ),
                   );
-
-                  // Apply bounds with padding
                   _mapController!.animateCamera(
-                    CameraUpdate.newLatLngBounds(
-                      bounds,
-                      70,
-                    ), // 70 is padding in pixels
+                    CameraUpdate.newLatLngBounds(bounds, 60),
                   );
                 },
 
-                initialPosition: origin,
+                // initialPosition: origin,
+                // markers: {
+                //   Marker(markerId: MarkerId('start'), position: origin),
+                //   Marker(markerId: MarkerId('end'), position: destination),
+                // },
+                initialPosition: bookingFromLocation ?? LatLng(0, 0),
                 markers: {
-                  Marker(markerId: MarkerId('start'), position: origin),
-                  Marker(markerId: MarkerId('end'), position: destination),
+                  if (_movingMarker != null)
+                    _movingMarker!
+                  else if (bookingFromLocation != null)
+                    Marker(
+                      markerId: MarkerId('start'),
+                      position: bookingFromLocation!,
+                      icon: carIcon,
+                    ),
+                  if (bookingToLocation != null)
+                    Marker(
+                      markerId: MarkerId('end'),
+                      position: bookingToLocation!,
+                    ),
                 },
+
                 polylines: {
                   Polyline(
                     polylineId: PolylineId("route"),
@@ -335,6 +559,39 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            Obx(
+                              () => CustomTextfield.textWithStyles600(
+                                formatDuration(
+                                  driverStatusController
+                                      .tripDurationInMin
+                                      .value,
+                                ),
+                                fontSize: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Icon(
+                              Icons.circle,
+                              color: AppColors.drkGreen,
+                              size: 10,
+                            ),
+                            const SizedBox(width: 10),
+                            Obx(
+                              () => CustomTextfield.textWithStyles600(
+                                formatDistance(
+                                  driverStatusController
+                                      .tripDistanceInMeters
+                                      .value,
+                                ),
+                                fontSize: 20,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        /*               Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
                             CustomTextfield.textWithStyles600(
                               '16 min',
                               fontSize: 20,
@@ -351,11 +608,10 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                               fontSize: 20,
                             ),
                           ],
-                        ),
-
+                        ),*/
                         Center(
                           child: CustomTextfield.textWithStylesSmall(
-                            'Dropping off Rebecca',
+                            'Dropping off $custName',
                           ),
                         ),
 
@@ -393,21 +649,24 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                     ),
                                   ),
                                   SizedBox(width: 20),
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      CustomTextfield.textWithStyles600(
-                                        color: AppColors.commonBlack
-                                            .withOpacity(0.5),
-                                        fontSize: 16,
-                                        'Pickup',
-                                      ),
-                                      CustomTextfield.textWithStylesSmall(
-                                        colors: AppColors.textColorGrey,
-                                        '4, Gana Street, Maitama, Abuja, FCTLagos',
-                                      ),
-                                    ],
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        CustomTextfield.textWithStyles600(
+                                          color: AppColors.commonBlack
+                                              .withOpacity(0.5),
+                                          fontSize: 16,
+                                          'Pickup',
+                                        ),
+                                        CustomTextfield.textWithStylesSmall(
+                                          colors: AppColors.textColorGrey,
+                                          customerFrom,
+                                          maxLine: 2,
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ],
                               ),
@@ -431,19 +690,22 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                     ),
                                   ),
                                   SizedBox(width: 20),
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      CustomTextfield.textWithStyles600(
-                                        fontSize: 16,
-                                        'Drop off - Constitution Ave',
-                                      ),
-                                      CustomTextfield.textWithStylesSmall(
-                                        colors: AppColors.textColorGrey,
-                                        '143, Constitution Ave, Abuja',
-                                      ),
-                                    ],
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        CustomTextfield.textWithStyles600(
+                                          fontSize: 16,
+                                          'Drop off - Constitution Ave',
+                                        ),
+                                        CustomTextfield.textWithStylesSmall(
+                                          colors: AppColors.textColorGrey,
+                                          customerTo,
+                                          maxLine: 2,
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ],
                               ),
@@ -463,7 +725,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                     ),
                                     SizedBox(width: 15),
                                     CustomTextfield.textWithStyles600(
-                                      'Rebecca Davis',
+                                      custName,
                                       fontSize: 20,
                                     ),
                                   ],
@@ -570,23 +832,40 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
 
                                   await Future.delayed(
                                     const Duration(seconds: 1),
-                                  ); // optional loading delay
+                                  );
+                                  final message = await driverStatusController
+                                      .completeRideRequest(
+                                        context,
+                                        bookingId: widget.bookingId,
+                                      );
 
-                                  controller.success();
+                                  if (message != null) {
+                                    controller.success();
 
-                                  // Delay to let success animation finish before navigating
+                                    // ScaffoldMessenger.of(context).showSnackBar(
+                                    //   SnackBar(content: Text(message)),
+                                    // );
+                                  } else {
+                                    controller.failure();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Failed to start ride'),
+                                      ),
+                                    );
+                                  }
+
                                   await Future.delayed(
                                     const Duration(milliseconds: 300),
                                   );
 
                                   // Navigate to the next screen
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder:
-                                          (context) => CashCollectedScreen(),
-                                    ), // replace with your widget
-                                  );
+                                  // Navigator.push(
+                                  //   context,
+                                  //   MaterialPageRoute(
+                                  //     builder:
+                                  //         (context) => CashCollectedScreen(),
+                                  //   ), // replace with your widget
+                                  // );
                                 },
 
                                 height: 50,
