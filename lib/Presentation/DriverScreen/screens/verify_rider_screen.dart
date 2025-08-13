@@ -6,6 +6,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/ride_stats_screen.dart';
+import 'package:hopper/dummy_screen.dart';
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/log.dart';
 import '../../../Core/Utility/Buttons.dart';

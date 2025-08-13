@@ -21,18 +21,18 @@ import '../../../Core/Utility/Buttons.dart';
 import '../../../utils/map/google_map.dart';
 import '../../../utils/map/route_info.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
-import 'cash_collected_screen.dart';
+
 import 'package:get/get.dart';
 
-class RideStatsScreen extends StatefulWidget {
+class RideStatsScreens extends StatefulWidget {
   final String bookingId;
-  const RideStatsScreen({super.key, required this.bookingId});
+  const RideStatsScreens({super.key, required this.bookingId});
 
   @override
-  State<RideStatsScreen> createState() => _RideStatsScreenState();
+  State<RideStatsScreens> createState() => _RideStatsScreensState();
 }
 
-class _RideStatsScreenState extends State<RideStatsScreen> {
+class _RideStatsScreensState extends State<RideStatsScreens> {
   LatLng origin = LatLng(9.9303, 78.0945);
   LatLng destination = LatLng(9.9342, 78.1824);
   GoogleMapController? _mapController;
@@ -42,16 +42,14 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
   String customerFrom = '';
   String customerTo = '';
   Marker? _movingMarker;
-  LatLng? _lastDriverPosition;
   double _currentMapBearing = 0.0;
 
+  LatLng? _lastDriverPosition;
   late SocketService socketService;
-
   bool driverCompletedRide = false;
   String directionText = '';
   String distance = '';
   bool _cameraInitialized = false;
-
   String driverName = '';
   String custName = '';
   List<LatLng> polylinePoints = [];
@@ -63,54 +61,6 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
   bool _userInteractingWithMap = false;
   bool _autoFollowEnabled = true;
 
-  /*  @override
-  void initState() {
-    super.initState();
-    Future.delayed(Duration(milliseconds: 100), () {
-      FocusManager.instance.primaryFocus?.unfocus();
-    });
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setSystemUIOverlayStyle(
-      SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-      ),
-    );
-    driverReachedDestination();
-    positionStream = Geolocator.getPositionStream(
-      locationSettings: LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
-      ),
-    ).listen((Position position) async {
-      final currentLatLng = LatLng(position.latitude, position.longitude);
-
-      animateMarker(currentLatLng);
-
-      setState(() {
-        origin = currentLatLng;
-      });
-
-      if (_autoFollowEnabled && _mapController != null) {
-        _mapController!.animateCamera(
-          CameraUpdate.newCameraPosition(
-            CameraPosition(
-              target: currentLatLng,
-              zoom: 16,
-              tilt: 0,
-              bearing: 0,
-            ),
-          ),
-        );
-      }
-
-      await updateRoute();
-    });
-
-    _initSocketAndLocation();
-    _loadMarkerIcons();
-    loadRoute();
-  }*/
   @override
   void initState() {
     super.initState();
@@ -167,66 +117,6 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
     });
   }
 
-  String formatDistance(double meters) {
-    double kilometers = meters / 1000;
-    return '${kilometers.toStringAsFixed(1)} Km';
-  }
-
-  String formatDuration(int minutes) {
-    int hours = minutes ~/ 60;
-    int remainingMinutes = minutes % 60;
-    return hours > 0
-        ? '$hours hr $remainingMinutes min'
-        : '$remainingMinutes min';
-  }
-
-  Future<void> driverReachedDestination() async {
-    socketService = SocketService();
-    socketService.on('driver-reached-destination', (data) async {
-      final status = data['status'];
-      if (status == true || status.toString() == 'true') {
-        if (!mounted) return;
-        setState(() {
-          driverCompletedRide = true;
-        });
-
-        // arrivedAtPickup = false;
-        CommonLogger.log.i(
-          '🚦 driver-reached-destination updated to false $data',
-        );
-      }
-    });
-    socketService.on('driver-location', (data) async {
-      CommonLogger.log.i('driver-location : $data');
-
-      if (data != null) {
-        if (data['dropDistanceInMeters'] != null) {
-          driverStatusController.dropDistanceInMeters.value =
-              (data['dropDistanceInMeters'] ?? 0).toDouble();
-        }
-
-        if (data['dropDurationInMin'] != null) {
-          driverStatusController.dropDurationInMin.value =
-              (data['dropDurationInMin'] ?? 0).toDouble();
-        }
-      }
-    });
-
-    // Debug: See all events
-    socketService.socket.onAny((event, data) {
-      CommonLogger.log.i('📦 [onAny] $event: $data');
-    });
-
-    if (!socketService.connected) {
-      socketService.connect();
-      socketService.onConnect(() {
-        CommonLogger.log.i("✅ Socket connected");
-      });
-    } else {
-      CommonLogger.log.i("✅ Socket already connected");
-    }
-  }
-
   double getRotation(LatLng start, LatLng end) {
     final lat1 = start.latitude * math.pi / 180;
     final lon1 = start.longitude * math.pi / 180;
@@ -276,62 +166,30 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
     _lastDriverPosition = newPosition;
   }
 
-  // Future<void> animateMarker(LatLng newPosition) async {
-  //   if (_mapController == null || carIcon == null) return;
-  //
-  //   // Skip rotation if no previous location
-  //   if (_lastDriverPosition == null) {
-  //     _lastDriverPosition = newPosition;
-  //     return;
-  //   }
-  //
-  //   final rotation = getRotation(_lastDriverPosition!, newPosition);
-  //
-  //   setState(() {
-  //     _movingMarker = Marker(
-  //       markerId: MarkerId("moving_car"),
-  //       position: newPosition,
-  //       icon: carIcon,
-  //       anchor: Offset(0.5, 0.5),
-  //       rotation: rotation,
-  //       flat: true,
-  //     );
-  //   });
-  //
-  //   _lastDriverPosition = newPosition;
-  // }
-
-  // Future<void> _loadMarkerIcons() async {
-  //   carIcon = await BitmapDescriptor.fromAssetImage(
-  //     ImageConfiguration(size: Size(48, 48)),
-  //     AppImages.movingCar,
-  //   );
-  //
-  //   setState(() {});
-  // }
   Future<void> _loadMarkerIcons() async {
-    carIcon = await BitmapDescriptor.asset(
-      height: 50,
-      const ImageConfiguration(size: Size(48, 48)),
-      AppImages.movingCar,
+    final ByteData data = await rootBundle.load(AppImages.movingCar);
+
+    final codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: 150, // Increase size here
+      targetHeight: 150,
     );
 
-    setState(() {});
-  }
+    final frame = await codec.getNextFrame();
+    final byteData = await frame.image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
 
-  Future<String> getAddressFromLatLng(double lat, double lng) async {
-    try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
-      Placemark place = placemarks[0];
-      return "${place.name}, ${place.locality}, ${place.administrativeArea}";
-    } catch (e) {
-      return "Location not available";
+    if (byteData != null) {
+      final resizedBytes = byteData.buffer.asUint8List();
+      carIcon = BitmapDescriptor.fromBytes(resizedBytes);
+    } else {
+      throw Exception("Failed to convert car image to bytes");
     }
   }
 
   Future<void> _initSocketAndLocation() async {
     final joinedData = JoinedBookingData().getData();
-
     if (joinedData != null) {
       final customerLoc = joinedData['customerLocation'];
       final fromLat = customerLoc['fromLatitude'];
@@ -340,7 +198,6 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
       final toLng = customerLoc['toLongitude'];
       final String driverFullName = joinedData['driverName'] ?? '';
       final String customerName = joinedData['customerName'] ?? '';
-      final String customerPhone = joinedData['customerPhone'] ?? '';
 
       bookingFromLocation = LatLng(fromLat, fromLng);
       bookingToLocation = LatLng(toLat, toLng);
@@ -351,17 +208,49 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
       setState(() {
         customerFrom = fromAddress;
         customerTo = toAddress;
-        driverName = '$driverFullName';
+        driverName = driverFullName;
         custName = customerName;
       });
     }
   }
 
-  @override
-  void dispose() {
-    positionStream?.cancel();
-    _autoFollowTimer?.cancel();
-    super.dispose();
+  Future<void> driverReachedDestination() async {
+    socketService = SocketService();
+    socketService.on('driver-reached-destination', (data) {
+      if (data['status'] == true) {
+        setState(() => driverCompletedRide = true);
+      }
+    });
+
+    socketService.on('driver-location', (data) {
+      if (data != null) {
+        driverStatusController.dropDistanceInMeters.value =
+            (data['dropDistanceInMeters'] ?? 0).toDouble();
+        driverStatusController.dropDurationInMin.value =
+            (data['dropDurationInMin'] ?? 0).toDouble();
+      }
+    });
+
+    socketService.socket.onAny((event, data) {
+      CommonLogger.log.i('📦 [onAny] $event: $data');
+    });
+
+    if (!socketService.connected) {
+      socketService.connect();
+      socketService.onConnect(() {
+        CommonLogger.log.i("✅ Socket connected");
+      });
+    }
+  }
+
+  Future<String> getAddressFromLatLng(double lat, double lng) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      Placemark place = placemarks[0];
+      return "${place.name}, ${place.locality}, ${place.administrativeArea}";
+    } catch (e) {
+      return "Location not available";
+    }
   }
 
   Future<void> updateRoute() async {
@@ -390,6 +279,13 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
       distance = result['distance'];
       polylinePoints = decodePolyline(result['polyline']);
     });
+  }
+
+  @override
+  void dispose() {
+    positionStream?.cancel();
+    _autoFollowTimer?.cancel();
+    super.dispose();
   }
 
   String parseHtmlString(String htmlText) {
@@ -516,7 +412,6 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                       position: bookingToLocation!,
                     ),
                 },
-
                 polylines: {
                   Polyline(
                     polylineId: PolylineId("route"),
@@ -527,7 +422,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                 },
               ),
             ),
-            // Existing FAB
+
             Positioned(
               top: driverCompletedRide ? 550 : 450,
               right: 10,
@@ -661,7 +556,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
-                        Row(
+                        /* Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Obx(
@@ -691,7 +586,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                               ),
                             ),
                           ],
-                        ),
+                        ),*/
 
                         /*               Row(
                           mainAxisAlignment: MainAxisAlignment.center,

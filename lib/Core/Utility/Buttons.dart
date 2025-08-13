@@ -26,7 +26,8 @@ class Buttons {
     bool? isLoading,
     bool hasBorder = false,
     String? imagePath,
-  }) {
+  })
+  {
     return SizedBox(
       width: size,
       child: ElevatedButton(

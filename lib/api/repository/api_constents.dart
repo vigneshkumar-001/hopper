@@ -19,7 +19,7 @@ class ApiConstents {
   static String cancelBooking = '$baseUrl/users/cancel-booking/574636';
   static String userImageUpload = 'https://adrox.ai/api/image-save';
   static String driverOnlineStatus({required String driverId}) {
-    return '$baseUrl/users/toggle-status/$driverId';
+    return '$baseUrl/users/toggle-status';
   }
 
   static String todayStatus({required String driverId}) {

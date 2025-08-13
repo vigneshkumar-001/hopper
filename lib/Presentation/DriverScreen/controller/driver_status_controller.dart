@@ -24,6 +24,15 @@ class DriverStatusController extends GetxController {
   final tripDistanceInMeters = 0.0.obs;
   final tripDurationInMin = 0.obs;
 
+  final pickupDurationInMin = 0.0.obs;
+  final pickupDistanceInMeters = 0.obs;
+
+
+  var dropDurationInMin = 0.0.obs;
+  var dropDistanceInMeters = 0.0.obs;
+
+
+
   @override
   void onInit() {
     super.onInit();

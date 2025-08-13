@@ -10,12 +10,14 @@ class CommonGoogleMap extends StatefulWidget {
   final bool myLocationEnabled;
   final Function(GoogleMapController)? onMapCreated;
   final VoidCallback? onCameraMoveStarted;
+  final Function(CameraPosition)? onCameraMove;
 
   const CommonGoogleMap({
     Key? key,
     required this.initialPosition,
     this.polylines = const {},
     this.markers = const {},
+    this.onCameraMove,
     this.onCameraMoveStarted,
     this.myLocationEnabled = true,
     this.onMapCreated,
@@ -31,17 +33,22 @@ class _CommonGoogleMapState extends State<CommonGoogleMap> {
   @override
   Widget build(BuildContext context) {
     return GoogleMap(
+      onCameraMove: widget.onCameraMove,
 
       initialCameraPosition: CameraPosition(
         target: widget.initialPosition,
         zoom: 16,
       ),
-      onCameraMoveStarted:widget. onCameraMoveStarted,
+      onCameraMoveStarted: widget.onCameraMoveStarted,
       polylines: widget.polylines,
       markers: widget.markers,
       myLocationEnabled: widget.myLocationEnabled,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
+
+      compassEnabled: false,
+      mapToolbarEnabled: false,
+      rotateGesturesEnabled: true,
       gestureRecognizers: {
         Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
       },

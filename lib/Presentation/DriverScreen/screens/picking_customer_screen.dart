@@ -53,6 +53,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   String RIDEDISTANCEINMETERS = '';
   String ESTIMATEDRIDETIMEINMIN = '';
 
+  String PICKUPDISTANCEINMETERS = '';
+  String PICKUPDURATIONINMIN = '';
+
   // late LatLng customerTo;
   String customerTo = '';
   late LatLng driverCurrentLatLng;
@@ -236,8 +239,22 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     socketService.socket.onAny((event, data) {
       CommonLogger.log.i('📦 [onAny] $event: $data');
     });
+    socketService.on('driver-location', (data) async {
+      CommonLogger.log.i('driver-location : $data');
 
-    // Listen to the exact event name
+      if (data != null) {
+        if (data['pickupDistanceInMeters'] != null) {
+          driverStatusController.pickupDistanceInMeters.value =
+              data['pickupDistanceInMeters'] ?? 0;
+        }
+
+        if (data['pickupDurationInMin'] != null) {
+          driverStatusController.pickupDurationInMin.value =
+              (data['pickupDurationInMin'] ?? 0.0).toDouble();
+        }
+      }
+    });
+
     socketService.on('driver-arrived', (data) {
       final status = data['status'];
       if (status == true || status.toString() == 'true') {
@@ -246,20 +263,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
           driverReached = true;
         });
 
-        // arrivedAtPickup = false;
         CommonLogger.log.i('🚦 arrivedAtPickup updated to false');
       }
-      // if (data['status'].toString() == 'true') {
-      //
-      //
-      //
-      //   driverReached = true;
-      //     arrivedAtPickup = true;
-      //
-      //
-      //
-      //   CommonLogger.log.i('🚦 arrivedAtPickup updated to false');
-      // }
+
       CommonLogger.log.i('🚗 Driver arrived: $data');
     });
 
@@ -1003,10 +1009,23 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                       ),
                                     ),
 
+                                    // title: Center(
+                                    //   child: CustomTextfield.textWithStyles600(
+                                    //     fontSize: 20,
+                                    //     '$DRIVERTIME Away',
+                                    //   ),
+                                    // ),
                                     title: Center(
-                                      child: CustomTextfield.textWithStyles600(
-                                        fontSize: 20,
-                                        '$DRIVERTIME Away',
+                                      child: Obx(
+                                        () => CustomTextfield.textWithStyles600(
+                                          formatDuration(
+                                            driverStatusController
+                                                .pickupDurationInMin
+                                                .value
+                                                .toString(),
+                                          ),
+                                          fontSize: 20,
+                                        ),
                                       ),
                                     ),
                                     subtitle: Center(
