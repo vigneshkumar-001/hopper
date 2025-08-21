@@ -9,13 +9,14 @@ import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 import '../../../Core/Utility/snackbar.dart';
+import '../models/booking_accept_model.dart';
 import '../models/get_todays_activity_models.dart';
 import '../screens/picking_customer_screen.dart';
 import '../screens/ride_stats_screen.dart';
 import '../screens/verify_rider_screen.dart';
 
 class DriverStatusController extends GetxController {
-  var isOnline = true.obs;
+  var isOnline = false.obs;
   RxBool isLoading = false.obs;
   final socketService = SocketService();
   Rxn<TodayActivityData> todayStatusData = Rxn<TodayActivityData>();
@@ -25,13 +26,10 @@ class DriverStatusController extends GetxController {
   final tripDurationInMin = 0.obs;
 
   final pickupDurationInMin = 0.0.obs;
-  final pickupDistanceInMeters = 0.obs;
-
+  final pickupDistanceInMeters = 0.0.obs;
 
   var dropDurationInMin = 0.0.obs;
   var dropDistanceInMeters = 0.0.obs;
-
-
 
   @override
   void onInit() {
@@ -48,6 +46,8 @@ class DriverStatusController extends GetxController {
     BuildContext context, {
     required String bookingId,
     required String status,
+    required String pickupLocationAddress,
+    required String dropLocationAddress,
     required LatLng pickupLocation,
     required LatLng driverLocation,
   }) async {
@@ -91,6 +91,8 @@ class DriverStatusController extends GetxController {
           Get.to(
             PickingCustomerScreen(
               bookingId: bookingId,
+              pickupLocationAddress: pickupLocationAddress,
+              dropLocationAddress: dropLocationAddress,
               pickupLocation: pickupLocation,
               driverLocation: driverLocation,
             ),
@@ -112,6 +114,8 @@ class DriverStatusController extends GetxController {
     BuildContext context, {
     required String bookingId,
     required String custName,
+    required String pickupAddress,
+    required String dropAddress,
   }) async {
     isLoading.value = true;
     try {
@@ -123,7 +127,7 @@ class DriverStatusController extends GetxController {
         (failure) {
           isLoading.value = false;
           CustomSnackBar.showError(failure.message);
-          resultMessage = null; // explicitly set null
+          resultMessage = null;
         },
         (response) {
           isLoading.value = false;
@@ -137,6 +141,8 @@ class DriverStatusController extends GetxController {
             MaterialPageRoute(
               builder:
                   (context) => VerifyRiderScreen(
+                    pickupAddress: pickupAddress,
+                    dropAddress: dropAddress,
                     bookingId: bookingId,
                     custName: custName,
                   ),
@@ -172,7 +178,7 @@ class DriverStatusController extends GetxController {
         },
         (response) {
           isLoading.value = false;
-          // CustomSnackBar.showSuccess(response.message);
+          // CustomSnackBar.showSuccess(response.data?. status  ??"" );
           CommonLogger.log.i(response.message);
           Navigator.push(
             context,
@@ -220,6 +226,29 @@ class DriverStatusController extends GetxController {
     }
   }
 
+  Future<BookingAcceptModel?> driverArrived(
+    BuildContext context, {
+    required String bookingId,
+  }) async {
+    isLoading.value = true;
+
+    try {
+      final results = await apiDataSource.driverArrived(bookingId: bookingId);
+
+      return results.fold(
+        (failure) {
+          isLoading.value = false;
+          return null;
+        },
+        (response) {
+          return response;
+        },
+      );
+    } catch (e) {
+      isLoading.value = false;
+      return null;
+    }
+  }
   // Future<String?> otpInsert(
   //   BuildContext context, {
   //   required String bookingId,
@@ -280,7 +309,7 @@ class DriverStatusController extends GetxController {
       );
       results.fold(
         (failure) {
-          CustomSnackBar.showError(failure.message);
+          //  CustomSnackBar.showError(failure.message);
           isLoading.value = false;
 
           return '';
@@ -384,5 +413,28 @@ class DriverStatusController extends GetxController {
     }
 
     return '';
+  }
+
+  Future<void> getDriverStatus() async {
+    try {
+      final results = await apiDataSource.getDriverStatus();
+
+      results.fold(
+        (failure) {
+          // CustomSnackBar.showError(failure.message);
+          CommonLogger.log.e("failure: ${failure.message}");
+
+          return '';
+        },
+        (response) {
+          CommonLogger.log.i("Response: ${response.data}");
+
+          isOnline.value = response.data.onlineStatus;
+          CommonLogger.log.i(isOnline.value);
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.i(e);
+    }
   }
 }

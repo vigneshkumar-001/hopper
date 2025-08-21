@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:hopper/Core/Constants/log.dart';
@@ -9,7 +10,9 @@ import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
+import '../../../utils/sharedprefsHelper/booking_local_data.dart';
 import '../../../utils/websocket/socket_io_client.dart';
+import '../../Authentication/screens/GetStarted_Screens.dart';
 import '../../Authentication/widgets/textFields.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -110,11 +113,11 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
     );
   }
 
-  void toggleStatus() {
-    setState(() {
-      isOnline = !isOnline;
-    });
-  }
+  // void toggleStatus() {
+  //   setState(() {
+  //     isOnline = !isOnline;
+  //   });
+  // }
 
   Color getTextColor({Color color = Colors.black}) =>
       statusController.isOnline.value ? color : Colors.black;
@@ -218,6 +221,30 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
   String? _currentBookingId;
   String? pickupAddress;
   String? dropAddress;
+  double safeToDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0.0;
+  }
+
+  int safeToInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round(); // or floor()
+    return int.tryParse(value.toString()) ?? 0;
+  }
+
+  String formatDistance(double meters) {
+    double kilometers = meters / 1000;
+    return '${kilometers.toStringAsFixed(1)} Km';
+  }
+
+  String formatDuration(int minutes) {
+    int hours = minutes ~/ 60;
+    int remainingMinutes = minutes % 60;
+    return hours > 0
+        ? '$hours hr $remainingMinutes min'
+        : '$remainingMinutes min';
+  }
 
   Future<void> _initSocketAndLocation() async {
     driverId = await SharedPrefHelper.getDriverId();
@@ -262,6 +289,7 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
     });
 
     socketService.on('booking-request', (data) async {
+      BookingDataService().setBookingData(data);
       CommonLogger.log.i('📦 Booking Request: $data');
       _currentBookingId = data['bookingId'];
 
@@ -311,6 +339,9 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
     _initSocketAndLocation();
     _loadCustomCarIcon();
     _startCompass();
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      statusController.getDriverStatus();
+    });
   }
 
   bool status = true;
@@ -600,8 +631,8 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                           SizedBox(width: 8),
                                                           Expanded(
                                                             child: Text(
-                                                              pickupAddress ??
-                                                                  'Fetching address...',
+                                                              bookingRequestData!['pickupAddress'] ??
+                                                                  '',
                                                             ),
                                                           ),
                                                         ],
@@ -617,8 +648,8 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                           SizedBox(width: 8),
                                                           Expanded(
                                                             child: Text(
-                                                              dropAddress ??
-                                                                  'Fetching address...',
+                                                              bookingRequestData!['dropAddress'] ??
+                                                                  "",
                                                             ),
                                                           ),
                                                         ],
@@ -688,7 +719,11 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                             width: 10,
                                                           ),
                                                           Text(
-                                                            '15 mins',
+                                                            formatDuration(
+                                                              safeToInt(
+                                                                bookingRequestData?['estimateDuration'],
+                                                              ),
+                                                            ),
                                                             style: TextStyle(
                                                               fontWeight:
                                                                   FontWeight
@@ -716,7 +751,11 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                             width: 10,
                                                           ),
                                                           Text(
-                                                            '1.4 km',
+                                                            formatDistance(
+                                                              safeToDouble(
+                                                                bookingRequestData?['estimatedDistance'],
+                                                              ),
+                                                            ),
                                                             style: TextStyle(
                                                               fontWeight:
                                                                   FontWeight
@@ -804,6 +843,13 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                                       try {
                                                                         final bookingId =
                                                                             bookingRequestData!['bookingId'];
+                                                                        final address =
+                                                                            bookingRequestData!['pickupAddress'] ??
+                                                                            '';
+
+                                                                        final dropAddress =
+                                                                            bookingRequestData!['dropAddress'] ??
+                                                                            '';
 
                                                                         final pickup = LatLng(
                                                                           bookingRequestData!['pickupLocation']['latitude'],
@@ -823,6 +869,11 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                                         );
 
                                                                         await statusController.bookingAccept(
+                                                                          pickupLocationAddress:
+                                                                              address,
+                                                                          dropLocationAddress:
+                                                                              dropAddress,
+
                                                                           context,
                                                                           bookingId:
                                                                               bookingId,
@@ -872,62 +923,62 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                           ),
                                         ),
                                       ] else ...[
-                                        GestureDetector(
-                                          onTap: () {
-                                            // Navigator.push(
-                                            //   context,
-                                            //   MaterialPageRoute(
-                                            //     builder:
-                                            //         (context) =>
-                                            //             UberCloneMainScreen(),
-                                            //   ),
-                                            // );
-                                            /* Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder:
-                                                (
-                                                  context,
-                                                ) => PickingCustomerScreen(
-                                                  pickupLocation: LatLng(
-                                                    9.956145099999999,
-                                                    78.18620899999999,
-                                                  ),
-                                                  driverLocation: LatLng(
-                                                    9.956145099999999,
-                                                    78.18620899999999,
-                                                  ),
-                                                ),
-                                          ),
-                                        );*/
-                                          },
-                                          child: Container(
-                                            width: double.infinity,
-                                            height: 54,
-                                            decoration: BoxDecoration(
-                                              color: AppColors.commonBlack,
-                                            ),
-                                            child: Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                Image.asset(
-                                                  AppImages.graph,
-                                                  color: AppColors.commonWhite,
-                                                  height: 20,
-                                                  width: 20,
-                                                ),
-
-                                                SizedBox(width: 10),
-                                                CustomTextfield.textWithStyles600(
-                                                  fontSize: 13,
-                                                  color: AppColors.commonWhite,
-                                                  'Requests are Surging - Go Online Now!',
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
+                                        // GestureDetector(
+                                        //   onTap: () {
+                                        //     // Navigator.push(
+                                        //     //   context,
+                                        //     //   MaterialPageRoute(
+                                        //     //     builder:
+                                        //     //         (context) =>
+                                        //     //             UberCloneMainScreen(),
+                                        //     //   ),
+                                        //     // );
+                                        //     /* Navigator.push(
+                                        //   context,
+                                        //   MaterialPageRoute(
+                                        //     builder:
+                                        //         (
+                                        //           context,
+                                        //         ) => PickingCustomerScreen(
+                                        //           pickupLocation: LatLng(
+                                        //             9.956145099999999,
+                                        //             78.18620899999999,
+                                        //           ),
+                                        //           driverLocation: LatLng(
+                                        //             9.956145099999999,
+                                        //             78.18620899999999,
+                                        //           ),
+                                        //         ),
+                                        //   ),
+                                        // );*/
+                                        //   },
+                                        //   child: Container(
+                                        //     width: double.infinity,
+                                        //     height: 54,
+                                        //     decoration: BoxDecoration(
+                                        //       color: AppColors.commonBlack,
+                                        //     ),
+                                        //     child: Row(
+                                        //       mainAxisAlignment:
+                                        //           MainAxisAlignment.center,
+                                        //       children: [
+                                        //         Image.asset(
+                                        //           AppImages.graph,
+                                        //           color: AppColors.commonWhite,
+                                        //           height: 20,
+                                        //           width: 20,
+                                        //         ),
+                                        //
+                                        //         SizedBox(width: 10),
+                                        //         CustomTextfield.textWithStyles600(
+                                        //           fontSize: 13,
+                                        //           color: AppColors.commonWhite,
+                                        //           'Requests are Surging - Go Online Now!',
+                                        //         ),
+                                        //       ],
+                                        //     ),
+                                        //   ),
+                                        // ),
                                       ],
 
                                       const SizedBox(height: 20),
@@ -1171,6 +1222,7 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                 }),
                                               ),
                                             ),
+
                                             const SizedBox(height: 20),
                                           ],
                                         ),

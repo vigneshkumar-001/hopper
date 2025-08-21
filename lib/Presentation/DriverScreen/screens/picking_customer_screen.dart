@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:math' as math;
 import 'package:action_slider/action_slider.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
@@ -25,6 +27,8 @@ import 'package:get/get.dart';
 
 class PickingCustomerScreen extends StatefulWidget {
   final LatLng pickupLocation;
+  final String? pickupLocationAddress;
+  final String? dropLocationAddress;
   final LatLng driverLocation;
   final String bookingId;
 
@@ -33,6 +37,8 @@ class PickingCustomerScreen extends StatefulWidget {
     required this.pickupLocation,
     required this.driverLocation,
     required this.bookingId,
+    this.pickupLocationAddress,
+    this.dropLocationAddress,
   }) : super(key: key);
 
   @override
@@ -52,7 +58,8 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   String DRIVERTIME = '';
   String RIDEDISTANCEINMETERS = '';
   String ESTIMATEDRIDETIMEINMIN = '';
-
+  double carBearing = 0;
+  double _currentMapBearing = 0.0;
   String PICKUPDISTANCEINMETERS = '';
   String PICKUPDURATIONINMIN = '';
 
@@ -125,19 +132,18 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     return '$m:$s';
   }
 
-  String formatDistance(String distanceInMetersStr) {
-    double meters = double.tryParse(distanceInMetersStr) ?? 0.0;
+  String formatDistance(double meters) {
     double kilometers = meters / 1000;
     return '${kilometers.toStringAsFixed(1)} km';
   }
 
-  String formatDuration(String minutesStr) {
-    int minutes = int.tryParse(minutesStr) ?? 0;
-    int hours = minutes ~/ 60;
-    int remainingMinutes = minutes % 60;
+  String formatDuration(double minutes) {
+    int totalMinutes = minutes.round();
+    int hours = totalMinutes ~/ 60;
+    int remainingMinutes = totalMinutes % 60;
 
     if (hours > 0) {
-      return '$hours hr ${remainingMinutes} min';
+      return '$hours hr $remainingMinutes min';
     } else {
       return '$remainingMinutes min';
     }
@@ -220,10 +226,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
         customerFrom = pickupAddrs;
         CUSTOMERNAME = customerName;
         CUSTOMERPHN = customerPhone;
-        DISTANCE = formatDistance(driverDistanceInMeters);
-        DRIVERTIME = formatDuration(estimatedArrivalTimeInMin);
-        RIDEDISTANCEINMETERS = formatDistance(rideDistanceInMeters);
-        ESTIMATEDRIDETIMEINMIN = formatDuration(estimatedRideTimeInMin);
+
         customerTo = dropoffAddrs;
         driverCurrentLatLng = driverLatLng;
         driverProfilePic = profilePic;
@@ -245,12 +248,31 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
       if (data != null) {
         if (data['pickupDistanceInMeters'] != null) {
           driverStatusController.pickupDistanceInMeters.value =
-              data['pickupDistanceInMeters'] ?? 0;
+              (data['pickupDistanceInMeters'] as num).toDouble();
         }
 
         if (data['pickupDurationInMin'] != null) {
           driverStatusController.pickupDurationInMin.value =
-              (data['pickupDurationInMin'] ?? 0.0).toDouble();
+              (data['pickupDurationInMin'] as num).toDouble();
+        }
+      }
+    });
+
+    socketService.on('CANCELLED_BY_DRIVER-cancelled', (data) async {
+      CommonLogger.log.i('CANCELLED_BY_DRIVER-cancelled : $data');
+
+      if (data != null) {
+        if (data['status'] == true) {
+          Get.offAll(() => DriverMainScreen());
+        }
+      }
+    });
+    socketService.on('CANCELLED_BY_CUSTOMER-cancelled', (data) async {
+      CommonLogger.log.i('CANCELLED_BY_CUSTOMER-cancelled : $data');
+
+      if (data != null) {
+        if (data['status'] == true) {
+          Get.offAll(() => DriverMainScreen());
         }
       }
     });
@@ -366,14 +388,13 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 
   void _startDriverTracking() {
     positionStream = Geolocator.getPositionStream(
-      locationSettings: LocationSettings(
+      locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 5,
       ),
     ).listen((position) {
       final current = LatLng(position.latitude, position.longitude);
 
-      // Avoid animation if driver has not moved significantly
       if (lastPosition != null) {
         final distanceMoved = Geolocator.distanceBetween(
           lastPosition!.latitude,
@@ -386,20 +407,68 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
           print("🔴 Ignored minor movement: $distanceMoved m");
           return;
         }
+
+        // ✅ only call bearing if lastPosition is not null
+        final rotation = _getBearing(lastPosition!, current);
+        setState(() {
+          _currentMapBearing = rotation;
+        });
       }
 
       if (!isAnimating) {
         if (isOffRoute(current)) {
           print("🧭 Off route! Recalculating...");
-          _fetchUpdatedRoute(current); // 👇 This fetches a new route
+          _fetchUpdatedRoute(current);
         }
 
         _animateCarTo(current);
       }
+
       fitBoundsToDriverAndPickup();
-      // Always update last known position
+
+      // ✅ update last position after handling
       lastPosition = current;
     });
+
+    // positionStream = Geolocator.getPositionStream(
+    //   locationSettings: LocationSettings(
+    //     accuracy: LocationAccuracy.bestForNavigation,
+    //     distanceFilter: 5,
+    //   ),
+    // ).listen((position)
+    // {
+    //   final current = LatLng(position.latitude, position.longitude);
+    //
+    //   if (lastPosition != null) {
+    //     final distanceMoved = Geolocator.distanceBetween(
+    //       lastPosition!.latitude,
+    //       lastPosition!.longitude,
+    //       current.latitude,
+    //       current.longitude,
+    //     );
+    //
+    //     if (distanceMoved < 8) {
+    //       print("🔴 Ignored minor movement: $distanceMoved m");
+    //       return;
+    //     }
+    //   }
+    //   final rotation = _getBearing(lastPosition!, current);
+    //   setState(() {
+    //     _currentMapBearing = rotation;
+    //   });
+    //
+    //   if (!isAnimating) {
+    //     if (isOffRoute(current)) {
+    //       print("🧭 Off route! Recalculating...");
+    //       _fetchUpdatedRoute(current); // 👇 This fetches a new route
+    //     }
+    //
+    //     _animateCarTo(current);
+    //   }
+    //   fitBoundsToDriverAndPickup();
+    //   // Always update last known position
+    //   lastPosition = current;
+    // });
   }
 
   Future<void> _fetchUpdatedRoute(LatLng currentLocation) async {
@@ -427,7 +496,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
         (a.longitude - b.longitude).abs() < 0.00001;
   }
 
-  Future<void> _animateCarTo(LatLng to) async {
+  /*  Future<void> _animateCarTo(LatLng to) async {
     if (driverLocation == null || _isSameLocation(driverLocation!, to)) {
       print("⚠️ Skipping animation: same location");
       return;
@@ -451,6 +520,48 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 
     isAnimating = false;
 
+    _updateRemainingPolyline(to);
+  }*/
+
+  Future<void> _animateCarTo(LatLng to) async {
+    if (driverLocation == null || _isSameLocation(driverLocation!, to)) {
+      return;
+    }
+
+    isAnimating = true;
+    const steps = 10;
+    const duration = Duration(milliseconds: 800);
+    final interval = duration.inMilliseconds ~/ steps;
+
+    final startBearing = carBearing;
+    final endBearing = _getBearing(driverLocation!, to);
+
+    for (int i = 1; i <= steps; i++) {
+      await Future.delayed(Duration(milliseconds: interval));
+
+      final lat = _lerp(driverLocation!.latitude, to.latitude, i / steps);
+      final lng = _lerp(driverLocation!.longitude, to.longitude, i / steps);
+      final newBearing = _lerp(startBearing, endBearing, i / steps);
+
+      setState(() {
+        driverLocation = LatLng(lat, lng);
+        carBearing = newBearing;
+      });
+
+      // Keep map centered & rotated with car
+      _mapController?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: LatLng(lat, lng),
+            zoom: 18,
+            bearing: carBearing, // 🔄 rotate map with car
+            tilt: 60,
+          ),
+        ),
+      );
+    }
+
+    isAnimating = false;
     _updateRemainingPolyline(to);
   }
 
@@ -499,17 +610,20 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   }
 
   double _getBearing(LatLng start, LatLng end) {
-    final lat1 = start.latitude * (pi / 180);
-    final lon1 = start.longitude * (pi / 180);
-    final lat2 = end.latitude * (pi / 180);
-    final lon2 = end.longitude * (pi / 180);
+    final lat1 = start.latitude * math.pi / 180;
+    final lon1 = start.longitude * math.pi / 180;
+    final lat2 = end.latitude * math.pi / 180;
+    final lon2 = end.longitude * math.pi / 180;
 
     final dLon = lon2 - lon1;
-    final y = sin(dLon) * cos(lat2);
-    final x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
 
-    final bearing = atan2(y, x);
-    return (bearing * (180 / pi) + 360) % 360;
+    final y = math.sin(dLon) * math.cos(lat2);
+    final x =
+        math.cos(lat1) * math.sin(lat2) -
+        math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
+
+    final bearing = math.atan2(y, x);
+    return (bearing * 180 / math.pi + 360) % 360;
   }
 
   void _goToCurrentLocation() async {
@@ -606,19 +720,12 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     final markers = <Marker>{
       Marker(
         markerId: const MarkerId('driver'),
-        position: driverLocation ?? LatLng(0, 0),
+        position: driverLocation ?? const LatLng(0, 0),
         icon: carIcon ?? BitmapDescriptor.defaultMarker,
-        rotation:
-            driverLocation != null
-                ? _getBearing(
-                  driverLocation!,
-                  nextPoint ?? widget.pickupLocation,
-                )
-                : 0,
+        rotation: carBearing, // ✅ use stored rotation
         anchor: const Offset(0.5, 0.5),
         flat: true,
       ),
-
       Marker(
         markerId: const MarkerId('pickup'),
         position: widget.pickupLocation,
@@ -633,6 +740,8 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
             SizedBox(
               height: 650,
               child: CommonGoogleMap(
+                onCameraMove:
+                    (position) => _currentMapBearing = position.bearing,
                 myLocationEnabled: false,
                 onMapCreated: (controller) async {
                   _mapController = controller;
@@ -904,6 +1013,14 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                       final message =
                                           await driverStatusController
                                               .otpRequest(
+                                                pickupAddress:
+                                                    widget
+                                                        .pickupLocationAddress ??
+                                                    '',
+                                                dropAddress:
+                                                    widget
+                                                        .dropLocationAddress ??
+                                                    '',
                                                 custName: CUSTOMERNAME,
                                                 context,
                                                 bookingId: widget.bookingId,
@@ -1021,13 +1138,13 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                           formatDuration(
                                             driverStatusController
                                                 .pickupDurationInMin
-                                                .value
-                                                .toString(),
+                                                .value,
                                           ),
                                           fontSize: 20,
                                         ),
                                       ),
                                     ),
+
                                     subtitle: Center(
                                       child:
                                           CustomTextfield.textWithStylesSmall(
@@ -1096,13 +1213,49 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                     Buttons.button(
                                       buttonColor: AppColors.resendBlue,
                                       borderRadius: 8,
-                                      onTap: () {
-                                        setState(() {
-                                          arrivedAtPickup = false;
-                                          _seconds = 300;
-                                        });
-                                        _startTimer();
+                                      onTap: () async {
+                                        final result =
+                                            await driverStatusController
+                                                .driverArrived(
+                                                  context,
+                                                  bookingId: widget.bookingId,
+                                                );
+
+                                        if (result != null &&
+                                            result.status == 200) {
+                                          // ✅ API success, start timer
+                                          setState(() {
+                                            arrivedAtPickup = false;
+                                            _seconds = 300;
+                                          });
+                                          _startTimer();
+
+                                        } else {
+                                          // ❌ API failed, show error
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                result?.message ??
+                                                    "Something went wrong",
+                                              ),
+                                            ),
+                                          );
+                                        }
                                       },
+
+                                      // onTap: () {
+                                      //   setState(() {
+                                      //     arrivedAtPickup = false;
+                                      //     _seconds = 300;
+                                      //   });
+                                      //   _startTimer();
+                                      //   driverStatusController.driverArrived(
+                                      //     context,
+                                      //     bookingId: widget.bookingId,
+                                      //   );
+                                      // },
                                       text: Text('Arrived at Pickup Point'),
                                     ),
                                     const SizedBox(height: 20),
@@ -1218,7 +1371,8 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                             CustomTextfield.textWithStylesSmall(
                                               colors: AppColors.textColorGrey,
                                               maxLine: 2,
-                                              customerFrom,
+                                              widget.pickupLocationAddress ??
+                                                  '',
                                             ),
                                           ],
                                         ),
@@ -1256,7 +1410,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                               'Drop off - Constitution Ave',
                                             ),
                                             CustomTextfield.textWithStylesSmall(
-                                              customerTo,
+                                              widget.dropLocationAddress ?? '',
                                               colors: AppColors.textColorGrey,
                                               maxLine: 2,
                                             ),

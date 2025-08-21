@@ -20,7 +20,15 @@ import 'package:get/get.dart';
 class VerifyRiderScreen extends StatefulWidget {
   final String bookingId;
   final String custName;
-  const VerifyRiderScreen({super.key, required this.bookingId, required this.custName});
+  final String? pickupAddress;
+  final String? dropAddress;
+  const VerifyRiderScreen({
+    super.key,
+    required this.bookingId,
+    required this.custName,
+    this.pickupAddress,
+    this.dropAddress,
+  });
 
   @override
   State<VerifyRiderScreen> createState() => _VerifyRiderScreenState();
@@ -459,7 +467,12 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                 Navigator.pushReplacement(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => RideStatsScreen(bookingId : widget.bookingId),
+                                    builder:
+                                        (_) => RideStatsScreen(
+                                          pickupAddress  : widget.pickupAddress,
+                                          dropAddress     : widget.dropAddress,
+                                          bookingId: widget.bookingId,
+                                        ),
                                   ),
                                 );
                               }

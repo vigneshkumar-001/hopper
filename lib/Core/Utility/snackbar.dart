@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 
 class CustomSnackBar {
   static void showSuccess(String message) {
+    Get.closeAllSnackbars();
     Get.snackbar(
       'Success',
       message,
@@ -31,8 +32,8 @@ class CustomSnackBar {
   }
 
   static void showInfo(String message) {
+    Get.closeAllSnackbars();
     Get.snackbar(
-
       'Notice',
       message,
       snackPosition: SnackPosition.TOP,

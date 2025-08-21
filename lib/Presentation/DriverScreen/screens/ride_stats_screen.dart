@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:http/http.dart' as http;
 import 'dart:ui' as ui;
 
@@ -26,7 +27,14 @@ import 'package:get/get.dart';
 
 class RideStatsScreen extends StatefulWidget {
   final String bookingId;
-  const RideStatsScreen({super.key, required this.bookingId});
+  final String? pickupAddress;
+  final String? dropAddress;
+  const RideStatsScreen({
+    super.key,
+    required this.bookingId,
+    this.pickupAddress,
+    this.dropAddress,
+  });
 
   @override
   State<RideStatsScreen> createState() => _RideStatsScreenState();
@@ -211,7 +219,15 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
         }
       }
     });
+    socketService.on('CANCELLED_BY_DRIVER-cancelled', (data) async {
+      CommonLogger.log.i('CANCELLED_BY_DRIVER-cancelled : $data');
 
+      if (data != null) {
+        if (data['status'] == true) {
+          Get.offAll(() => DriverMainScreen());
+        }
+      }
+    });
     // Debug: See all events
     socketService.socket.onAny((event, data) {
       CommonLogger.log.i('📦 [onAny] $event: $data');
@@ -276,39 +292,6 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
     _lastDriverPosition = newPosition;
   }
 
-  // Future<void> animateMarker(LatLng newPosition) async {
-  //   if (_mapController == null || carIcon == null) return;
-  //
-  //   // Skip rotation if no previous location
-  //   if (_lastDriverPosition == null) {
-  //     _lastDriverPosition = newPosition;
-  //     return;
-  //   }
-  //
-  //   final rotation = getRotation(_lastDriverPosition!, newPosition);
-  //
-  //   setState(() {
-  //     _movingMarker = Marker(
-  //       markerId: MarkerId("moving_car"),
-  //       position: newPosition,
-  //       icon: carIcon,
-  //       anchor: Offset(0.5, 0.5),
-  //       rotation: rotation,
-  //       flat: true,
-  //     );
-  //   });
-  //
-  //   _lastDriverPosition = newPosition;
-  // }
-
-  // Future<void> _loadMarkerIcons() async {
-  //   carIcon = await BitmapDescriptor.fromAssetImage(
-  //     ImageConfiguration(size: Size(48, 48)),
-  //     AppImages.movingCar,
-  //   );
-  //
-  //   setState(() {});
-  // }
   Future<void> _loadMarkerIcons() async {
     carIcon = await BitmapDescriptor.asset(
       height: 50,
@@ -766,7 +749,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                         ),
                                         CustomTextfield.textWithStylesSmall(
                                           colors: AppColors.textColorGrey,
-                                          customerFrom,
+                                          widget.pickupAddress ?? '',
                                           maxLine: 2,
                                         ),
                                       ],
@@ -805,7 +788,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                         ),
                                         CustomTextfield.textWithStylesSmall(
                                           colors: AppColors.textColorGrey,
-                                          customerTo,
+                                          widget.dropAddress ?? '',
                                           maxLine: 2,
                                         ),
                                       ],

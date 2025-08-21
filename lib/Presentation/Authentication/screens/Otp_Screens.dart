@@ -32,6 +32,7 @@ class OtpScreens extends StatefulWidget {
 
 class _OtpScreensState extends State<OtpScreens> {
   final OtpController controller = Get.find<OtpController>();
+
   TextEditingController otp = TextEditingController(text: "");
   String verifyCode = '';
   final formKey = GlobalKey<FormState>();
@@ -98,9 +99,7 @@ class _OtpScreensState extends State<OtpScreens> {
                             child: PinCodeTextField(
                               focusNode: otpFocusNode,
                               onCompleted: (value) async {
-                                FocusScope.of(
-                                  context,
-                                ).unfocus();
+                                FocusScope.of(context).unfocus();
                               },
                               autoFocus: otp.text.isEmpty,
                               appContext: context,

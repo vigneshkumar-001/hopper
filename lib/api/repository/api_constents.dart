@@ -17,22 +17,25 @@ class ApiConstents {
   //     '$baseUrl2/users/toggle-status/683fed0a00aa693559289fbc';
 
   static String cancelBooking = '$baseUrl/users/cancel-booking/574636';
-  static String userImageUpload = 'https://adrox.ai/api/image-save';
+  static String driverStatus = '$baseUrl/users/status';
+  static String userImageUpload = 'https://next.fenizotechnologies.com/Adrox/api/image-save';
   static String driverOnlineStatus({required String driverId}) {
     return '$baseUrl/users/toggle-status';
   }
 
-  static String todayStatus({required String driverId}) {
-    return '$baseUrl/users/today/$driverId';
+  static String todayStatus() {
+    return '$baseUrl/users/today';
   }
 
-  static String weeklyChallenge({required String driverId}) {
-    return '$baseUrl/users/weekly-challenge/$driverId';
+  static String weeklyChallenge() {
+    return '$baseUrl/users/weekly-challenge';
   }
 
   static String completeRide({required String booking}) {
     return '$baseUrl/users/ride-complete/$booking';
   }
-
+  static String driverArrived({required String booking}) {
+    return '$baseUrl/users/driver-arrived/$booking';
+  }
   // https://hoppr-backend-3d2b7f783917.herokuapp.com/api/users/districts?state=$state
 }

@@ -467,7 +467,7 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                           textColor: AppColors.commonBlack,
 
                           onTap: () {
-                            //initializeGoogleAuth();
+                            initializeGoogleAuth();
                           },
                           text: Text('Continue with Google'),
                         ),

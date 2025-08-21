@@ -9,6 +9,8 @@ import 'package:hopper/api/dataSource/apiDataSource.dart';
 import 'package:hopper/api/repository/failure.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../DriverScreen/controller/driver_status_controller.dart';
+
 class OtpController extends GetxController {
   String accessToken = '';
   String driverId = '';
@@ -16,7 +18,7 @@ class OtpController extends GetxController {
   RxBool isLoading = false.obs;
   final RxBool isVerified = false.obs;
   final RxBool isEmailVerified = false.obs;
-
+  final DriverStatusController controller = Get.put(DriverStatusController());
   // Constructor to accept phone number
   // OtpController({required String phoneNumber}) {
   //   mobileNumber.text = phoneNumber;
@@ -32,6 +34,65 @@ class OtpController extends GetxController {
     String otp, {
     String? type,
   }) async {
+    // Safe way to trigger loading indicator
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      isLoading.value = true;
+    });
+
+    try {
+      final results = await apiDataSource.verifyOtp(otp);
+
+      return results.fold(
+        (failure) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            isLoading.value = false;
+            CustomSnackBar.showError(failure.message);
+          });
+          return failure.message;
+        },
+        (response) async {
+          // Navigation should be deferred as well
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            if (response.data.formStatus == 3) {
+              await controller.getDriverStatus();
+              Get.offAll(() => DriverMainScreen());
+            } else if (response.data.formStatus == 1 &&
+                response.data.userStatus == 'new') {
+              Get.offAll(() => TermsScreen());
+            } else if (response.data.formStatus == 1 &&
+                response.data.userStatus == 'exist') {
+              await loadAndNavigate(context);
+            } else {
+              CommonLogger.log.i('Basic Info');
+            }
+
+            isLoading.value = false;
+          });
+
+          accessToken = response.data.token;
+          driverId = response.data.driverId;
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('token', response.data.token);
+          await prefs.setString('driverId', response.data.driverId);
+
+          return response.message;
+        },
+      );
+    } catch (e) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        isLoading.value = false;
+      });
+      return 'An error occurred';
+    }
+  }
+
+  /*  Future<String?> verifyOtp(
+    BuildContext context,
+    String otp, {
+    String? type,
+  }) async
+  {
     isLoading.value = true;
     CommonLogger.log.i(type);
     try {
@@ -48,22 +109,35 @@ class OtpController extends GetxController {
         },
         (response) async {
           // 681889f5a36e808c5056d290
-          // if (type == 'basicInfo') {
-          //   isVerified.value = response.status == 200;
-          //   print("✅ isVerified: ${isVerified.value}");
-          //
-          //   Navigator.pop(context);
-          // } else { isLoading.value = false;
-          //   Navigator.pushReplacement(
-          //     context,
-          //     MaterialPageRoute(builder: (context) => TermsScreen()),
-          //   );
-          // }
+          if (response.data.formStatus == 3) {
+            Get.offAll(DriverMainScreen());
+          } else if (response.data.formStatus == 1 &&
+              response.data.userStatus == 'new') {
+            Get.offAll(TermsScreen());
+          } else if (response.data.formStatus == 1 &&
+              response.data.userStatus == 'exist') {
+            await loadAndNavigate(context);
+          } else {
+            CommonLogger.log.i('Basic Info');
+          }
+          */ /*      if (type == 'basicInfo') {
+            isVerified.value = response.status == 200;
+            print("✅ isVerified: ${isVerified.value}");
+
+            Navigator.pop(context);
+          } else {
+            isLoading.value = false;
+            await loadAndNavigate(context);
+            // Navigator.pushReplacement(
+            //   context,
+            //   MaterialPageRoute(builder: (context) => TermsScreen()),
+            // );
+          }*/ /*
           FocusScope.of(context).unfocus();
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => DriverMainScreen()),
-          );
+          // Navigator.pushReplacement(
+          //   context,
+          //   MaterialPageRoute(builder: (context) => DriverMainScreen()),
+          // );
           isLoading.value = false;
           accessToken = response.data.token;
           driverId = response.data.driverId;
@@ -83,7 +157,7 @@ class OtpController extends GetxController {
       isLoading.value = false;
       return 'An error occurred';
     }
-  }
+  }*/
 
   Future<String?> emailVerifyOtp(
     BuildContext context,
@@ -141,7 +215,7 @@ class OtpController extends GetxController {
 
   Future<void> loadAndNavigate(BuildContext context) async {
     final ChooseServiceController controller = Get.find();
-    await controller.getUserDetails();
+
     controller.handleLandingPageNavigation(Get.context!);
   }
 

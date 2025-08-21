@@ -69,7 +69,7 @@ class DriverStatusData {
       updatedAt: DateTime.parse(json['updatedAt']),
       requestDateAndTime: DateTime.parse(json['requestDateAndTime']),
       requestStatus: json['requestStatus'],
-      rideId: json['rideId'],
+      rideId: json['rideId'].toString()?? '',
       lastOnlineAt: DateTime.parse(json['lastOnlineAt']),
     );
   }

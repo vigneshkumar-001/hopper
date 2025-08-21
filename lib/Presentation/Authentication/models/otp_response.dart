@@ -57,17 +57,29 @@ class OtpVerificationData {
   final String userStatus;
   final String token;
   final String driverId;
+  final int formStatus;
 
-  OtpVerificationData({required this.userStatus, required this.token,required this.driverId});
+  OtpVerificationData({
+    required this.userStatus,
+    required this.token,
+    required this.driverId,
+    required this.formStatus,
+  });
 
   factory OtpVerificationData.fromJson(Map<String, dynamic> json) {
     return OtpVerificationData(
+      formStatus: json['formStatus'] ?? 1,
       userStatus: json['userStatus'] ?? '',
       token: json['token'] ?? '',
       driverId: json['driverId'] ?? '',
     );
   }
   Map<String, dynamic> toJson() {
-    return {'userStatus': userStatus, 'token': token,'driverId': driverId};
+    return {
+      'userStatus': userStatus,
+      'token': token,
+      'driverId': driverId,
+      'formStatus': formStatus,
+    };
   }
 }

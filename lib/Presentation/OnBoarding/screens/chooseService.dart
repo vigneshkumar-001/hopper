@@ -159,6 +159,7 @@ class _ChooseServiceState extends State<ChooseService> {
           onTap: () async {
             if (selectedService.isEmpty) {
               CommonLogger.log.e('Not Choosing Any');
+              Get.closeAllSnackbars();
               CustomSnackBar.showInfo('Choose your Service');
             } else {
               controller.isLoading.value = true; // Start loading
@@ -167,6 +168,7 @@ class _ChooseServiceState extends State<ChooseService> {
                 await controller.getUserDetails();
               } catch (e) {
                 CommonLogger.log.e('Error: $e');
+
                 CustomSnackBar.showError('Something went wrong');
               } finally {
                 controller.isLoading.value = false; // Stop loading

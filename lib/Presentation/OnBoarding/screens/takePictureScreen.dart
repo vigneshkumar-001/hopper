@@ -36,7 +36,7 @@ class _TakePictureState extends State<TakePicture> {
   void initState() {
     super.initState();
     _initializeCamera();
-    controller = Get.find<UserProfileController>(); // ✅ Safe
+    controller = Get.find<UserProfileController>();
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
         enableContours: true,
@@ -170,14 +170,22 @@ class _TakePictureState extends State<TakePicture> {
           _cameraController!.dispose();
         } else {
           File(picture.path).delete();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              duration: Duration(seconds: 2),
-              content: Text(
-                'Ensure your full face is visible and properly centered.',
-              ),
-            ),
+          Get.closeAllSnackbars();
+          Get.snackbar(
+            "Info",
+            "Ensure your full face is visible and properly centered.",
+            snackPosition: SnackPosition.TOP,
+            backgroundColor: Colors.red,
+            colorText: Colors.white,
           );
+          // ScaffoldMessenger.of(context).showSnackBar(
+          //   SnackBar(
+          //     duration: Duration(seconds: 2),
+          //     content: Text(
+          //       'Ensure your full face is visible and properly centered.',
+          //     ),
+          //   ),
+          // );
         }
       } else {
         File(picture.path).delete();
@@ -401,9 +409,12 @@ class _TakePictureState extends State<TakePicture> {
             _isUploading = false;
           });
         },
-        title: _isUploading
-            ? Text('Uploading...') :
-            _capturedImage != null ? Text('Upload Photo') : Text('Take Photo'),
+        title:
+            _isUploading
+                ? Text('Uploading...')
+                : _capturedImage != null
+                ? Text('Upload Photo')
+                : Text('Take Photo'),
         //   title:
         //       _isUploading
         //           ? Text('Uploading...')

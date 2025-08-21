@@ -5,6 +5,7 @@ import '../../../Core/Constants/log.dart';
 import '../../../Core/Utility/snackbar.dart';
 import '../../../api/dataSource/apiDataSource.dart';
 import '../../Authentication/screens/GetStarted_Screens.dart';
+import '../../DriverScreen/screens/driver_main_screen.dart';
 import '../models/getuserdetails_models.dart';
 import '../screens/ConsentForms.dart';
 import '../screens/basicInfo.dart';
@@ -25,7 +26,7 @@ class ChooseServiceController extends GetxController {
   RxBool isLoading = false.obs;
   RxBool isGetLoading = false.obs;
   RxString serviceType = ''.obs;
-
+  var formStatus = 0.obs;
   @override
   void onInit() {
     super.onInit();
@@ -79,6 +80,7 @@ class ChooseServiceController extends GetxController {
         (response) {
           isGetLoading.value = false;
           userProfile.value = response;
+          formStatus.value = response.formStatus ?? 0;
           CommonLogger.log.i(userProfile.value);
           CommonLogger.log.i(response);
           CommonLogger.log.i(response.landingPage);
@@ -94,8 +96,14 @@ class ChooseServiceController extends GetxController {
   }
 
   void handleLandingPageNavigation(BuildContext context) {
-    final landingPage = userProfile.value?.landingPage  ;
+    final landingPage = userProfile.value?.landingPage;
+    final formStatus = userProfile.value?.formStatus;
 
+    // Highest priority: formStatus = 3 → DriverMainScreen
+    if (formStatus == 3) {
+      Get.offAll(() => DriverMainScreen());
+      return;
+    }
     switch (landingPage) {
       case 0:
         Get.offAll(() => BasicInfo());
@@ -133,7 +141,7 @@ class ChooseServiceController extends GetxController {
       case 12:
         Get.offAll(() => ConsentForms());
         break;
-      case 14:
+      case 13:
         Get.offAll(() => CompletedScreens());
         break;
 

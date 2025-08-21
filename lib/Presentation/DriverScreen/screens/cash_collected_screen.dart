@@ -7,6 +7,7 @@ import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
+import '../../../utils/sharedprefsHelper/booking_local_data.dart';
 
 class CashCollectedScreen extends StatefulWidget {
   const CashCollectedScreen({super.key});
@@ -18,6 +19,9 @@ class CashCollectedScreen extends StatefulWidget {
 class _CashCollectedScreenState extends State<CashCollectedScreen> {
   @override
   Widget build(BuildContext context) {
+    final bookingData = BookingDataService().getBookingData();
+    print(bookingData?['estimatedPrice']);
+
     return NoInternetOverlay(
       child: Scaffold(
         body: SafeArea(
@@ -55,7 +59,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                         fontSize: 40,
                         fontWeight: FontWeight.w700,
                         colors: AppColors.commonBlack,
-                        text: '73.5',
+                        text: bookingData?['estimatedPrice'].toString() ?? '',
                         imagePath: AppImages.bCurrency,
                         imageSize: 44,
                       ),

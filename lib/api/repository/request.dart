@@ -85,7 +85,6 @@ class Request {
       );
       CommonLogger.log.i("$token");
       CommonLogger.log.i("$body");
-
       return response;
     } catch (e) {
       CommonLogger.log.e('API: $url \n ERROR: $e ');

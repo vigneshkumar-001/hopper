@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Presentation/Authentication/models/loginResponse.dart';
 import 'package:hopper/Presentation/Authentication/models/otp_response.dart';
+import 'package:hopper/Presentation/DriverScreen/models/get_driver_status.dart';
 import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/models/baseinfo_response.dart';
@@ -1186,7 +1187,7 @@ class ApiDataSource extends BaseApiDataSource {
   Future<Either<Failure, GetTodayActivityModels>> todayActivity() async {
     try {
       final driverId = await SharedPrefHelper.getDriverId();
-      String url = ApiConstents.todayStatus(driverId: driverId ?? '');
+      String url = ApiConstents.todayStatus();
 
       final response = await Request.sendGetRequest(url, {}, 'Get', false);
 
@@ -1214,7 +1215,7 @@ class ApiDataSource extends BaseApiDataSource {
   Future<Either<Failure, WeeklyChallengeModels>> weeklyChallenge() async {
     try {
       final driverId = await SharedPrefHelper.getDriverId();
-      String url = ApiConstents.weeklyChallenge(driverId: driverId ?? '');
+      String url = ApiConstents.weeklyChallenge();
 
       final response = await Request.sendGetRequest(url, {}, 'Get', false);
 
@@ -1257,6 +1258,62 @@ class ApiDataSource extends BaseApiDataSource {
         if (response.data != null && response.data is Map<String, dynamic>) {
           CommonLogger.log.i("Parsing response data: ${response.data}");
           final result = BookingAcceptModel.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, BookingAcceptModel>> driverArrived({
+    required String bookingId,
+  }) async {
+    try {
+      String url = ApiConstents.driverArrived(booking: bookingId);
+
+      final response = await Request.sendRequest(url, {}, 'Post', false);
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          CommonLogger.log.i("Parsing response data: ${response.data}");
+          final result = BookingAcceptModel.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, GetDriverStatus>> getDriverStatus() async {
+    try {
+      String url = ApiConstents.driverStatus;
+
+      final response = await Request.sendGetRequest(url, {}, 'get', false);
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          CommonLogger.log.i("Parsing response data: ${response.data}");
+          final result = GetDriverStatus.fromJson(response.data);
           return Right(result);
         } else {
           return Left(ServerFailure("Invalid or empty response"));

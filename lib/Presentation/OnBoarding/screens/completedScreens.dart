@@ -4,6 +4,7 @@ import '../../../Core/Constants/log.dart';
 import 'package:flutter/material.dart';
 import '../../../Core/Constants/texts.dart';
 import '../../../Core/Utility/images.dart';
+import '../../DriverScreen/screens/driver_main_screen.dart';
 import '../controller/chooseservice_controller.dart';
 import 'basicInfo.dart';
 import 'carOwnerShip.dart';
@@ -29,14 +30,33 @@ class _CompletedScreensState extends State<CompletedScreens> {
   final ChooseServiceController controller = Get.find();
   Timer? _timer;
 
+  // @override
+  // void initState() {
+  //   super.initState();
+  //
+  //   controller.getUserDetails();
+  //
+  //   _timer = Timer.periodic(Duration(seconds: 2), (timer) {
+  //     controller.getUserDetails();
+  //   });
+  // }
   @override
   void initState() {
     super.initState();
 
     controller.getUserDetails();
 
-    _timer = Timer.periodic(Duration(seconds: 2), (timer) {
-      controller.getUserDetails();
+    _timer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+      final details = await controller.getUserDetails();
+
+      if (details != null && details.formStatus == 3) {
+        _timer?.cancel();
+        _timer = null;
+
+        if (mounted) {
+          Future.microtask(() => Get.offAll(() => DriverMainScreen()));
+        }
+      }
     });
   }
 
