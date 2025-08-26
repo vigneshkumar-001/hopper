@@ -341,9 +341,11 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
     _startCompass();
     SchedulerBinding.instance.addPostFrameCallback((_) {
       statusController.getDriverStatus();
+      statusController.weeklyChallenges();
     });
   }
 
+  bool isonline = false;
   bool status = true;
   @override
   Widget build(BuildContext context) {
@@ -364,6 +366,7 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                         onTap: () {
                           statusController.toggleStatus();
                           final isOnline = statusController.isOnline.value;
+
                           statusController.onlineAcceptStatus(
                             context,
                             status: isOnline,
@@ -923,64 +926,41 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                           ),
                                         ),
                                       ] else ...[
-                                        // GestureDetector(
-                                        //   onTap: () {
-                                        //     // Navigator.push(
-                                        //     //   context,
-                                        //     //   MaterialPageRoute(
-                                        //     //     builder:
-                                        //     //         (context) =>
-                                        //     //             UberCloneMainScreen(),
-                                        //     //   ),
-                                        //     // );
-                                        //     /* Navigator.push(
-                                        //   context,
-                                        //   MaterialPageRoute(
-                                        //     builder:
-                                        //         (
-                                        //           context,
-                                        //         ) => PickingCustomerScreen(
-                                        //           pickupLocation: LatLng(
-                                        //             9.956145099999999,
-                                        //             78.18620899999999,
-                                        //           ),
-                                        //           driverLocation: LatLng(
-                                        //             9.956145099999999,
-                                        //             78.18620899999999,
-                                        //           ),
-                                        //         ),
-                                        //   ),
-                                        // );*/
-                                        //   },
-                                        //   child: Container(
-                                        //     width: double.infinity,
-                                        //     height: 54,
-                                        //     decoration: BoxDecoration(
-                                        //       color: AppColors.commonBlack,
-                                        //     ),
-                                        //     child: Row(
-                                        //       mainAxisAlignment:
-                                        //           MainAxisAlignment.center,
-                                        //       children: [
-                                        //         Image.asset(
-                                        //           AppImages.graph,
-                                        //           color: AppColors.commonWhite,
-                                        //           height: 20,
-                                        //           width: 20,
-                                        //         ),
-                                        //
-                                        //         SizedBox(width: 10),
-                                        //         CustomTextfield.textWithStyles600(
-                                        //           fontSize: 13,
-                                        //           color: AppColors.commonWhite,
-                                        //           'Requests are Surging - Go Online Now!',
-                                        //         ),
-                                        //       ],
-                                        //     ),
-                                        //   ),
-                                        // ),
-                                      ],
 
+                                      ],
+                                      statusController.isOnline.value
+                                          ? SizedBox.shrink()
+                                          : GestureDetector(
+                                            onTap: () {},
+                                            child: Container(
+                                              width: double.infinity,
+                                              height: 54,
+                                              decoration: BoxDecoration(
+                                                color: AppColors.commonBlack,
+                                              ),
+                                              child: Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Image.asset(
+                                                    AppImages.graph,
+                                                    color:
+                                                        AppColors.commonWhite,
+                                                    height: 20,
+                                                    width: 20,
+                                                  ),
+
+                                                  SizedBox(width: 10),
+                                                  CustomTextfield.textWithStyles600(
+                                                    fontSize: 13,
+                                                    color:
+                                                        AppColors.commonWhite,
+                                                    'Requests are Surging - Go Online Now!',
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
                                       const SizedBox(height: 20),
                                       Padding(
                                         padding: const EdgeInsets.symmetric(

@@ -70,6 +70,7 @@ dependencies:
   connectivity_plus: ^6.1.4
   location: ^8.0.1
   flutter_polyline_points: any
+  flutter_sound: any
 
 
 

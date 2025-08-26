@@ -1242,10 +1242,11 @@ class ApiDataSource extends BaseApiDataSource {
 
   Future<Either<Failure, BookingAcceptModel>> cancelBooking({
     required String reason,
+    required String bookingId,
   }) async {
     try {
       final driverId = await SharedPrefHelper.getDriverId();
-      String url = ApiConstents.cancelBooking;
+      String url = ApiConstents.cancelBooking(bookingId: bookingId);
 
       final response = await Request.sendRequest(
         url,

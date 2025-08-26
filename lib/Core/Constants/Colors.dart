@@ -28,9 +28,13 @@ class AppColors {
   static final shareTripContainer = Color(0xffECECEC5E);
     static final rideInProgress = Color(0Xff0B9B3C);
     static final timerBorderColor = Color(0XffE74700);
-
-
+  static final userChatContainerColor = Color(0xff1677FF);
+  static final adminChatContainerColor = Color(0xffF0F0F0);
+  static final lowLightBlue = Color(0xffEDF3FF);
+  static final chatBlueColor = Color(0xffDEEAFC);
+  static final starColor = Color(0xffE79700);
+  static final chatCallContainerColor = Color(0xffE2FBE9);
   static final errorBorder = Colors.red;
 
-
+  static final changeButtonColor = Color(0xff357AE9);
 }

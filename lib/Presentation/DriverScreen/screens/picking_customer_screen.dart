@@ -5,6 +5,7 @@ import 'package:action_slider/action_slider.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
@@ -19,6 +20,7 @@ import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/log.dart';
 import '../../../Core/Utility/Buttons.dart';
+import '../../../Core/Utility/app_loader.dart';
 import '../../../utils/map/google_map.dart';
 import '../../../utils/map/route_info.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
@@ -258,8 +260,8 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
       }
     });
 
-    socketService.on('CANCELLED_BY_DRIVER-cancelled', (data) async {
-      CommonLogger.log.i('CANCELLED_BY_DRIVER-cancelled : $data');
+    socketService.on('driver-cancelled', (data) async {
+      CommonLogger.log.i('driver-cancelled : $data');
 
       if (data != null) {
         if (data['status'] == true) {
@@ -267,8 +269,8 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
         }
       }
     });
-    socketService.on('CANCELLED_BY_CUSTOMER-cancelled', (data) async {
-      CommonLogger.log.i('CANCELLED_BY_CUSTOMER-cancelled : $data');
+    socketService.on('customer-cancelled', (data) async {
+      CommonLogger.log.i('customer-cancelled : $data');
 
       if (data != null) {
         if (data['status'] == true) {
@@ -912,6 +914,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                               );
                                               driverStatusController
                                                   .cancelBooking(
+                                                    bookingId: widget.bookingId,
                                                     context,
                                                     reason: reason,
                                                   );
@@ -940,7 +943,17 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 
                                 ListTile(
                                   trailing: GestureDetector(
-                                    onTap: () {},
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder:
+                                              (context) => ChatScreen(
+                                                bookingId: widget.bookingId,
+                                              ),
+                                        ),
+                                      );
+                                    },
                                     child: Container(
                                       decoration: BoxDecoration(
                                         color: AppColors.commonBlack
@@ -1076,7 +1089,17 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                 children: [
                                   ListTile(
                                     trailing: GestureDetector(
-                                      onTap: () {},
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder:
+                                                (context) => ChatScreen(
+                                                  bookingId: widget.bookingId,
+                                                ),
+                                          ),
+                                        );
+                                      },
                                       child: Container(
                                         decoration: BoxDecoration(
                                           color: AppColors.commonBlack
@@ -1229,7 +1252,6 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                             _seconds = 300;
                                           });
                                           _startTimer();
-
                                         } else {
                                           // ❌ API failed, show error
                                           ScaffoldMessenger.of(
@@ -1256,7 +1278,17 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                       //     bookingId: widget.bookingId,
                                       //   );
                                       // },
-                                      text: Text('Arrived at Pickup Point'),
+                                      text:
+                                          driverStatusController
+                                                  .arrivedIsLoading
+                                                  .value
+                                              ? SizedBox(
+                                                height: 20,
+                                                width: 20,
+                                                child:
+                                                    AppLoader.circularLoader(),
+                                              )
+                                              : Text('Arrived at Pickup Point'),
                                     ),
                                     const SizedBox(height: 20),
                                     GestureDetector(
@@ -1446,6 +1478,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                             "User selected reason: $reason",
                                           );
                                           driverStatusController.cancelBooking(
+                                            bookingId: widget.bookingId,
                                             context,
                                             reason: reason,
                                           );

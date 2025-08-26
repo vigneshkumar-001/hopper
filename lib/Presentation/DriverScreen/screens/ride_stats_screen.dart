@@ -219,8 +219,17 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
         }
       }
     });
-    socketService.on('CANCELLED_BY_DRIVER-cancelled', (data) async {
-      CommonLogger.log.i('CANCELLED_BY_DRIVER-cancelled : $data');
+    socketService.on('driver-cancelled', (data) async {
+      CommonLogger.log.i('driver-cancelled : $data');
+
+      if (data != null) {
+        if (data['status'] == true) {
+          Get.offAll(() => DriverMainScreen());
+        }
+      }
+    });
+    socketService.on('customer-cancelled', (data) async {
+      CommonLogger.log.i('customer-cancelled : $data');
 
       if (data != null) {
         if (data['status'] == true) {
@@ -876,8 +885,19 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
                                 onTap: () {
                                   Buttons.showCancelRideBottomSheet(
                                     context,
-                                    onConfirmCancel: (reason) {},
+                                    onConfirmCancel: (reason) {
+                                      print("User selected reason: $reason");
+                                      driverStatusController.cancelBooking(
+                                        bookingId: widget.bookingId,
+                                        context,
+                                        reason: reason,
+                                      );
+                                    },
                                   );
+                                  // Buttons.showCancelRideBottomSheet(
+                                  //   context,
+                                  //   onConfirmCancel: (reason) {},
+                                  // );
                                 },
                                 text: Text('Cancel this Ride'),
                               ),

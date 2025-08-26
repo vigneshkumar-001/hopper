@@ -16,13 +16,15 @@ class ApiConstents {
   // static String driverOnlineStatus =
   //     '$baseUrl2/users/toggle-status/683fed0a00aa693559289fbc';
 
-  static String cancelBooking = '$baseUrl/users/cancel-booking/574636';
+
   static String driverStatus = '$baseUrl/users/status';
   static String userImageUpload = 'https://next.fenizotechnologies.com/Adrox/api/image-save';
   static String driverOnlineStatus({required String driverId}) {
     return '$baseUrl/users/toggle-status';
   }
-
+  static String cancelBooking({required String bookingId}) {
+    return '$baseUrl/users/cancel-booking/$bookingId';
+  }
   static String todayStatus() {
     return '$baseUrl/users/today';
   }

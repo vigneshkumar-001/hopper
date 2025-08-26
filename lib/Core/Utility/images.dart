@@ -59,5 +59,11 @@ class AppImages {
   static String no_internet = "assets/images/no_internet.png";
   static String star = "assets/images/star.png";
   static String starFill = "assets/images/starFill.png";
-
+  static String dummy = "assets/images/dummy.jpg";
+  static String dummy1 = "assets/images/dummy1.png";
+  static String camera = "assets/images/camera.png";
+  static String mic = "assets/images/mic.png";
+  static String sendButton = "assets/images/sendButton.png";
+  static String dart = "assets/images/dort.png";
+  static String box = "assets/images/box.png";
 }

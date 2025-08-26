@@ -22,7 +22,7 @@ class GetTodayActivityModels {
 
 class TodayActivityData {
   final int earnings;
-  final int online;
+  final String online;
   final int rides;
 
   TodayActivityData({
@@ -35,7 +35,7 @@ class TodayActivityData {
     print("📦 Parsing TodayActivityData: $json");
     return TodayActivityData(
       earnings: json['earnings'] ?? 0,
-      online: json['online'] ?? 0,
+      online: json['online'] ?? '',
       rides: json['rides'] ?? 0,
     );
   }

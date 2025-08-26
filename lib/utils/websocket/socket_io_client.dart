@@ -54,6 +54,16 @@ class SocketService {
       callback();
     });
   }
+  void registerUser(String userId) {
+    emit('register', {'userId': userId, 'type': 'customer'});
+  }
+
+
+  void onReconnect(Function() callback) {
+    _socket.onReconnect((_) {
+      callback();
+    });
+  }
 
   void registerDriver(String driverId) {
     emit('register-driver', {'driverId': driverId, 'type': 'driver'});
@@ -66,6 +76,10 @@ class SocketService {
   void on(String event, Function(dynamic) callback) {
     _socket.on(event, callback);
   }
+  void emitWithAck(String event, dynamic data, Function(dynamic)? ack) {
+    _socket.emitWithAck(event, data, ack: ack);
+  }
+
 
   void emit(String event, dynamic data) {
     _socket.emit(event, data);

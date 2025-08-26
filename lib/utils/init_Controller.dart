@@ -38,4 +38,5 @@ Future<void> initController() async {
   Get.lazyPut(() => StateListController());
   Get.lazyPut(() => GuidelinesController());
   Get.lazyPut(() => DriverStatusController());
+
 }

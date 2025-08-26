@@ -18,6 +18,7 @@ import '../screens/verify_rider_screen.dart';
 class DriverStatusController extends GetxController {
   var isOnline = false.obs;
   RxBool isLoading = false.obs;
+  RxBool arrivedIsLoading = false.obs;
   final socketService = SocketService();
   Rxn<TodayActivityData> todayStatusData = Rxn<TodayActivityData>();
   Rxn<WeeklyActivityData> weeklyStatusData = Rxn<WeeklyActivityData>();
@@ -212,6 +213,7 @@ class DriverStatusController extends GetxController {
       return results.fold(
         (failure) {
           isLoading.value = false;
+          CustomSnackBar.showError(failure.message);
           return null;
         },
         (response) {
@@ -230,22 +232,23 @@ class DriverStatusController extends GetxController {
     BuildContext context, {
     required String bookingId,
   }) async {
-    isLoading.value = true;
+    arrivedIsLoading.value = true;
 
     try {
       final results = await apiDataSource.driverArrived(bookingId: bookingId);
 
       return results.fold(
         (failure) {
-          isLoading.value = false;
+          arrivedIsLoading.value = false;
           return null;
         },
         (response) {
+          arrivedIsLoading.value = false;
           return response;
         },
       );
     } catch (e) {
-      isLoading.value = false;
+      arrivedIsLoading.value = false;
       return null;
     }
   }
@@ -367,6 +370,7 @@ class DriverStatusController extends GetxController {
 
       results.fold(
         (failure) {
+          CommonLogger.log.e(" weekly Data : ${failure.message}");
           // CustomSnackBar.showError(failure.message);
 
           return null;
@@ -375,7 +379,7 @@ class DriverStatusController extends GetxController {
           CommonLogger.log.i("Response: ${response.toJson()}");
 
           weeklyStatusData.value = response.data;
-          CommonLogger.log.i("Assigned to todayStatusData:");
+          CommonLogger.log.i("Assigned to weekly status:");
           CommonLogger.log.i(weeklyStatusData.value.toString());
           return response;
         },
@@ -390,9 +394,13 @@ class DriverStatusController extends GetxController {
   Future<String?> cancelBooking(
     BuildContext context, {
     required String reason,
+    required String bookingId,
   }) async {
     try {
-      final results = await apiDataSource.cancelBooking(reason: reason);
+      final results = await apiDataSource.cancelBooking(
+        reason: reason,
+        bookingId: bookingId,
+      );
 
       results.fold(
         (failure) {

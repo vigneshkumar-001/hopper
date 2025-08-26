@@ -12,7 +12,7 @@ class NoInternetOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final netController = Get.find<NetworkController>();
+    final netController = Get.put(NetworkController());
 
     return WillPopScope(
       onWillPop: () async {
