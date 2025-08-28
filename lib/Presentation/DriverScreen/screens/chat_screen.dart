@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:hopper/Presentation/DriverScreen/controller/upload_image_controller.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
@@ -12,7 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 
 import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
-
+import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -23,7 +24,7 @@ class ChatMessage {
   final String time;
   final String avatar;
   final String? imageUrl;
-
+  bool isSending; // ✅ new flag for loading state
   ChatMessage({
     required this.message,
     this.audioUrl,
@@ -31,6 +32,7 @@ class ChatMessage {
     required this.time,
     required this.avatar,
     this.imageUrl,
+    this.isSending = false,
   });
 }
 
@@ -57,6 +59,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _pendingAudioPath;
 
   List<ChatMessage> messages = [];
+  final UploadImageController controller = Get.put(UploadImageController());
 
   Future<void> requestMicPermission() async {
     var status = await Permission.microphone.request();
@@ -65,7 +68,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _sendMessage(String message) async {
+  /*  Future<void> _sendMessage(String message) async {
     if (message.trim().isEmpty) return;
     driverId = await SharedPrefHelper.getDriverId();
     final locationData = {
@@ -74,7 +77,7 @@ class _ChatScreenState extends State<ChatScreen> {
       'senderType': "driver",
       "contents": [
         {"type": "text", "value": message},
-        // {"type": "image", "value": uploadedImageUrl},
+          {"type": "image", "value": 'uploadedImageUrl'},
         // {"type": "voice", "value": uploadedVoiceUrl},
       ],
     };
@@ -101,52 +104,100 @@ class _ChatScreenState extends State<ChatScreen> {
         CommonLogger.log.e("Message send failed: $ack");
       }
     });
+  }*/
+
+  Future<void> _pickAndSendImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.camera);
+
+    if (image != null) {
+      // Add local image with loading state
+      setState(() {
+        messages.add(
+          ChatMessage(
+            isMe: true,
+            imageUrl: image.path,
+            message: '',
+            time: 'Now',
+            avatar: AppImages.dummy1,
+            isSending: true,
+          ),
+        );
+      });
+      _scrollToBottom();
+
+      // Upload image via controller
+      await controller.uploadImage(context, File(image.path));
+      final uploadedUrl = controller.frontImageUrl.value;
+
+      int index = messages.lastIndexWhere((m) => m.isSending);
+      if (uploadedUrl.isNotEmpty && index != -1) {
+        // Send via WebSocket
+        _sendMessage('', imageUrl: uploadedUrl);
+      } else {
+        // Upload failed: remove placeholder message
+        setState(() {
+          messages.removeAt(index);
+        });
+      }
+    }
   }
 
-  /*
-  Future<void> _sendMessage(String message) async {
-    if (message.isEmpty) return;
+  Future<void> _sendMessage(String message, {String? imageUrl}) async {
+    if ((message.trim().isEmpty) && imageUrl == null) return;
 
-    _textController.clear();
-
-    if (message.isNotEmpty) {
+    // Only add placeholder for text messages
+    if (message.trim().isNotEmpty) {
       setState(() {
         messages.add(
           ChatMessage(
             message: message,
+            imageUrl: imageUrl,
             isMe: true,
-
             time: 'Now',
             avatar: AppImages.dummy1,
+            isSending: true,
           ),
         );
       });
+      _scrollToBottom();
     }
 
-    _scrollToBottom();
+    driverId = await SharedPrefHelper.getDriverId();
+
+    final contents = <Map<String, String>>[];
+    if (message.trim().isNotEmpty)
+      contents.add({"type": "text", "value": message});
+    if (imageUrl != null) contents.add({"type": "image", "value": imageUrl});
+
     final locationData = {
-      'bookingId': '565176',
-      'senderId': customerId,
-      'senderType': 'customer',
-      'message': message,
+      'bookingId': widget.bookingId,
+      'senderId': driverId,
+      'senderType': "driver",
+      'contents': contents,
     };
-    socketService.emit('booking-message', locationData);
-    // await Future.delayed(Duration(seconds: 1));
-    //
-    // setState(() {
-    //   messages.add(
-    //     ChatMessage(
-    //       message: "Auto-reply: $message",
-    //       isMe: false,
-    //       time: 'Now',
-    //       avatar: AppImages.dummy,
-    //     ),
-    //   );
-    // });
-    //
-    // _scrollToBottom();
+
+    socketService.emitWithAck("booking-message", locationData, (ack) {
+      int index = messages.lastIndexWhere((m) => m.isSending);
+      if (ack != null && ack['success'] == true && index != -1) {
+        setState(() {
+          messages[index] = ChatMessage(
+            message: message,
+            imageUrl: imageUrl,
+            isMe: true,
+            time: DateTime.now().toString(),
+            avatar: AppImages.dummy1,
+            isSending: false, // remove loading
+          );
+        });
+        _textController.clear();
+        _scrollToBottom();
+      } else {
+        CommonLogger.log.e("Message send failed: $ack");
+        // Optionally, show error UI or retry
+      }
+    });
   }
-*/
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -209,12 +260,18 @@ class _ChatScreenState extends State<ChatScreen> {
         (c) => c['type'] == 'text',
         orElse: () => null,
       );
+
       if (textContent == null) return;
+      final ImageContent = contents.firstWhere(
+        (c) => c['type'] == 'image',
+        orElse: () => null,
+      );
       if (!mounted) return;
 
       setState(() {
         messages.add(
           ChatMessage(
+            imageUrl: textContent['value'],
             message: textContent['value'],
             isMe: false,
             time: DateTime.now().toString().substring(11, 16),
@@ -500,28 +557,28 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Row(
                 children: [
                   GestureDetector(
-                    onTap: () async {
-                      final ImagePicker picker = ImagePicker();
-                      final XFile? image = await picker.pickImage(
-                        source: ImageSource.camera,
-                      );
-
-                      if (image != null) {
-                        setState(() {
-                          messages.add(
-                            ChatMessage(
-                              isMe: true,
-                              imageUrl: image.path,
-                              message: '',
-                              time: 'Now',
-                              avatar: AppImages.dummy1,
-                            ),
-                          );
-                        });
-                        _scrollToBottom();
-                      }
-                    },
-
+                    // onTap: () async {
+                    //   final ImagePicker picker = ImagePicker();
+                    //   final XFile? image = await picker.pickImage(
+                    //     source: ImageSource.camera,
+                    //   );
+                    //
+                    //   if (image != null) {
+                    //     setState(() {
+                    //       messages.add(
+                    //         ChatMessage(
+                    //           isMe: true,
+                    //           imageUrl: image.path,
+                    //           message: '',
+                    //           time: 'Now',
+                    //           avatar: AppImages.dummy1,
+                    //         ),
+                    //       );
+                    //     });
+                    //     _scrollToBottom();
+                    //   }
+                    // },
+                    onTap: _pickAndSendImage,
                     child: Image.asset(AppImages.camera, height: 26, width: 26),
                   ),
 
@@ -640,6 +697,156 @@ class _ChatScreenState extends State<ChatScreen> {
           msg.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (!msg.isMe && showAvatar) buildAvatar(msg.imageUrl ?? ''),
+        if (!msg.isMe && !showAvatar) const SizedBox(width: 46),
+        const SizedBox(width: 6),
+        Column(
+          crossAxisAlignment:
+              msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            if (msg.message.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.symmetric(vertical: 2),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.adminChatContainerColor),
+                  color:
+                      msg.isMe
+                          ? AppColors.userChatContainerColor
+                          : AppColors.commonWhite,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                constraints: const BoxConstraints(maxWidth: 250),
+                child: Text(
+                  msg.message,
+                  style: TextStyle(
+                    color: msg.isMe ? Colors.white : Color(0xff262626),
+                  ),
+                ),
+              ),
+            if (msg.audioUrl != null)
+              Container(
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.symmetric(vertical: 2),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.adminChatContainerColor),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        _playingStates[msg.audioUrl] == true
+                            ? Icons.pause
+                            : Icons.play_arrow,
+                        color: Colors.blue,
+                      ),
+                      onPressed: () async {
+                        bool isCurrentlyPlaying =
+                            _playingStates[msg.audioUrl] == true;
+                        if (isCurrentlyPlaying) {
+                          await _player.stopPlayer();
+                          setState(() {
+                            _playingStates[msg.audioUrl!] = false;
+                          });
+                        } else {
+                          await _player.stopPlayer();
+                          setState(() {
+                            _playingStates.updateAll((key, value) => false);
+                            _playingStates[msg.audioUrl!] = true;
+                          });
+                          await _player.startPlayer(
+                            fromURI: msg.audioUrl,
+                            codec: Codec.aacADTS,
+                            whenFinished: () {
+                              setState(() {
+                                _playingStates[msg.audioUrl!] = false;
+                              });
+                            },
+                          );
+                        }
+                      },
+                    ),
+                    const Text("Voice message"),
+                  ],
+                ),
+              ),
+            if (msg.imageUrl != null)
+              Stack(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    margin: const EdgeInsets.symmetric(vertical: 2),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: AppColors.adminChatContainerColor,
+                      ),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: /*Image.file(
+                      File(msg.imageUrl ?? ''),
+                      fit: BoxFit.cover,
+                      width: 100,
+                      height: 100,
+                    ),*/ Image.network(
+                      msg.imageUrl ?? '',
+
+                      width: 100,
+                      height: 100,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  if (msg.isSending)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black.withOpacity(0.3),
+                        child: Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            if (msg.isSending && msg.message.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4.0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      'Sending...',
+                      style: TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            if (showTime)
+              Text(
+                msg.time,
+                style: const TextStyle(fontSize: 10, color: Colors.grey),
+              ),
+          ],
+        ),
+        const SizedBox(width: 6),
+        if (msg.isMe && showAvatar) buildAvatar(msg.avatar),
+        if (msg.isMe && !showAvatar) const SizedBox(width: 46),
+      ],
+    );
+  }
+
+  /*  Widget buildMessage(ChatMessage msg, bool showAvatar, bool showTime) {
+    return Row(
+      mainAxisAlignment:
+          msg.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         if (!msg.isMe && showAvatar) buildAvatar(msg.avatar),
         if (!msg.isMe && !showAvatar)
           const SizedBox(width: 46), // to align with avatar size
@@ -750,7 +957,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (msg.isMe && !showAvatar) const SizedBox(width: 46),
       ],
     );
-  }
+  }*/
 
   Widget buildAvatar(String imagePath) {
     return Stack(
