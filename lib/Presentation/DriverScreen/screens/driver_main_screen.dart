@@ -342,6 +342,7 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       statusController.getDriverStatus();
       statusController.weeklyChallenges();
+      statusController.todayActivity();
     });
   }
 
@@ -925,9 +926,8 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                             ),
                                           ),
                                         ),
-                                      ] else ...[
-
-                                      ],
+                                      ] else
+                                        ...[],
                                       statusController.isOnline.value
                                           ? SizedBox.shrink()
                                           : GestureDetector(

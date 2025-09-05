@@ -34,12 +34,12 @@ class OtpController extends GetxController {
     String otp, {
     String? type,
   }) async {
-    // Safe way to trigger loading indicator
     WidgetsBinding.instance.addPostFrameCallback((_) {
       isLoading.value = true;
     });
 
     try {
+      isLoading.value = true;
       final results = await apiDataSource.verifyOtp(otp);
 
       return results.fold(

@@ -48,6 +48,7 @@ class PickingCustomerScreen extends StatefulWidget {
 }
 
 class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
+  late ActionSliderController _sliderController;
   LatLng? driverLocation;
   late SocketService socketService;
   LatLng? nextPoint;
@@ -306,12 +307,12 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   @override
   void initState() {
     super.initState();
-
+    _sliderController = ActionSliderController(); // init controller
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(
       SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark, // Or light
+        statusBarIconBrightness: Brightness.dark,
       ),
     );
     _initSocketAndLocation();
@@ -322,8 +323,15 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sliderController.reset();
+  }
+
+  @override
   void dispose() {
     positionStream?.cancel();
+    _sliderController.dispose();
     _timer?.cancel();
     super.dispose();
   }
@@ -1018,6 +1026,8 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                     vertical: 10,
                                   ),
                                   child: ActionSlider.standard(
+                                    controller:
+                                        _sliderController, // attach controller
                                     action: (controller) async {
                                       controller.loading();
                                       await Future.delayed(

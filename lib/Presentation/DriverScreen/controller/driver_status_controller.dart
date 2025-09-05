@@ -11,6 +11,7 @@ import 'package:hopper/utils/websocket/socket_io_client.dart';
 import '../../../Core/Utility/snackbar.dart';
 import '../models/booking_accept_model.dart';
 import '../models/get_todays_activity_models.dart';
+import '../screens/driver_main_screen.dart';
 import '../screens/picking_customer_screen.dart';
 import '../screens/ride_stats_screen.dart';
 import '../screens/verify_rider_screen.dart';
@@ -409,6 +410,7 @@ class DriverStatusController extends GetxController {
           return '';
         },
         (response) {
+          Get.offAll(DriverMainScreen());
           CommonLogger.log.i("Response: ${response.message}");
           CustomSnackBar.showSuccess(response.message);
           CommonLogger.log.i("Assigned to todayStatusData:");

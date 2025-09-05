@@ -27,6 +27,7 @@ class AppImages {
   static String dummyProfile = "assets/images/dummyProfile.png";
   static String splashScreen = "assets/images/Splash Screen.png";
   static String redExclamation = "assets/images/redExclamation.png";
+  static String packageBike = "assets/images/packageBike.png";
 
   static String animation = "assets/images/loading-light.gif";
   static String carGif = "assets/images/carGif.gif";

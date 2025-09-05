@@ -462,7 +462,6 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                               // ✅ 5. Wait for UI to settle
                               await Future.delayed(Duration(milliseconds: 100));
 
-                              // ✅ 6. Navigate
                               if (mounted) {
                                 Navigator.pushReplacement(
                                   context,

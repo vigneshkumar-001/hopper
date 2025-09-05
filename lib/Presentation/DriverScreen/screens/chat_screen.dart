@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:hopper/Core/Utility/app_loader.dart';
+import 'package:hopper/Core/Utility/typing_animate.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/upload_image_controller.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
@@ -8,10 +10,8 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_sound/flutter_sound.dart';
-
 import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -25,6 +25,7 @@ class ChatMessage {
   final String avatar;
   final String? imageUrl;
   bool isSending; // ✅ new flag for loading state
+  final bool isTyping; // 👈 NEW
   ChatMessage({
     required this.message,
     this.audioUrl,
@@ -33,6 +34,7 @@ class ChatMessage {
     required this.avatar,
     this.imageUrl,
     this.isSending = false,
+    this.isTyping = false, // 👈 default false
   });
 }
 
@@ -52,6 +54,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isRecording = false;
   String? _audioPath;
   String? driverId;
+  bool isTyping = false;
+  String typingUser = "";
+
   final socketService = SocketService();
   String customerId = '';
   Map<String, bool> _playingStates = {};
@@ -111,7 +116,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final XFile? image = await picker.pickImage(source: ImageSource.camera);
 
     if (image != null) {
-      // Add local image with loading state
       setState(() {
         messages.add(
           ChatMessage(
@@ -126,7 +130,6 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       _scrollToBottom();
 
-      // Upload image via controller
       await controller.uploadImage(context, File(image.path));
       final uploadedUrl = controller.frontImageUrl.value;
 
@@ -250,8 +253,41 @@ class _ChatScreenState extends State<ChatScreen> {
     socketService.on('registered', (data) {
       CommonLogger.log.i("✅ Registered → $data");
     });
+    socketService.on("typing", (data) {
+      if (!mounted) return;
 
-    _bookingMessageHandler = (data) {
+      final senderId = data["senderId"];
+      final senderType = data["senderType"];
+      if (senderType == 'driver') return;
+
+      setState(() {
+        // remove old typing indicator for this user if exists
+        messages.removeWhere(
+          (m) => m.isTyping && m.message.isEmpty && m.isMe == false,
+        );
+
+        messages.add(
+          ChatMessage(
+            message: "",
+            isMe: false,
+            avatar: AppImages.dummy,
+            time: "",
+            isTyping: true,
+          ),
+        );
+      });
+
+      // auto-remove after 3 seconds if no stop event
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          setState(() {
+            messages.removeWhere((m) => m.isTyping);
+          });
+        }
+      });
+    });
+
+    /*_bookingMessageHandler = (data) {
       final senderId = data['senderId'] ?? '';
       if (senderId == driverId) return;
 
@@ -279,6 +315,48 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         );
       });
+
+      _scrollToBottom();
+    };*/
+    _bookingMessageHandler = (data) {
+      final senderId = data['senderId'] ?? '';
+      if (senderId == driverId) return;
+
+      final List<dynamic> contents = data['contents'] ?? [];
+      if (contents.isEmpty) return;
+      if (!mounted) return;
+
+      for (var c in contents) {
+        if (c['type'] == 'text' &&
+            c['value'] != null &&
+            c['value'].toString().isNotEmpty) {
+          setState(() {
+            messages.add(
+              ChatMessage(
+                message: c['value'], // ✅ keep text here
+                imageUrl: '', // no image
+                isMe: false,
+                time: DateTime.now().toString().substring(11, 16),
+                avatar: AppImages.dummy,
+              ),
+            );
+          });
+        } else if (c['type'] == 'image' &&
+            c['value'] != null &&
+            c['value'].toString().isNotEmpty) {
+          setState(() {
+            messages.add(
+              ChatMessage(
+                message: '', // no text
+                imageUrl: c['value'], // ✅ keep image here
+                isMe: false,
+                time: DateTime.now().toString().substring(11, 16),
+                avatar: AppImages.dummy,
+              ),
+            );
+          });
+        }
+      }
 
       _scrollToBottom();
     };
@@ -596,6 +674,15 @@ class _ChatScreenState extends State<ChatScreen> {
                           // Text Field
                           Expanded(
                             child: TextField(
+                              onChanged: (val) async {
+                                driverId = await SharedPrefHelper.getDriverId();
+                                final data = {
+                                  'bookingId': widget.bookingId,
+                                  'senderId': driverId,
+                                  'senderType': 'driver',
+                                };
+                                socketService.emit('typing', data);
+                              },
                               controller: _textController,
                               decoration: const InputDecoration(
                                 hintText: 'Type a message...',
@@ -697,13 +784,32 @@ class _ChatScreenState extends State<ChatScreen> {
           msg.isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!msg.isMe && showAvatar) buildAvatar(msg.imageUrl ?? ''),
+        // 👤 Show avatar for other users
+        if (!msg.isMe && showAvatar) buildAvatar(msg.avatar),
         if (!msg.isMe && !showAvatar) const SizedBox(width: 46),
+
         const SizedBox(width: 6),
+
         Column(
           crossAxisAlignment:
               msg.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
+            // 💬 Typing Indicator Bubble
+            if (msg.isTyping)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 8,
+                  horizontal: 12,
+                ),
+                margin: const EdgeInsets.symmetric(vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const SmoothTypingIndicator(), // 👈 animated dots
+              ),
+
+            // ✅ Text message
             if (msg.message.isNotEmpty)
               Container(
                 padding: const EdgeInsets.all(12),
@@ -720,11 +826,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Text(
                   msg.message,
                   style: TextStyle(
-                    color: msg.isMe ? Colors.white : Color(0xff262626),
+                    color: msg.isMe ? Colors.white : const Color(0xff262626),
                   ),
                 ),
               ),
-            if (msg.audioUrl != null)
+
+            // ✅ Audio message
+            if (msg.audioUrl != null && msg.audioUrl!.isNotEmpty)
               Container(
                 padding: const EdgeInsets.all(8),
                 margin: const EdgeInsets.symmetric(vertical: 2),
@@ -772,7 +880,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   ],
                 ),
               ),
-            if (msg.imageUrl != null)
+
+            // ✅ Image message
+            if (msg.imageUrl != null && msg.imageUrl!.isNotEmpty)
               Stack(
                 children: [
                   Container(
@@ -784,59 +894,111 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       borderRadius: BorderRadius.circular(15),
                     ),
-                    child: /*Image.file(
-                      File(msg.imageUrl ?? ''),
-                      fit: BoxFit.cover,
-                      width: 100,
-                      height: 100,
-                    ),*/ Image.network(
-                      msg.imageUrl ?? '',
-
-                      width: 100,
-                      height: 100,
-                      fit: BoxFit.cover,
-                    ),
+                    child: buildChatImage(msg.imageUrl!),
                   ),
                   if (msg.isSending)
                     Positioned.fill(
                       child: Container(
                         color: Colors.black.withOpacity(0.3),
-                        child: Center(
-                          child: CircularProgressIndicator(color: Colors.white),
-                        ),
+                        child: Center(child: AppLoader.circularLoader()),
                       ),
                     ),
                 ],
               ),
-            if (msg.isSending && msg.message.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4.0),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    SizedBox(width: 6),
-                    Text(
-                      'Sending...',
-                      style: TextStyle(fontSize: 10, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
-            if (showTime)
+
+            // ✅ Time
+            if (showTime && !msg.isTyping)
               Text(
                 msg.time,
                 style: const TextStyle(fontSize: 10, color: Colors.grey),
               ),
           ],
         ),
+
         const SizedBox(width: 6),
+
+        // 👤 Show avatar for current user
         if (msg.isMe && showAvatar) buildAvatar(msg.avatar),
         if (msg.isMe && !showAvatar) const SizedBox(width: 46),
+      ],
+    );
+  }
+
+  Widget buildChatImage(String imagePath) {
+    if (imagePath.startsWith('http')) {
+      return Image.network(
+        imagePath,
+        width: 100,
+        height: 100,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 50),
+      );
+    } else {
+      final cleanPath = imagePath.replaceFirst('file://', '');
+      if (File(cleanPath).existsSync()) {
+        return Image.file(
+          File(cleanPath),
+          width: 100,
+          height: 100,
+          fit: BoxFit.cover,
+        );
+      } else {
+        return const Icon(Icons.broken_image, size: 50);
+      }
+    }
+  }
+
+  /// ✅ Avatar always safe
+  Widget buildAvatar(String? imagePath) {
+    if (imagePath == null || imagePath.isEmpty) {
+      return CircleAvatar(
+        radius: 20,
+        backgroundColor: AppColors.lowLightBlue,
+        child: const Icon(Icons.person, color: Colors.white),
+      );
+    }
+
+    Widget avatar;
+    if (imagePath.startsWith('http')) {
+      avatar = Image.network(
+        imagePath,
+        width: 40,
+        height: 40,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.person),
+      );
+    } else if (imagePath.startsWith('/data') ||
+        imagePath.startsWith('file:/')) {
+      final cleanPath = imagePath.replaceFirst('file://', '');
+      avatar =
+          File(cleanPath).existsSync()
+              ? Image.file(
+                File(cleanPath),
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+              )
+              : const Icon(Icons.person);
+    } else {
+      avatar = Image.asset(imagePath, width: 40, height: 40, fit: BoxFit.cover);
+    }
+
+    return Stack(
+      children: [
+        ClipOval(child: avatar),
+        Positioned(
+          right: 0,
+          top: 0,
+          child: Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: Colors.green,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 1.5),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -959,7 +1121,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }*/
 
-  Widget buildAvatar(String imagePath) {
+  /*  Widget buildAvatar(String imagePath) {
     return Stack(
       children: [
         ClipPath(
@@ -995,7 +1157,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ],
     );
-  }
+  }*/
 }
 
 class CutOutCircleClipper extends CustomClipper<Path> {
