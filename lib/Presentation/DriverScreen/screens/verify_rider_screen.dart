@@ -468,8 +468,8 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                   MaterialPageRoute(
                                     builder:
                                         (_) => RideStatsScreen(
-                                          pickupAddress  : widget.pickupAddress,
-                                          dropAddress     : widget.dropAddress,
+                                          pickupAddress: widget.pickupAddress,
+                                          dropAddress: widget.dropAddress,
                                           bookingId: widget.bookingId,
                                         ),
                                   ),

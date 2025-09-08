@@ -109,7 +109,7 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
   Future<void> _loadCustomCarIcon() async {
     _carIcon = await BitmapDescriptor.asset(
       const ImageConfiguration(size: Size(37, 37)),
-      AppImages.driverCarMove,
+      AppImages.parcelBike,
     );
   }
 
@@ -268,11 +268,10 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
 
     socketService.on('registered', (data) {
       CommonLogger.log.i('✅ Driver Registered: $data');
-
-      _locationStream = Geolocator.getPositionStream(
+      Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          distanceFilter: 0, // Emit even without movement
+          distanceFilter: 0,
         ),
       ).listen((position) {
         final locationData = {
@@ -282,10 +281,27 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
           if (_currentBookingId != null) 'bookingId': _currentBookingId,
         };
 
-        socketService.emit('updateLocation', locationData);
-
+        SocketService().emit('updateLocation', locationData);
         CommonLogger.log.i("📍 Emitting Location: $locationData");
       });
+
+      // _locationStream = Geolocator.getPositionStream(
+      //   locationSettings: const LocationSettings(
+      //     accuracy: LocationAccuracy.high,
+      //     distanceFilter: 0, // Emit even without movement
+      //   ),
+      // ).listen((position) {
+      //   final locationData = {
+      //     'userId': driverId,
+      //     'latitude': position.latitude,
+      //     'longitude': position.longitude,
+      //     if (_currentBookingId != null) 'bookingId': _currentBookingId,
+      //   };
+      //
+      //   socketService.emit('updateLocation', locationData);
+      //
+      //   CommonLogger.log.i("📍 Emitting Location: $locationData");
+      // });
     });
 
     socketService.on('booking-request', (data) async {
@@ -594,11 +610,15 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                         ),
                                                         SizedBox(width: 10),
                                                         CustomTextfield.textWithStyles600(
-                                                          'New Ride Request',
+                                                          bookingRequestData!['rideType'] ==
+                                                                  'Bike'
+                                                              ? 'New Package Request'
+                                                              : 'New Ride Request',
                                                           color:
                                                               AppColors
                                                                   .commonWhite,
                                                         ),
+
                                                         Spacer(),
                                                         CustomTextfield.textWithImage(
                                                           imageColors:
@@ -681,37 +701,37 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                                                   child: Row(
                                                     mainAxisAlignment:
                                                         MainAxisAlignment
-                                                            .spaceBetween,
+                                                            .spaceAround,
                                                     children: [
-                                                      Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons
-                                                                .person_outline,
-                                                            color:
-                                                                AppColors.nBlue,
-                                                          ),
-                                                          const SizedBox(
-                                                            width: 10,
-                                                          ),
-                                                          Text(
-                                                            '${bookingRequestData!['sharedCount']}',
-                                                            style: TextStyle(
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w500,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      SizedBox(
-                                                        height: 40,
-                                                        child: VerticalDivider(
-                                                          color: AppColors
-                                                              .commonBlack
-                                                              .withOpacity(0.1),
-                                                        ),
-                                                      ),
+                                                      // Row(
+                                                      //   children: [
+                                                      //     Icon(
+                                                      //       Icons
+                                                      //           .person_outline,
+                                                      //       color:
+                                                      //           AppColors.nBlue,
+                                                      //     ),
+                                                      //     const SizedBox(
+                                                      //       width: 10,
+                                                      //     ),
+                                                      //     Text(
+                                                      //       '${bookingRequestData!['sharedCount']}',
+                                                      //       style: TextStyle(
+                                                      //         fontWeight:
+                                                      //             FontWeight
+                                                      //                 .w500,
+                                                      //       ),
+                                                      //     ),
+                                                      //   ],
+                                                      // ),
+                                                      // SizedBox(
+                                                      //   height: 40,
+                                                      //   child: VerticalDivider(
+                                                      //     color: AppColors
+                                                      //         .commonBlack
+                                                      //         .withOpacity(0.1),
+                                                      //   ),
+                                                      // ),
                                                       Row(
                                                         children: [
                                                           Image.asset(

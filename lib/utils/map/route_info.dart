@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:hopper/api/repository/api_constents.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -6,7 +7,7 @@ Future<Map<String, dynamic>> getRouteInfo({
   required LatLng origin,
   required LatLng destination,
 }) async {
-  const String apiKey = "AIzaSyB_QYxuo9RQbTYz0XcuxBYLkh-ws5PYr7A";
+  String apiKey = ApiConstents.googleMapApiKey;
 
   final url =
       'https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&key=$apiKey';

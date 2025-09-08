@@ -1,6 +1,7 @@
 class ApiConstents {
   static String baseUrl2 =
       'https://hoppr-backend-3d2b7f783917.herokuapp.com/api';
+  static String googleMapApiKey = 'AIzaSyCD-_GjHp5Zq383a3Q0UPTK4bHyTj0nuBw';
   static String baseUrl =
       'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api';
   static String loginApi = '$baseUrl/users/signUp';

@@ -305,7 +305,7 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
     carIcon = await BitmapDescriptor.asset(
       height: 50,
       const ImageConfiguration(size: Size(48, 48)),
-      AppImages.movingCar,
+      AppImages.parcelBike,
     );
 
     setState(() {});
@@ -405,9 +405,9 @@ class _RideStatsScreenState extends State<RideStatsScreen> {
   String getManeuverIcon(maneuver) {
     switch (maneuver) {
       case "turn-right":
-        return 'assets/images/straight.png';
+        return "assets/images/right-turn.png";
       case "turn-left":
-        return 'assets/images/straight.png';
+        return "assets/images/right-left.png";
       case "straight":
         return 'assets/images/straight.png';
       case "merge":

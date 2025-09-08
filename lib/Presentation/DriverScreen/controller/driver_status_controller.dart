@@ -405,6 +405,7 @@ class DriverStatusController extends GetxController {
 
       results.fold(
         (failure) {
+          Get.offAll(DriverMainScreen());
           // CustomSnackBar.showError(failure.message);
           CommonLogger.log.e("failure: ${failure.message}");
           return '';

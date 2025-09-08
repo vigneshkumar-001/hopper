@@ -36,6 +36,7 @@ class AppImages {
   static String loadingDarkGif = "assets/images/loading-dark.gif";
 
   static String lock = "assets/images/lock.png";
+  static String parcelBike = "assets/images/parcelBike.png";
   static String search = "assets/images/search.png";
   static String drawer = "assets/images/drawer.png";
   static String offlineCar = "assets/images/offlineCar.png";
@@ -67,4 +68,6 @@ class AppImages {
   static String sendButton = "assets/images/sendButton.png";
   static String dart = "assets/images/dort.png";
   static String box = "assets/images/box.png";
+  static String leftTurn = "assets/images/left-turn.png";
+  static String rightTurn = "assets/images/right-turn.png";
 }

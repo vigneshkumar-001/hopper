@@ -45,5 +45,18 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+    	<string>Your location is used to share with customers during rides.</string>
+    	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    	<string>Your location is used to share with customers during rides.</string>
+    	<key>NSLocationAlwaysUsageDescription</key>
+    	<string>Your location is used to share with customers during rides.</string>
+
+    	<!-- 👇 Enable background location updates -->
+    	<key>UIBackgroundModes</key>
+    	<array>
+    		<string>location</string>
+    	</array>
+
 </dict>
 </plist>

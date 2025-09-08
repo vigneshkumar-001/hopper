@@ -104,7 +104,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     carIcon = await BitmapDescriptor.asset(
       height: 70,
       const ImageConfiguration(size: Size(50, 50)),
-      AppImages.movingCar,
+      AppImages.parcelBike,
     );
 
     setState(() {});
@@ -670,9 +670,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   String getManeuverIcon(maneuver) {
     switch (maneuver) {
       case "turn-right":
-        return 'assets/images/straight.png';
+        return "assets/images/right-turn.png";
       case "turn-left":
-        return 'assets/images/straight.png';
+        return "assets/images/right-left.png";
       case "straight":
         return 'assets/images/straight.png';
       case "merge":
