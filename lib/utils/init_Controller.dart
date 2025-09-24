@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
 import '../Presentation/Authentication/controller/authController.dart';
 import '../Presentation/Authentication/controller/network_handling_controller.dart';
 import '../Presentation/Authentication/controller/otp_controller.dart';
@@ -38,5 +39,5 @@ Future<void> initController() async {
   Get.lazyPut(() => StateListController());
   Get.lazyPut(() => GuidelinesController());
   Get.lazyPut(() => DriverStatusController());
-
+  Get.lazyPut(() => RideHistoryController());
 }

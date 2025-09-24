@@ -3,6 +3,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Constants/log.dart';
+import 'package:hopper/Presentation/DriverScreen/models/today_parcel_activity_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/cash_collected_screen.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
@@ -19,10 +20,12 @@ import '../screens/verify_rider_screen.dart';
 class DriverStatusController extends GetxController {
   var isOnline = false.obs;
   RxBool isLoading = false.obs;
+  var serviceType = ''.obs;
   RxBool arrivedIsLoading = false.obs;
   final socketService = SocketService();
   Rxn<TodayActivityData> todayStatusData = Rxn<TodayActivityData>();
   Rxn<WeeklyActivityData> weeklyStatusData = Rxn<WeeklyActivityData>();
+  Rxn<ParcelBookingData> parcelBookingData = Rxn<ParcelBookingData>();
   ApiDataSource apiDataSource = ApiDataSource();
   final tripDistanceInMeters = 0.0.obs;
   final tripDurationInMin = 0.obs;
@@ -38,6 +41,7 @@ class DriverStatusController extends GetxController {
     super.onInit();
     todayActivity();
     weeklyChallenges();
+    todayPackageActivity();
   }
 
   void toggleStatus() {
@@ -392,6 +396,34 @@ class DriverStatusController extends GetxController {
     return '';
   }
 
+  Future<String?> todayPackageActivity() async {
+    try {
+      final results = await apiDataSource.todayPackageActivity();
+      CommonLogger.log.i("API called. Awaiting result...");
+
+      results.fold(
+        (failure) {
+          CommonLogger.log.e(" weekly Data : ${failure.message}");
+          // CustomSnackBar.showError(failure.message);
+
+          return null;
+        },
+        (response) {
+          CommonLogger.log.i("Response: ${response.toJson()}");
+
+          parcelBookingData.value = response.data;
+          CommonLogger.log.i("Assigned to weekly status:");
+          CommonLogger.log.i(weeklyStatusData.value.toString());
+          return response;
+        },
+      );
+    } catch (e) {
+      return ' ';
+    }
+
+    return '';
+  }
+
   Future<String?> cancelBooking(
     BuildContext context, {
     required String reason,
@@ -441,6 +473,7 @@ class DriverStatusController extends GetxController {
           CommonLogger.log.i("Response: ${response.data}");
 
           isOnline.value = response.data.onlineStatus;
+          serviceType.value = response.data.serviceType;
           CommonLogger.log.i(isOnline.value);
         },
       );

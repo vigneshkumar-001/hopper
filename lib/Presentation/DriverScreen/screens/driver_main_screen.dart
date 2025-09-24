@@ -5,6 +5,7 @@ import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
+import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/picking_customer_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:percent_indicator/percent_indicator.dart';
@@ -106,18 +107,28 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
     });
   }
 
-  Future<void> _loadCustomCarIcon() async {
+  /*  Future<void> _loadCustomCarIcon() async {
     _carIcon = await BitmapDescriptor.asset(
       const ImageConfiguration(size: Size(37, 37)),
       AppImages.parcelBike,
     );
+  }*/
+  Future<void> _loadCustomCarIcon() async {
+    if (statusController.serviceType.value == "Car") {
+      _carIcon = await BitmapDescriptor.asset(
+        const ImageConfiguration(size: Size(37, 37)),
+        AppImages.movingCar, // <-- your car icon asset
+      );
+    } else if (statusController.serviceType.value == "Bike") {
+      _carIcon = await BitmapDescriptor.asset(
+        const ImageConfiguration(size: Size(37, 37)),
+        AppImages.parcelBike, // <-- your bike icon asset
+      );
+    } else {
+      // Default marker if service type not matched
+      _carIcon = BitmapDescriptor.defaultMarker;
+    }
   }
-
-  // void toggleStatus() {
-  //   setState(() {
-  //     isOnline = !isOnline;
-  //   });
-  // }
 
   Color getTextColor({Color color = Colors.black}) =>
       statusController.isOnline.value ? color : Colors.black;
@@ -359,6 +370,7 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
       statusController.getDriverStatus();
       statusController.weeklyChallenges();
       statusController.todayActivity();
+      statusController.todayPackageActivity();
     });
   }
 
@@ -378,7 +390,17 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Image.asset(AppImages.drawer, height: 28, width: 28),
+                      InkWell(
+                        onTap: () {
+                          Get.to(DrawerScreen());
+                        },
+                        child: Image.asset(
+                          AppImages.drawer,
+                          height: 28,
+                          width: 28,
+                        ),
+                      ),
+
                       GestureDetector(
                         onTap: () {
                           statusController.toggleStatus();
@@ -533,705 +555,1714 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                               ),
                             ),
 
-                            // Draggable sheet
-                            DraggableScrollableSheet(
-                              initialChildSize: 0.65, // Start with 80% height
-                              minChildSize: 0.62, // Can collapse to 40%
-                              maxChildSize: 0.72, // Can expand up to 95% height
-                              builder: (context, scrollController) {
-                                return Container(
-                                  decoration: const BoxDecoration(
-                                    color: Colors.white,
-                                    // borderRadius: BorderRadius.vertical(
-                                    //   top: Radius.circular(20),
-                                    // ),
-                                  ),
-                                  child: ListView(
-                                    controller: scrollController,
-                                    children: [
-                                      Center(
-                                        child: Container(
-                                          width: 40,
-                                          height: 4,
-                                          margin: const EdgeInsets.only(
-                                            top: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey[400],
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-
-                                      const SizedBox(height: 20),
-                                      if (bookingRequestData != null) ...[
-                                        Card(
-                                          elevation: 3,
+                            if (statusController.serviceType == 'Car') ...[
+                              DraggableScrollableSheet(
+                                initialChildSize: 0.65, // Start with 80% height
+                                minChildSize: 0.62, // Can collapse to 40%
+                                maxChildSize:
+                                    0.72, // Can expand up to 95% height
+                                builder: (context, scrollController) {
+                                  return Container(
+                                    decoration: const BoxDecoration(
+                                      color: Colors.white,
+                                      // borderRadius: BorderRadius.vertical(
+                                      //   top: Radius.circular(20),
+                                      // ),
+                                    ),
+                                    child: ListView(
+                                      controller: scrollController,
+                                      children: [
+                                        Center(
                                           child: Container(
+                                            width: 40,
+                                            height: 4,
+                                            margin: const EdgeInsets.only(
+                                              top: 10,
+                                            ),
                                             decoration: BoxDecoration(
-                                              color: AppColors.commonWhite,
+                                              color: Colors.grey[400],
                                               borderRadius:
                                                   BorderRadius.circular(10),
                                             ),
+                                          ),
+                                        ),
 
-                                            child: Column(
-                                              children: [
-                                                Container(
-                                                  width: double.infinity,
-                                                  height: 54,
-                                                  decoration: BoxDecoration(
-                                                    borderRadius:
-                                                        BorderRadius.only(
-                                                          topLeft:
-                                                              Radius.circular(
-                                                                10,
-                                                              ),
-                                                          topRight:
-                                                              Radius.circular(
-                                                                10,
-                                                              ),
-                                                        ),
-                                                    color: AppColors.nBlue,
+                                        const SizedBox(height: 20),
+                                        if (bookingRequestData != null) ...[
+                                          Card(
+                                            elevation: 3,
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: AppColors.commonWhite,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+
+                                              child: Column(
+                                                children: [
+                                                  Container(
+                                                    width: double.infinity,
+                                                    height: 54,
+                                                    decoration: BoxDecoration(
+                                                      borderRadius:
+                                                          BorderRadius.only(
+                                                            topLeft:
+                                                                Radius.circular(
+                                                                  10,
+                                                                ),
+                                                            topRight:
+                                                                Radius.circular(
+                                                                  10,
+                                                                ),
+                                                          ),
+                                                      color: AppColors.nBlue,
+                                                    ),
+                                                    child: Padding(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 15,
+                                                          ),
+                                                      child: Row(
+                                                        children: [
+                                                          Image.asset(
+                                                            AppImages
+                                                                .notification,
+                                                            height: 25,
+                                                            width: 25,
+                                                          ),
+                                                          SizedBox(width: 10),
+                                                          CustomTextfield.textWithStyles600(
+                                                            bookingRequestData!['rideType'] ==
+                                                                    'Bike'
+                                                                ? 'New Package Request'
+                                                                : 'New Ride Request',
+                                                            color:
+                                                                AppColors
+                                                                    .commonWhite,
+                                                          ),
+
+                                                          Spacer(),
+                                                          CustomTextfield.textWithImage(
+                                                            imageColors:
+                                                                AppColors
+                                                                    .commonWhite,
+                                                            text:
+                                                                '${bookingRequestData!['estimatedPrice']}',
+                                                            imagePath:
+                                                                AppImages
+                                                                    .bCurrency,
+                                                            colors:
+                                                                AppColors
+                                                                    .commonWhite,
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
                                                   ),
-                                                  child: Padding(
+                                                  Padding(
                                                     padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 15,
+                                                        const EdgeInsets.all(
+                                                          8.0,
                                                         ),
-                                                    child: Row(
+                                                    child: Column(
                                                       children: [
-                                                        Image.asset(
-                                                          AppImages
-                                                              .notification,
-                                                          height: 25,
-                                                          width: 25,
+                                                        Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons.circle,
+                                                              color:
+                                                                  Colors.green,
+                                                              size: 12,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Expanded(
+                                                              child: Text(
+                                                                bookingRequestData!['pickupAddress'] ??
+                                                                    '',
+                                                              ),
+                                                            ),
+                                                          ],
                                                         ),
-                                                        SizedBox(width: 10),
-                                                        CustomTextfield.textWithStyles600(
-                                                          bookingRequestData!['rideType'] ==
-                                                                  'Bike'
-                                                              ? 'New Package Request'
-                                                              : 'New Ride Request',
-                                                          color:
-                                                              AppColors
-                                                                  .commonWhite,
+                                                        const SizedBox(
+                                                          height: 8,
                                                         ),
-
-                                                        Spacer(),
-                                                        CustomTextfield.textWithImage(
-                                                          imageColors:
-                                                              AppColors
-                                                                  .commonWhite,
-                                                          text:
-                                                              '${bookingRequestData!['estimatedPrice']}',
-                                                          imagePath:
-                                                              AppImages
-                                                                  .bCurrency,
-                                                          colors:
-                                                              AppColors
-                                                                  .commonWhite,
-                                                          fontWeight:
-                                                              FontWeight.w700,
+                                                        Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons.circle,
+                                                              color: Colors.red,
+                                                              size: 12,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Expanded(
+                                                              child: Text(
+                                                                bookingRequestData!['dropAddress'] ??
+                                                                    "",
+                                                              ),
+                                                            ),
+                                                          ],
                                                         ),
                                                       ],
                                                     ),
                                                   ),
-                                                ),
-                                                Padding(
-                                                  padding: const EdgeInsets.all(
-                                                    8.0,
-                                                  ),
-                                                  child: Column(
-                                                    children: [
-                                                      Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons.circle,
-                                                            color: Colors.green,
-                                                            size: 12,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Expanded(
-                                                            child: Text(
-                                                              bookingRequestData!['pickupAddress'] ??
-                                                                  '',
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      const SizedBox(height: 8),
-                                                      Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons.circle,
-                                                            color: Colors.red,
-                                                            size: 12,
-                                                          ),
-                                                          SizedBox(width: 8),
-                                                          Expanded(
-                                                            child: Text(
-                                                              bookingRequestData!['dropAddress'] ??
-                                                                  "",
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
 
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 15,
-                                                      ),
-                                                  child: Divider(
-                                                    color: AppColors.commonBlack
-                                                        .withOpacity(0.1),
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 15,
+                                                        ),
+                                                    child: Divider(
+                                                      color: AppColors
+                                                          .commonBlack
+                                                          .withOpacity(0.1),
+                                                    ),
                                                   ),
-                                                ),
 
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 30,
-                                                      ),
-                                                  child: Row(
-                                                    mainAxisAlignment:
-                                                        MainAxisAlignment
-                                                            .spaceAround,
-                                                    children: [
-                                                      // Row(
-                                                      //   children: [
-                                                      //     Icon(
-                                                      //       Icons
-                                                      //           .person_outline,
-                                                      //       color:
-                                                      //           AppColors.nBlue,
-                                                      //     ),
-                                                      //     const SizedBox(
-                                                      //       width: 10,
-                                                      //     ),
-                                                      //     Text(
-                                                      //       '${bookingRequestData!['sharedCount']}',
-                                                      //       style: TextStyle(
-                                                      //         fontWeight:
-                                                      //             FontWeight
-                                                      //                 .w500,
-                                                      //       ),
-                                                      //     ),
-                                                      //   ],
-                                                      // ),
-                                                      // SizedBox(
-                                                      //   height: 40,
-                                                      //   child: VerticalDivider(
-                                                      //     color: AppColors
-                                                      //         .commonBlack
-                                                      //         .withOpacity(0.1),
-                                                      //   ),
-                                                      // ),
-                                                      Row(
-                                                        children: [
-                                                          Image.asset(
-                                                            AppImages.time,
-                                                            height: 20,
-                                                            width: 20,
-                                                          ),
-                                                          const SizedBox(
-                                                            width: 10,
-                                                          ),
-                                                          Text(
-                                                            formatDuration(
-                                                              safeToInt(
-                                                                bookingRequestData?['estimateDuration'],
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 30,
+                                                        ),
+                                                    child: Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .spaceAround,
+                                                      children: [
+                                                        // Row(
+                                                        //   children: [
+                                                        //     Icon(
+                                                        //       Icons
+                                                        //           .person_outline,
+                                                        //       color:
+                                                        //           AppColors.nBlue,
+                                                        //     ),
+                                                        //     const SizedBox(
+                                                        //       width: 10,
+                                                        //     ),
+                                                        //     Text(
+                                                        //       '${bookingRequestData!['sharedCount']}',
+                                                        //       style: TextStyle(
+                                                        //         fontWeight:
+                                                        //             FontWeight
+                                                        //                 .w500,
+                                                        //       ),
+                                                        //     ),
+                                                        //   ],
+                                                        // ),
+                                                        // SizedBox(
+                                                        //   height: 40,
+                                                        //   child: VerticalDivider(
+                                                        //     color: AppColors
+                                                        //         .commonBlack
+                                                        //         .withOpacity(0.1),
+                                                        //   ),
+                                                        // ),
+                                                        Row(
+                                                          children: [
+                                                            Image.asset(
+                                                              AppImages.time,
+                                                              height: 20,
+                                                              width: 20,
+                                                            ),
+                                                            const SizedBox(
+                                                              width: 10,
+                                                            ),
+                                                            Text(
+                                                              formatDuration(
+                                                                safeToInt(
+                                                                  bookingRequestData?['estimateDuration'],
+                                                                ),
+                                                              ),
+                                                              style: TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
                                                               ),
                                                             ),
-                                                            style: TextStyle(
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w500,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      SizedBox(
-                                                        height: 40,
-                                                        child: VerticalDivider(
-                                                          color: AppColors
-                                                              .commonBlack
-                                                              .withOpacity(0.1),
+                                                          ],
                                                         ),
-                                                      ),
-                                                      Row(
-                                                        children: [
-                                                          Image.asset(
-                                                            AppImages.distance,
-                                                            height: 20,
-                                                            width: 20,
+                                                        SizedBox(
+                                                          height: 40,
+                                                          child: VerticalDivider(
+                                                            color: AppColors
+                                                                .commonBlack
+                                                                .withOpacity(
+                                                                  0.1,
+                                                                ),
                                                           ),
-                                                          const SizedBox(
-                                                            width: 10,
-                                                          ),
-                                                          Text(
-                                                            formatDistance(
-                                                              safeToDouble(
-                                                                bookingRequestData?['estimatedDistance'],
+                                                        ),
+                                                        Row(
+                                                          children: [
+                                                            Image.asset(
+                                                              AppImages
+                                                                  .distance,
+                                                              height: 20,
+                                                              width: 20,
+                                                            ),
+                                                            const SizedBox(
+                                                              width: 10,
+                                                            ),
+                                                            Text(
+                                                              formatDistance(
+                                                                safeToDouble(
+                                                                  bookingRequestData?['estimatedDistance'],
+                                                                ),
+                                                              ),
+                                                              style: TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
                                                               ),
                                                             ),
-                                                            style: TextStyle(
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w500,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 15,
-                                                      ),
-                                                  child: Divider(
-                                                    color: AppColors.commonBlack
-                                                        .withOpacity(0.1),
-                                                  ),
-                                                ),
-
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 8.0,
-                                                        vertical: 10,
-                                                      ),
-                                                  child: Row(
-                                                    children: [
-                                                      Expanded(
-                                                        child: Buttons.button(
-                                                          borderRadius: 10,
-                                                          buttonColor:
-                                                              AppColors.red,
-                                                          onTap:
-                                                              statusController
-                                                                      .isLoading
-                                                                      .value
-                                                                  ? null
-                                                                  : () {
-                                                                    final bookingId =
-                                                                        bookingRequestData!['bookingId'];
-                                                                    CommonLogger
-                                                                        .log
-                                                                        .i(
-                                                                          bookingId,
-                                                                        );
-
-                                                                    // Get.to(
-                                                                    //   PickingCustomerScreen(),
-                                                                    // );
-                                                                    // statusController
-                                                                    //     .bookingAccept(
-                                                                    //       context,
-                                                                    //       bookingId:
-                                                                    //           bookingId,
-                                                                    //       status:
-                                                                    //           'REJECT',
-                                                                    //
-                                                                    //
-                                                                    //     );
-                                                                    setState(() {
-                                                                      bookingRequestData =
-                                                                          null;
-                                                                    });
-                                                                  },
-                                                          text: Text('Decline'),
+                                                          ],
                                                         ),
-                                                      ),
-                                                      SizedBox(width: 20),
-                                                      Obx(() {
-                                                        return Expanded(
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 15,
+                                                        ),
+                                                    child: Divider(
+                                                      color: AppColors
+                                                          .commonBlack
+                                                          .withOpacity(0.1),
+                                                    ),
+                                                  ),
+
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8.0,
+                                                          vertical: 10,
+                                                        ),
+                                                    child: Row(
+                                                      children: [
+                                                        Expanded(
                                                           child: Buttons.button(
                                                             borderRadius: 10,
                                                             buttonColor:
-                                                                AppColors
-                                                                    .drkGreen,
+                                                                AppColors.red,
                                                             onTap:
                                                                 statusController
                                                                         .isLoading
                                                                         .value
                                                                     ? null
-                                                                    : () async {
-                                                                      try {
-                                                                        final bookingId =
-                                                                            bookingRequestData!['bookingId'];
-                                                                        final address =
-                                                                            bookingRequestData!['pickupAddress'] ??
-                                                                            '';
+                                                                    : () {
+                                                                      final bookingId =
+                                                                          bookingRequestData!['bookingId'];
+                                                                      CommonLogger
+                                                                          .log
+                                                                          .i(
+                                                                            bookingId,
+                                                                          );
 
-                                                                        final dropAddress =
-                                                                            bookingRequestData!['dropAddress'] ??
-                                                                            '';
-
-                                                                        final pickup = LatLng(
-                                                                          bookingRequestData!['pickupLocation']['latitude'],
-                                                                          bookingRequestData!['pickupLocation']['longitude'],
-                                                                        );
-
-                                                                        final position = await Geolocator.getCurrentPosition(
-                                                                          desiredAccuracy:
-                                                                              LocationAccuracy.high,
-                                                                        );
-
-                                                                        final driverLocation = LatLng(
-                                                                          position
-                                                                              .latitude,
-                                                                          position
-                                                                              .longitude,
-                                                                        );
-
-                                                                        await statusController.bookingAccept(
-                                                                          pickupLocationAddress:
-                                                                              address,
-                                                                          dropLocationAddress:
-                                                                              dropAddress,
-
-                                                                          context,
-                                                                          bookingId:
-                                                                              bookingId,
-                                                                          status:
-                                                                              'ACCEPT',
-                                                                          pickupLocation:
-                                                                              pickup,
-                                                                          driverLocation:
-                                                                              driverLocation,
-                                                                        );
-                                                                        setState(() {
-                                                                          bookingRequestData =
-                                                                              null;
-                                                                        });
-                                                                      } catch (
-                                                                        e
-                                                                      ) {
-                                                                        CommonLogger
-                                                                            .log
-                                                                            .e(
-                                                                              "Booking accept failed: $e",
-                                                                            );
-                                                                      }
+                                                                      // Get.to(
+                                                                      //   PickingCustomerScreen(),
+                                                                      // );
+                                                                      // statusController
+                                                                      //     .bookingAccept(
+                                                                      //       context,
+                                                                      //       bookingId:
+                                                                      //           bookingId,
+                                                                      //       status:
+                                                                      //           'REJECT',
+                                                                      //
+                                                                      //
+                                                                      //     );
+                                                                      setState(() {
+                                                                        bookingRequestData =
+                                                                            null;
+                                                                      });
                                                                     },
-                                                            text:
-                                                                statusController
-                                                                        .isLoading
-                                                                        .value
-                                                                    ? SizedBox(
-                                                                      height:
-                                                                          20,
-                                                                      width: 20,
-                                                                      child:
-                                                                          AppLoader.circularLoader(),
-                                                                    )
-                                                                    : Text(
-                                                                      'Accept',
-                                                                    ),
+                                                            text: Text(
+                                                              'Decline',
+                                                            ),
                                                           ),
-                                                        );
-                                                      }),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ] else
-                                        ...[],
-                                      statusController.isOnline.value
-                                          ? SizedBox.shrink()
-                                          : GestureDetector(
-                                            onTap: () {},
-                                            child: Container(
-                                              width: double.infinity,
-                                              height: 54,
-                                              decoration: BoxDecoration(
-                                                color: AppColors.commonBlack,
-                                              ),
-                                              child: Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.center,
-                                                children: [
-                                                  Image.asset(
-                                                    AppImages.graph,
-                                                    color:
-                                                        AppColors.commonWhite,
-                                                    height: 20,
-                                                    width: 20,
-                                                  ),
+                                                        ),
+                                                        SizedBox(width: 20),
+                                                        Obx(() {
+                                                          return Expanded(
+                                                            child: Buttons.button(
+                                                              borderRadius: 10,
+                                                              buttonColor:
+                                                                  AppColors
+                                                                      .drkGreen,
+                                                              onTap:
+                                                                  statusController
+                                                                          .isLoading
+                                                                          .value
+                                                                      ? null
+                                                                      : () async {
+                                                                        try {
+                                                                          final bookingId =
+                                                                              bookingRequestData!['bookingId'];
+                                                                          final address =
+                                                                              bookingRequestData!['pickupAddress'] ??
+                                                                              '';
 
-                                                  SizedBox(width: 10),
-                                                  CustomTextfield.textWithStyles600(
-                                                    fontSize: 13,
-                                                    color:
-                                                        AppColors.commonWhite,
-                                                    'Requests are Surging - Go Online Now!',
+                                                                          final dropAddress =
+                                                                              bookingRequestData!['dropAddress'] ??
+                                                                              '';
+
+                                                                          final pickup = LatLng(
+                                                                            bookingRequestData!['pickupLocation']['latitude'],
+                                                                            bookingRequestData!['pickupLocation']['longitude'],
+                                                                          );
+
+                                                                          final position = await Geolocator.getCurrentPosition(
+                                                                            desiredAccuracy:
+                                                                                LocationAccuracy.high,
+                                                                          );
+
+                                                                          final driverLocation = LatLng(
+                                                                            position.latitude,
+                                                                            position.longitude,
+                                                                          );
+
+                                                                          await statusController.bookingAccept(
+                                                                            pickupLocationAddress:
+                                                                                address,
+                                                                            dropLocationAddress:
+                                                                                dropAddress,
+
+                                                                            context,
+                                                                            bookingId:
+                                                                                bookingId,
+                                                                            status:
+                                                                                'ACCEPT',
+                                                                            pickupLocation:
+                                                                                pickup,
+                                                                            driverLocation:
+                                                                                driverLocation,
+                                                                          );
+                                                                          setState(() {
+                                                                            bookingRequestData =
+                                                                                null;
+                                                                          });
+                                                                        } catch (
+                                                                          e
+                                                                        ) {
+                                                                          CommonLogger.log.e(
+                                                                            "Booking accept failed: $e",
+                                                                          );
+                                                                        }
+                                                                      },
+                                                              text:
+                                                                  statusController
+                                                                          .isLoading
+                                                                          .value
+                                                                      ? SizedBox(
+                                                                        height:
+                                                                            20,
+                                                                        width:
+                                                                            20,
+                                                                        child:
+                                                                            AppLoader.circularLoader(),
+                                                                      )
+                                                                      : Text(
+                                                                        'Accept',
+                                                                      ),
+                                                            ),
+                                                          );
+                                                        }),
+                                                      ],
+                                                    ),
                                                   ),
                                                 ],
                                               ),
                                             ),
                                           ),
-                                      const SizedBox(height: 20),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 17,
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            CustomTextfield.textWithStyles700(
-                                              'Weekly Challenges',
-                                              fontSize: 16,
-                                              color: getTextColor(),
-                                            ),
-                                            const SizedBox(height: 10),
-                                            Container(
-                                              decoration: BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                                border: Border.all(
-                                                  color: AppColors.commonBlack
-                                                      .withOpacity(0.1),
+                                        ] else
+                                          ...[],
+                                        statusController.isOnline.value
+                                            ? SizedBox.shrink()
+                                            : GestureDetector(
+                                              onTap: () {},
+                                              child: Container(
+                                                width: double.infinity,
+                                                height: 54,
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.commonBlack,
+                                                ),
+                                                child: Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    Image.asset(
+                                                      AppImages.graph,
+                                                      color:
+                                                          AppColors.commonWhite,
+                                                      height: 20,
+                                                      width: 20,
+                                                    ),
+
+                                                    SizedBox(width: 10),
+                                                    CustomTextfield.textWithStyles600(
+                                                      fontSize: 13,
+                                                      color:
+                                                          AppColors.commonWhite,
+                                                      'Requests are Surging - Go Online Now!',
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 15,
-                                                      vertical: 22,
-                                                    ),
-                                                child: Obx(() {
-                                                  final weeklyData =
-                                                      statusController
-                                                          .weeklyStatusData
-                                                          .value;
-                                                  return Row(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Expanded(
-                                                        child: Column(
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
-                                                          children: [
-                                                            CustomTextfield.textWithStylesSmall(
-                                                              'Ends on Monday',
-                                                              colors:
-                                                                  AppColors
-                                                                      .grey,
+                                            ),
+                                        const SizedBox(height: 20),
+
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 17,
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              CustomTextfield.textWithStyles700(
+                                                'Weekly Challenges',
+                                                fontSize: 16,
+                                                color: getTextColor(),
+                                              ),
+                                              const SizedBox(height: 10),
+                                              Container(
+                                                decoration: BoxDecoration(
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  border: Border.all(
+                                                    color: AppColors.commonBlack
+                                                        .withOpacity(0.1),
+                                                  ),
+                                                ),
+                                                child: Padding(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 15,
+                                                        vertical: 22,
+                                                      ),
+                                                  child: Obx(() {
+                                                    final weeklyData =
+                                                        statusController
+                                                            .weeklyStatusData
+                                                            .value;
+                                                    final serviceType =
+                                                        statusController
+                                                            .serviceType
+                                                            .value;
+                                                    return Row(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Expanded(
+                                                          child: Column(
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            children: [
+                                                              CustomTextfield.textWithStylesSmall(
+                                                                'Ends on Monday',
+                                                                colors:
+                                                                    AppColors
+                                                                        .grey,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
+                                                              ),
+                                                              const SizedBox(
+                                                                height: 5,
+                                                              ),
+                                                              CustomTextfield.textWithStyles600(
+                                                                'Complete ${weeklyData?.goal.toString() ?? ''} trips and\nget ${weeklyData?.reward.toString() ?? ''} extra',
+                                                                fontSize: 16,
+                                                              ),
+                                                              const SizedBox(
+                                                                height: 5,
+                                                              ),
+                                                              CustomTextfield.textWithStylesSmall(
+                                                                colors: getTextColor(
+                                                                  color:
+                                                                      AppColors
+                                                                          .drkGreen,
+                                                                ),
+
+                                                                '${weeklyData?.totalTrips.toString() ?? ''} trips done out of 20',
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 15,
+                                                        ),
+                                                        CircularPercentIndicator(
+                                                          radius: 45.0,
+                                                          lineWidth: 10.0,
+                                                          animation: true,
+                                                          percent:
+                                                              (weeklyData
+                                                                      ?.progressPercent ??
+                                                                  0) /
+                                                              100,
+                                                          center: Text(
+                                                            "${weeklyData?.progressPercent.toString() ?? ''}%",
+                                                            style: TextStyle(
                                                               fontWeight:
                                                                   FontWeight
-                                                                      .w500,
+                                                                      .w600,
                                                             ),
-                                                            const SizedBox(
-                                                              height: 5,
-                                                            ),
-                                                            CustomTextfield.textWithStyles600(
-                                                              'Complete ${weeklyData?.goal.toString() ?? ''} trips and\nget ${weeklyData?.reward.toString() ?? ''} extra',
-                                                              fontSize: 16,
-                                                            ),
-                                                            const SizedBox(
-                                                              height: 5,
-                                                            ),
-                                                            CustomTextfield.textWithStylesSmall(
-                                                              colors: getTextColor(
+                                                          ),
+                                                          circularStrokeCap:
+                                                              CircularStrokeCap
+                                                                  .round,
+                                                          backgroundColor:
+                                                              AppColors.drkGreen
+                                                                  .withOpacity(
+                                                                    0.1,
+                                                                  ),
+                                                          progressColor:
+                                                              getTextColor(
                                                                 color:
                                                                     AppColors
                                                                         .drkGreen,
                                                               ),
+                                                        ),
+                                                      ],
+                                                    );
+                                                  }),
+                                                ),
+                                              ),
 
-                                                              '${weeklyData?.totalTrips.toString() ?? ''} trips done out of 20',
+                                              const SizedBox(height: 20),
+                                              CustomTextfield.textWithStyles700(
+                                                "Today's Activity",
+                                                fontSize: 16,
+                                              ),
+                                              const SizedBox(height: 10),
+                                              Container(
+                                                decoration: BoxDecoration(
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  border: Border.all(
+                                                    color: AppColors.commonBlack
+                                                        .withOpacity(0.1),
+                                                  ),
+                                                ),
+                                                child: Padding(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 25,
+                                                        vertical: 15,
+                                                      ),
+                                                  child: Obx(() {
+                                                    final data =
+                                                        statusController
+                                                            .todayStatusData
+                                                            .value;
+                                                    return Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .spaceBetween,
+                                                      children: [
+                                                        Column(
+                                                          children: [
+                                                            CustomTextfield.textWithStyles600(
+                                                              'Earnings',
+                                                              color:
+                                                                  AppColors
+                                                                      .grey,
+                                                            ),
+                                                            CustomTextfield.textWithImage(
+                                                              text:
+                                                                  data?.earnings
+                                                                      .toString() ??
+                                                                  '',
+                                                              colors:
+                                                                  AppColors
+                                                                      .commonBlack,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                              fontSize: 16,
+                                                              imagePath:
+                                                                  AppImages
+                                                                      .bCurrency,
+                                                            ),
+                                                          ],
+                                                        ),
+
+                                                        SizedBox(
+                                                          height: 50,
+                                                          child: VerticalDivider(
+                                                            color: AppColors
+                                                                .commonBlack
+                                                                .withOpacity(
+                                                                  0.2,
+                                                                ),
+                                                          ),
+                                                        ),
+
+                                                        Column(
+                                                          children: [
+                                                            CustomTextfield.textWithStyles600(
+                                                              'Online',
+                                                              color:
+                                                                  AppColors
+                                                                      .grey,
+                                                            ),
+                                                            CustomTextfield.textWithImage(
+                                                              colors:
+                                                                  AppColors
+                                                                      .commonBlack,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                              fontSize: 16,
+                                                              text:
+                                                                  data?.online
+                                                                      .toString() ??
+                                                                  '',
+                                                            ),
+                                                          ],
+                                                        ),
+
+                                                        SizedBox(
+                                                          height: 50,
+                                                          child: VerticalDivider(
+                                                            color: AppColors
+                                                                .commonBlack
+                                                                .withOpacity(
+                                                                  0.2,
+                                                                ),
+                                                          ),
+                                                        ),
+
+                                                        Column(
+                                                          children: [
+                                                            CustomTextfield.textWithStyles600(
+                                                              'Rides',
+                                                              color:
+                                                                  AppColors
+                                                                      .grey,
+                                                            ),
+
+                                                            CustomTextfield.textWithImage(
+                                                              text:
+                                                                  data?.rides
+                                                                      .toString() ??
+                                                                  '',
+                                                              colors:
+                                                                  AppColors
+                                                                      .commonBlack,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                              fontSize: 16,
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ],
+                                                    );
+                                                  }),
+                                                ),
+                                              ),
+
+                                              const SizedBox(height: 20),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ] else ...[
+                              DraggableScrollableSheet(
+                                initialChildSize: 0.65,
+                                minChildSize: 0.62,
+                                maxChildSize: 1.0,
+
+                                builder: (context, scrollController) {
+                                  return Container(
+                                    decoration: const BoxDecoration(
+                                      color: Colors.white,
+                                      // borderRadius: BorderRadius.vertical(
+                                      //   top: Radius.circular(20),
+                                      // ),
+                                    ),
+                                    child: ListView(
+                                      physics: BouncingScrollPhysics(),
+                                      controller: scrollController,
+                                      children: [
+                                        Center(
+                                          child: Container(
+                                            width: 40,
+                                            height: 4,
+                                            margin: const EdgeInsets.only(
+                                              top: 10,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[400],
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                          ),
+                                        ),
+
+                                        const SizedBox(height: 20),
+                                        if (bookingRequestData != null) ...[
+                                          Card(
+                                            elevation: 3,
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: AppColors.commonWhite,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+
+                                              child: Column(
+                                                children: [
+                                                  Container(
+                                                    width: double.infinity,
+                                                    height: 54,
+                                                    decoration: BoxDecoration(
+                                                      borderRadius:
+                                                          BorderRadius.only(
+                                                            topLeft:
+                                                                Radius.circular(
+                                                                  10,
+                                                                ),
+                                                            topRight:
+                                                                Radius.circular(
+                                                                  10,
+                                                                ),
+                                                          ),
+                                                      color: AppColors.nBlue,
+                                                    ),
+                                                    child: Padding(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 15,
+                                                          ),
+                                                      child: Row(
+                                                        children: [
+                                                          Image.asset(
+                                                            AppImages
+                                                                .notification,
+                                                            height: 25,
+                                                            width: 25,
+                                                          ),
+                                                          SizedBox(width: 10),
+                                                          CustomTextfield.textWithStyles600(
+                                                            bookingRequestData!['rideType'] ==
+                                                                    'Bike'
+                                                                ? 'New Package Request'
+                                                                : 'New Ride Request',
+                                                            color:
+                                                                AppColors
+                                                                    .commonWhite,
+                                                          ),
+
+                                                          Spacer(),
+                                                          CustomTextfield.textWithImage(
+                                                            imageColors:
+                                                                AppColors
+                                                                    .commonWhite,
+                                                            text:
+                                                                '${bookingRequestData!['estimatedPrice']}',
+                                                            imagePath:
+                                                                AppImages
+                                                                    .bCurrency,
+                                                            colors:
+                                                                AppColors
+                                                                    .commonWhite,
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.all(
+                                                          8.0,
+                                                        ),
+                                                    child: Column(
+                                                      children: [
+                                                        Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons.circle,
+                                                              color:
+                                                                  Colors.green,
+                                                              size: 12,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Expanded(
+                                                              child: Text(
+                                                                bookingRequestData!['pickupAddress'] ??
+                                                                    '',
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 8,
+                                                        ),
+                                                        Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons.circle,
+                                                              color: Colors.red,
+                                                              size: 12,
+                                                            ),
+                                                            SizedBox(width: 8),
+                                                            Expanded(
+                                                              child: Text(
+                                                                bookingRequestData!['dropAddress'] ??
+                                                                    "",
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 15,
+                                                        ),
+                                                    child: Divider(
+                                                      color: AppColors
+                                                          .commonBlack
+                                                          .withOpacity(0.1),
+                                                    ),
+                                                  ),
+
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 30,
+                                                        ),
+                                                    child: Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .spaceAround,
+                                                      children: [
+                                                        // Row(
+                                                        //   children: [
+                                                        //     Icon(
+                                                        //       Icons
+                                                        //           .person_outline,
+                                                        //       color:
+                                                        //           AppColors.nBlue,
+                                                        //     ),
+                                                        //     const SizedBox(
+                                                        //       width: 10,
+                                                        //     ),
+                                                        //     Text(
+                                                        //       '${bookingRequestData!['sharedCount']}',
+                                                        //       style: TextStyle(
+                                                        //         fontWeight:
+                                                        //             FontWeight
+                                                        //                 .w500,
+                                                        //       ),
+                                                        //     ),
+                                                        //   ],
+                                                        // ),
+                                                        // SizedBox(
+                                                        //   height: 40,
+                                                        //   child: VerticalDivider(
+                                                        //     color: AppColors
+                                                        //         .commonBlack
+                                                        //         .withOpacity(0.1),
+                                                        //   ),
+                                                        // ),
+                                                        Row(
+                                                          children: [
+                                                            Image.asset(
+                                                              AppImages.time,
+                                                              height: 20,
+                                                              width: 20,
+                                                            ),
+                                                            const SizedBox(
+                                                              width: 10,
+                                                            ),
+                                                            Text(
+                                                              formatDuration(
+                                                                safeToInt(
+                                                                  bookingRequestData?['estimateDuration'],
+                                                                ),
+                                                              ),
+                                                              style: TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                        SizedBox(
+                                                          height: 40,
+                                                          child: VerticalDivider(
+                                                            color: AppColors
+                                                                .commonBlack
+                                                                .withOpacity(
+                                                                  0.1,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                        Row(
+                                                          children: [
+                                                            Image.asset(
+                                                              AppImages
+                                                                  .distance,
+                                                              height: 20,
+                                                              width: 20,
+                                                            ),
+                                                            const SizedBox(
+                                                              width: 10,
+                                                            ),
+                                                            Text(
+                                                              formatDistance(
+                                                                safeToDouble(
+                                                                  bookingRequestData?['estimatedDistance'],
+                                                                ),
+                                                              ),
+                                                              style: TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 15,
+                                                        ),
+                                                    child: Divider(
+                                                      color: AppColors
+                                                          .commonBlack
+                                                          .withOpacity(0.1),
+                                                    ),
+                                                  ),
+
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8.0,
+                                                          vertical: 10,
+                                                        ),
+                                                    child: Row(
+                                                      children: [
+                                                        Expanded(
+                                                          child: Buttons.button(
+                                                            borderRadius: 10,
+                                                            buttonColor:
+                                                                AppColors.red,
+                                                            onTap:
+                                                                statusController
+                                                                        .isLoading
+                                                                        .value
+                                                                    ? null
+                                                                    : () {
+                                                                      final bookingId =
+                                                                          bookingRequestData!['bookingId'];
+                                                                      CommonLogger
+                                                                          .log
+                                                                          .i(
+                                                                            bookingId,
+                                                                          );
+
+                                                                      // Get.to(
+                                                                      //   PickingCustomerScreen(),
+                                                                      // );
+                                                                      // statusController
+                                                                      //     .bookingAccept(
+                                                                      //       context,
+                                                                      //       bookingId:
+                                                                      //           bookingId,
+                                                                      //       status:
+                                                                      //           'REJECT',
+                                                                      //
+                                                                      //
+                                                                      //     );
+                                                                      setState(() {
+                                                                        bookingRequestData =
+                                                                            null;
+                                                                      });
+                                                                    },
+                                                            text: Text(
+                                                              'Decline',
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        SizedBox(width: 20),
+                                                        Obx(() {
+                                                          return Expanded(
+                                                            child: Buttons.button(
+                                                              borderRadius: 10,
+                                                              buttonColor:
+                                                                  AppColors
+                                                                      .drkGreen,
+                                                              onTap:
+                                                                  statusController
+                                                                          .isLoading
+                                                                          .value
+                                                                      ? null
+                                                                      : () async {
+                                                                        try {
+                                                                          final bookingId =
+                                                                              bookingRequestData!['bookingId'];
+                                                                          final address =
+                                                                              bookingRequestData!['pickupAddress'] ??
+                                                                              '';
+
+                                                                          final dropAddress =
+                                                                              bookingRequestData!['dropAddress'] ??
+                                                                              '';
+
+                                                                          final pickup = LatLng(
+                                                                            bookingRequestData!['pickupLocation']['latitude'],
+                                                                            bookingRequestData!['pickupLocation']['longitude'],
+                                                                          );
+
+                                                                          final position = await Geolocator.getCurrentPosition(
+                                                                            desiredAccuracy:
+                                                                                LocationAccuracy.high,
+                                                                          );
+
+                                                                          final driverLocation = LatLng(
+                                                                            position.latitude,
+                                                                            position.longitude,
+                                                                          );
+
+                                                                          await statusController.bookingAccept(
+                                                                            pickupLocationAddress:
+                                                                                address,
+                                                                            dropLocationAddress:
+                                                                                dropAddress,
+
+                                                                            context,
+                                                                            bookingId:
+                                                                                bookingId,
+                                                                            status:
+                                                                                'ACCEPT',
+                                                                            pickupLocation:
+                                                                                pickup,
+                                                                            driverLocation:
+                                                                                driverLocation,
+                                                                          );
+                                                                          setState(() {
+                                                                            bookingRequestData =
+                                                                                null;
+                                                                          });
+                                                                        } catch (
+                                                                          e
+                                                                        ) {
+                                                                          CommonLogger.log.e(
+                                                                            "Booking accept failed: $e",
+                                                                          );
+                                                                        }
+                                                                      },
+                                                              text:
+                                                                  statusController
+                                                                          .isLoading
+                                                                          .value
+                                                                      ? SizedBox(
+                                                                        height:
+                                                                            20,
+                                                                        width:
+                                                                            20,
+                                                                        child:
+                                                                            AppLoader.circularLoader(),
+                                                                      )
+                                                                      : Text(
+                                                                        'Accept',
+                                                                      ),
+                                                            ),
+                                                          );
+                                                        }),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ] else
+                                          ...[],
+                                        statusController.isOnline.value
+                                            ? SizedBox.shrink()
+                                            : GestureDetector(
+                                              onTap: () {},
+                                              child: Container(
+                                                width: double.infinity,
+                                                height: 54,
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.commonBlack,
+                                                ),
+                                                child: Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    Image.asset(
+                                                      AppImages.graph,
+                                                      color:
+                                                          AppColors.commonWhite,
+                                                      height: 20,
+                                                      width: 20,
+                                                    ),
+
+                                                    SizedBox(width: 10),
+                                                    CustomTextfield.textWithStyles600(
+                                                      fontSize: 13,
+                                                      color:
+                                                          AppColors.commonWhite,
+                                                      'Requests are Surging - Go Online Now!',
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                        const SizedBox(height: 20),
+
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 17,
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              CustomTextfield.textWithStyles700(
+                                                "Today's Activity",
+                                                fontSize: 16,
+                                              ),
+                                              const SizedBox(height: 10),
+                                              Container(
+                                                decoration: BoxDecoration(
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                ),
+                                                child: Padding(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 25,
+                                                        vertical: 15,
+                                                      ),
+                                                  child: Obx(() {
+                                                    final data =
+                                                        statusController
+                                                            .parcelBookingData
+                                                            .value;
+                                                    return Row(
+                                                      children: [
+                                                        Column(
+                                                          children: [
+                                                            Container(
+                                                              padding:
+                                                                  EdgeInsets.symmetric(
+                                                                    horizontal:
+                                                                        10,
+                                                                    vertical:
+                                                                        10,
+                                                                  ),
+                                                              decoration: BoxDecoration(
+                                                                color:
+                                                                    const Color(
+                                                                      0xFFE2FBE9,
+                                                                    ),
+                                                                shape:
+                                                                    BoxShape
+                                                                        .circle,
+                                                              ),
+                                                              child: Image.asset(
+                                                                height: 17,
+                                                                AppImages
+                                                                    .bCurrency,
+                                                                color: Color(
+                                                                  0xff009721,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                            SizedBox(height: 5),
+                                                            CustomTextfield.textWithImage(
+                                                              text:
+                                                                  data?.earning
+                                                                      .toString() ??
+                                                                  '0',
+                                                              colors:
+                                                                  AppColors
+                                                                      .commonBlack,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                              fontSize: 15,
+                                                              imagePath:
+                                                                  AppImages
+                                                                      .bCurrency,
+                                                            ),
+
+                                                            SizedBox(height: 5),
+                                                            CustomTextfield.textWithStylesSmall(
+                                                              'Earnings',
+                                                              colors:
+                                                                  AppColors
+                                                                      .grey,
+                                                            ),
+                                                          ],
+                                                        ),
+                                                        SizedBox(width: 30),
+                                                        Expanded(
+                                                          child: Column(
+                                                            children: [
+                                                              Container(
+                                                                padding:
+                                                                    EdgeInsets.symmetric(
+                                                                      horizontal:
+                                                                          10,
+                                                                      vertical:
+                                                                          10,
+                                                                    ),
+                                                                decoration: BoxDecoration(
+                                                                  color: const Color(
+                                                                    0XFFDEEAFC,
+                                                                  ),
+                                                                  shape:
+                                                                      BoxShape
+                                                                          .circle,
+                                                                ),
+                                                                child: Image.asset(
+                                                                  height: 17,
+                                                                  AppImages
+                                                                      .boxLine,
+                                                                ),
+                                                              ),
+                                                              SizedBox(
+                                                                height: 5,
+                                                              ),
+                                                              CustomTextfield.textWithImage(
+                                                                colors:
+                                                                    AppColors
+                                                                        .commonBlack,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
+                                                                fontSize: 16,
+                                                                text:
+                                                                    data?.completed
+                                                                        .toString() ??
+                                                                    '0',
+                                                              ),
+                                                              SizedBox(
+                                                                height: 5,
+                                                              ),
+                                                              CustomTextfield.textWithStylesSmall(
+                                                                'Deliveries',
+                                                                colors:
+                                                                    AppColors
+                                                                        .grey,
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                        SizedBox(width: 30),
+                                                        Expanded(
+                                                          child: Column(
+                                                            children: [
+                                                              Container(
+                                                                padding:
+                                                                    EdgeInsets.symmetric(
+                                                                      horizontal:
+                                                                          10,
+                                                                      vertical:
+                                                                          10,
+                                                                    ),
+                                                                decoration: BoxDecoration(
+                                                                  color:
+                                                                      AppColors
+                                                                          .starColors,
+                                                                  shape:
+                                                                      BoxShape
+                                                                          .circle,
+                                                                ),
+                                                                child: Image.asset(
+                                                                  height: 17,
+                                                                  color: Color(
+                                                                    0XFFC18C30,
+                                                                  ),
+                                                                  AppImages
+                                                                      .star,
+                                                                ),
+                                                              ),
+                                                              SizedBox(
+                                                                height: 5,
+                                                              ),
+                                                              CustomTextfield.textWithImage(
+                                                                colors:
+                                                                    AppColors
+                                                                        .commonBlack,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
+                                                                fontSize: 16,
+                                                                text:
+                                                                    data?.rating
+                                                                        .toString() ??
+                                                                    '0',
+                                                              ),
+                                                              SizedBox(
+                                                                height: 5,
+                                                              ),
+                                                              CustomTextfield.textWithStylesSmall(
+                                                                'Rating',
+                                                                colors:
+                                                                    AppColors
+                                                                        .grey,
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    );
+                                                  }),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 10),
+                                              CustomTextfield.textWithStyles700(
+                                                'Weekly Challenges',
+                                                fontSize: 16,
+                                                color: getTextColor(),
+                                              ),
+                                              const SizedBox(height: 10),
+                                              Container(
+                                                decoration: BoxDecoration(
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                  border: Border.all(
+                                                    color: AppColors.commonBlack
+                                                        .withOpacity(0.1),
+                                                  ),
+                                                ),
+                                                child: Padding(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 15,
+                                                        vertical: 15,
+                                                      ),
+                                                  child: Obx(() {
+                                                    final weeklyData =
+                                                        statusController
+                                                            .parcelBookingData
+                                                            .value;
+
+                                                    return Row(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Expanded(
+                                                          child: Column(
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            children: [
+                                                              CustomTextfield.textWithStylesSmall(
+                                                                'Ends on Monday',
+                                                                colors:
+                                                                    AppColors
+                                                                        .grey,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
+                                                              ),
+                                                              const SizedBox(
+                                                                height: 5,
+                                                              ),
+                                                              CustomTextfield.textWithStyles600(
+                                                                // and\nget ${weeklyData?.reward.toString() ?? ''} extra
+                                                                'Complete ${weeklyData?.weeklyProgress.goal.toString() ?? '0'} orders',
+                                                                fontSize: 17,
+                                                              ),
+                                                              const SizedBox(
+                                                                height: 10,
+                                                              ),
+                                                              CustomTextfield.textWithStylesSmall(
+                                                                colors: getTextColor(
+                                                                  color:
+                                                                      AppColors
+                                                                          .drkGreen,
+                                                                ),
+
+                                                                '${weeklyData?.weeklyProgress.totalTrips.toString() ?? '0'} trips done out of 20',
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 15,
+                                                        ),
+                                                        CircularPercentIndicator(
+                                                          radius: 45.0,
+                                                          lineWidth: 10.0,
+                                                          animation: true,
+                                                          percent:
+                                                              (weeklyData
+                                                                      ?.weeklyProgress
+                                                                      .progressPercent ??
+                                                                  0) /
+                                                              100,
+                                                          center: Text(
+                                                            "${weeklyData?.weeklyProgress.progressPercent.toString() ?? ''}%",
+                                                            style: TextStyle(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                            ),
+                                                          ),
+                                                          circularStrokeCap:
+                                                              CircularStrokeCap
+                                                                  .round,
+                                                          backgroundColor:
+                                                              AppColors.drkGreen
+                                                                  .withOpacity(
+                                                                    0.1,
+                                                                  ),
+                                                          progressColor:
+                                                              getTextColor(
+                                                                color:
+                                                                    AppColors
+                                                                        .drkGreen,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    );
+                                                  }),
+                                                ),
+                                              ),
+
+                                              const SizedBox(height: 20),
+                                              CustomTextfield.textWithStyles700(
+                                                'Recent Deliveries',
+                                                fontSize: 17,
+                                              ),
+                                              const SizedBox(height: 20),
+                                              Obx(() {
+                                                final history =
+                                                    statusController
+                                                        .parcelBookingData
+                                                        .value;
+
+                                                return Column(
+                                                  children: [
+                                                    if (history?.recentBookings ==
+                                                            null ||
+                                                        history!
+                                                            .recentBookings
+                                                            .isEmpty)
+                                                      Center(
+                                                        child: Padding(
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                vertical: 20,
+                                                              ),
+                                                          child: Text(
+                                                            "No recent deliveries",
+                                                            style: TextStyle(
+                                                              fontSize: 16,
+                                                              color:
+                                                                  AppColors
+                                                                      .commonBlack,
                                                               fontWeight:
                                                                   FontWeight
                                                                       .w500,
                                                             ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 15),
-                                                      CircularPercentIndicator(
-                                                        radius: 45.0,
-                                                        lineWidth: 10.0,
-                                                        animation: true,
-                                                        percent:
-                                                            (weeklyData
-                                                                    ?.progressPercent ??
-                                                                0) /
-                                                            100,
-                                                        center: Text(
-                                                          "${weeklyData?.progressPercent.toString() ?? ''}%",
-                                                          style: TextStyle(
-                                                            fontWeight:
-                                                                FontWeight.w600,
                                                           ),
                                                         ),
-                                                        circularStrokeCap:
-                                                            CircularStrokeCap
-                                                                .round,
-                                                        backgroundColor:
-                                                            AppColors.drkGreen
-                                                                .withOpacity(
-                                                                  0.1,
-                                                                ),
-                                                        progressColor:
-                                                            getTextColor(
+                                                      )
+                                                    else
+                                                      ListView.builder(
+                                                        shrinkWrap: true,
+                                                        physics:
+                                                            NeverScrollableScrollPhysics(),
+                                                        itemCount:
+                                                            history
+                                                                .recentBookings
+                                                                .length,
+                                                        itemBuilder: (
+                                                          context,
+                                                          index,
+                                                        ) {
+                                                          final data =
+                                                              history
+                                                                  .recentBookings[index];
+                                                          return Container(
+                                                            decoration: BoxDecoration(
+                                                              borderRadius:
+                                                                  BorderRadius.circular(
+                                                                    10,
+                                                                  ),
                                                               color:
                                                                   AppColors
-                                                                      .drkGreen,
+                                                                      .containerColor1,
                                                             ),
+                                                            child: Padding(
+                                                              padding:
+                                                                  const EdgeInsets.symmetric(
+                                                                    horizontal:
+                                                                        15,
+                                                                    vertical:
+                                                                        10,
+                                                                  ),
+                                                              child: Row(
+                                                                crossAxisAlignment:
+                                                                    CrossAxisAlignment
+                                                                        .start,
+                                                                children: [
+                                                                  Padding(
+                                                                    padding:
+                                                                        const EdgeInsets.only(
+                                                                          top:
+                                                                              2.0,
+                                                                        ),
+                                                                    child: Container(
+                                                                      padding: EdgeInsets.symmetric(
+                                                                        horizontal:
+                                                                            10,
+                                                                        vertical:
+                                                                            10,
+                                                                      ),
+                                                                      decoration: BoxDecoration(
+                                                                        color: getTextColor(
+                                                                          color:
+                                                                              AppColors.changeButtonColor,
+                                                                        ),
+                                                                        shape:
+                                                                            BoxShape.circle,
+                                                                      ),
+                                                                      child: Image.asset(
+                                                                        AppImages
+                                                                            .boxLine,
+                                                                        color:
+                                                                            AppColors.commonWhite,
+                                                                        height:
+                                                                            17,
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                  SizedBox(
+                                                                    width: 10,
+                                                                  ),
+                                                                  Expanded(
+                                                                    child: Column(
+                                                                      crossAxisAlignment:
+                                                                          CrossAxisAlignment
+                                                                              .start,
+                                                                      children: [
+                                                                        CustomTextfield.textWithStyles600(
+                                                                          data.customerName
+                                                                              .toString(),
+                                                                          fontSize:
+                                                                              15,
+                                                                        ),
+                                                                        CustomTextfield.textWithStylesSmall(
+                                                                          '2:45 PM', // You might want to use data.statusTime here
+                                                                        ),
+                                                                      ],
+                                                                    ),
+                                                                  ),
+                                                                  Spacer(),
+                                                                  Column(
+                                                                    crossAxisAlignment:
+                                                                        CrossAxisAlignment
+                                                                            .end,
+                                                                    children: [
+                                                                      CustomTextfield.textWithImage(
+                                                                        fontWeight:
+                                                                            FontWeight.w600,
+                                                                        text:
+                                                                            data.amount.toString(),
+                                                                        colors: getTextColor(
+                                                                          color:
+                                                                              AppColors.drkGreen,
+                                                                        ),
+                                                                        imagePath:
+                                                                            AppImages.bCurrency,
+                                                                        fontSize:
+                                                                            16,
+                                                                        imageColors: getTextColor(
+                                                                          color:
+                                                                              AppColors.drkGreen,
+                                                                        ),
+                                                                      ),
+                                                                      Padding(
+                                                                        padding: const EdgeInsets.only(
+                                                                          right:
+                                                                              8.0,
+                                                                        ),
+                                                                        child: Container(
+                                                                          padding: EdgeInsets.symmetric(
+                                                                            horizontal:
+                                                                                20,
+                                                                            vertical:
+                                                                                5,
+                                                                          ),
+                                                                          decoration: BoxDecoration(
+                                                                            borderRadius: BorderRadius.circular(
+                                                                              8,
+                                                                            ),
+                                                                            color:
+                                                                                AppColors.chatCallContainerColor,
+                                                                          ),
+                                                                          child: CustomTextfield.textWithStylesSmall(
+                                                                            data.status.toString(),
+                                                                            fontWeight:
+                                                                                FontWeight.w500,
+                                                                            colors: getTextColor(
+                                                                              color:
+                                                                                  AppColors.drkGreen,
+                                                                            ),
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                    ],
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          );
+                                                        },
                                                       ),
-                                                    ],
-                                                  );
-                                                }),
-                                              ),
-                                            ),
+                                                  ],
+                                                );
+                                              }),
 
-                                            const SizedBox(height: 20),
-                                            CustomTextfield.textWithStyles700(
-                                              "Today's Activity",
-                                              fontSize: 16,
-                                            ),
-                                            const SizedBox(height: 10),
-                                            Container(
-                                              decoration: BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                                border: Border.all(
-                                                  color: AppColors.commonBlack
-                                                      .withOpacity(0.1),
-                                                ),
-                                              ),
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 25,
-                                                      vertical: 15,
-                                                    ),
-                                                child: Obx(() {
-                                                  final data =
-                                                      statusController
-                                                          .todayStatusData
-                                                          .value;
-                                                  return Row(
-                                                    mainAxisAlignment:
-                                                        MainAxisAlignment
-                                                            .spaceBetween,
-                                                    children: [
-                                                      Column(
-                                                        children: [
-                                                          CustomTextfield.textWithStyles600(
-                                                            'Earnings',
-                                                            color:
-                                                                AppColors.grey,
-                                                          ),
-                                                          CustomTextfield.textWithImage(
-                                                            text:
-                                                                data?.earnings
-                                                                    .toString() ??
-                                                                '',
-                                                            colors:
-                                                                AppColors
-                                                                    .commonBlack,
-                                                            fontWeight:
-                                                                FontWeight.w700,
-                                                            fontSize: 16,
-                                                            imagePath:
-                                                                AppImages
-                                                                    .bCurrency,
-                                                          ),
-                                                        ],
-                                                      ),
-
-                                                      SizedBox(
-                                                        height: 50,
-                                                        child: VerticalDivider(
-                                                          color: AppColors
-                                                              .commonBlack
-                                                              .withOpacity(0.2),
-                                                        ),
-                                                      ),
-
-                                                      Column(
-                                                        children: [
-                                                          CustomTextfield.textWithStyles600(
-                                                            'Online',
-                                                            color:
-                                                                AppColors.grey,
-                                                          ),
-                                                          CustomTextfield.textWithImage(
-                                                            colors:
-                                                                AppColors
-                                                                    .commonBlack,
-                                                            fontWeight:
-                                                                FontWeight.w700,
-                                                            fontSize: 16,
-                                                            text:
-                                                                data?.online
-                                                                    .toString() ??
-                                                                '',
-                                                          ),
-                                                        ],
-                                                      ),
-
-                                                      SizedBox(
-                                                        height: 50,
-                                                        child: VerticalDivider(
-                                                          color: AppColors
-                                                              .commonBlack
-                                                              .withOpacity(0.2),
-                                                        ),
-                                                      ),
-
-                                                      Column(
-                                                        children: [
-                                                          CustomTextfield.textWithStyles600(
-                                                            'Rides',
-                                                            color:
-                                                                AppColors.grey,
-                                                          ),
-
-                                                          CustomTextfield.textWithImage(
-                                                            text:
-                                                                data?.rides
-                                                                    .toString() ??
-                                                                '',
-                                                            colors:
-                                                                AppColors
-                                                                    .commonBlack,
-                                                            fontWeight:
-                                                                FontWeight.w700,
-                                                            fontSize: 16,
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ],
-                                                  );
-                                                }),
-                                              ),
-                                            ),
-
-                                            const SizedBox(height: 20),
-                                          ],
+                                              SizedBox(height: 20),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
                           ],
                         ),
                       ),

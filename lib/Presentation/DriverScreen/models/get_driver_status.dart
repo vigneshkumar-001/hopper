@@ -24,20 +24,24 @@ class  GetDriverStatus  {
 
 class OnlineStatusData {
   final bool onlineStatus;
+  final String  serviceType;
 
   OnlineStatusData({
     required this.onlineStatus,
+    required this.serviceType,
   });
 
   factory OnlineStatusData.fromJson(Map<String, dynamic> json) {
     return OnlineStatusData(
       onlineStatus: json['onlineStatus'],
+      serviceType: json['serviceType'] ?? '',
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'onlineStatus': onlineStatus,
+      'serviceType': serviceType,
     };
   }
 }

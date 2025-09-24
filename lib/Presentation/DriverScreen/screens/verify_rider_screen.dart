@@ -440,7 +440,7 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                             }
 
                             setState(() {
-                              otpError = null; // Clear previous error
+                              otpError = null;
                             });
 
                             // await driverStatusController.otpInsert(
@@ -456,10 +456,8 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                 );
 
                             if (result != null) {
-                              // ✅ 4. Prevent autofocus next time
                               otpVerified = true;
 
-                              // ✅ 5. Wait for UI to settle
                               await Future.delayed(Duration(milliseconds: 100));
 
                               if (mounted) {

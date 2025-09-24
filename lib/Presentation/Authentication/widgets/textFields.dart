@@ -433,9 +433,8 @@ class CustomTextfield {
     TextAlign textAlign = TextAlign.start,
     FontWeight? fontWeight,
     double fontSize = 13,
-        int? maxLine = 10,
+    int? maxLine = 10,
     Color? colors = Colors.black45,
-
   }) {
     return Text(
       maxLines: maxLine,
@@ -457,12 +456,14 @@ class CustomTextfield {
     String? imagePath,
     String? rightImagePath,
     double imageSize = 16,
+
     double fontSize = 13,
     TextAlign textAlign = TextAlign.start,
     FontWeight? fontWeight,
     Color? textColor = Colors.black,
     Color? colors = Colors.black45,
     Color? imageColors = Colors.black,
+    bool sizedBox = true,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -489,7 +490,7 @@ class CustomTextfield {
               ),
             ),
           ),
-          SizedBox(width: 10),
+          sizedBox ? const SizedBox(width: 10) : SizedBox.shrink(),
           if (rightImagePath != null)
             Image.asset(rightImagePath, height: imageSize, width: imageSize),
           Text(

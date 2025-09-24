@@ -7,7 +7,7 @@ class AppColors {
   static const containerColor = Color(0xffF1F1F1);
   static const containerColor1 = Color(0xffF5F5F7);
   static const containerBorder = Color(0xff1C1C1C);
-
+  static final dotLineColor = Color(0xff979797);
   static const commonBlack = Color(0xff000000);
   static const commonWhite = Color(0xffFFFFFF);
   static const textColor = Color(0xff686868);
@@ -19,6 +19,7 @@ class AppColors {
   static const grey = Color(0xFF707072);
   static final resendBlue = Color(0xff006FD0);
   static final nBlue = Color(0xff357AE9);
+  static final rideShareContainerColor = Color(0xffDADADA);
   static final red = Color(0xffF71609);
   static final drkGreen = Color(0xff009721);
   static final directionColor = Color(0xffEEA000);
@@ -34,7 +35,10 @@ class AppColors {
   static final chatBlueColor = Color(0xffDEEAFC);
   static final starColor = Color(0xffE79700);
   static final chatCallContainerColor = Color(0xffE2FBE9);
+  static final starColors = Color(0XFFFEF9C9);
   static final errorBorder = Colors.red;
 
   static final changeButtonColor = Color(0xff357AE9);
+  static final walletText = Color(0xffDEDEDE);
+  static final walletButton = Color(0xff7f70e8);
 }

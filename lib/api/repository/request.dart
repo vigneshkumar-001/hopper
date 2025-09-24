@@ -194,7 +194,7 @@ class Request {
           ResponseInterceptorHandler handler,
         ) {
           CommonLogger.log.i(
-            "GET Request \n API: $url \n RESPONSE: ${response.toString()}",
+            "GET Request \n API: $url \n Token : $token \n RESPONSE: ${response.toString()}",
           );
           return handler.next(response);
         },

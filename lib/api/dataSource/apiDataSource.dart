@@ -21,9 +21,11 @@ import 'package:hopper/api/repository/request.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../Presentation/Authentication/controller/authController.dart';
+import '../../Presentation/Drawer/model/ride_history_response.dart';
 import '../../Presentation/DriverScreen/models/booking_accept_model.dart';
 import '../../Presentation/DriverScreen/models/driver_online_status_model.dart';
 import '../../Presentation/DriverScreen/models/get_todays_activity_models.dart';
+import '../../Presentation/DriverScreen/models/today_parcel_activity_response.dart';
 import '../repository/failure.dart';
 import 'package:dio/dio.dart';
 import 'package:dartz/dartz.dart';
@@ -1315,6 +1317,61 @@ class ApiDataSource extends BaseApiDataSource {
         if (response.data != null && response.data is Map<String, dynamic>) {
           CommonLogger.log.i("Parsing response data: ${response.data}");
           final result = GetDriverStatus.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, TodayParcelActivityResponse>>
+  todayPackageActivity() async {
+    try {
+      String url = ApiConstents.todayParcel;
+
+      final response = await Request.sendGetRequest(url, {}, 'Get', false);
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          CommonLogger.log.i("Parsing response data: ${response.data}");
+          final result = TodayParcelActivityResponse.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, RideActivityHistoryResponse>> rideHistory() async {
+    try {
+      String url = ApiConstents.rideHistory;
+
+      final response = await Request.sendGetRequest(url, {}, 'Get', false);
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          CommonLogger.log.i("Parsing response data: ${response.data}");
+          final result = RideActivityHistoryResponse.fromJson(response.data);
           return Right(result);
         } else {
           return Left(ServerFailure("Invalid or empty response"));

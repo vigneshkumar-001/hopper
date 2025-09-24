@@ -13,8 +13,10 @@ class AppImages {
   static String docUpload = "assets/images/docUpload.png";
   static String tick = "assets/images/tick.png";
   static String close = "assets/images/close.png";
+  static String closeButton = "assets/images/closeButton.png";
   static String ninDoc = "assets/images/ninDoc.png";
   static String driverLicense = "assets/images/driverLicense.png";
+  static String boxLine = "assets/images/boxLine.png";
   static String carOwnerDoc = "assets/images/carOwnerDoc.png";
   static String carOwnerShip = "assets/images/carOwnerShip.png";
   static String carDoc = "assets/images/carDoc.png";
@@ -25,6 +27,7 @@ class AppImages {
   static String bikeExterior = "assets/images/bikeExterior.png";
   static String waitingReview = "assets/images/waitingReview.png";
   static String dummyProfile = "assets/images/dummyProfile.png";
+  static String dropDown = "assets/images/dropDown.png";
   static String splashScreen = "assets/images/Splash Screen.png";
   static String redExclamation = "assets/images/redExclamation.png";
   static String packageBike = "assets/images/packageBike.png";
