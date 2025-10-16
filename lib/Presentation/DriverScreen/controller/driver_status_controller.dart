@@ -167,6 +167,7 @@ class DriverStatusController extends GetxController {
   Future<String?> completeRideRequest(
     BuildContext context, {
     required String bookingId,
+    required dynamic Amount,
   }) async {
     isLoading.value = true;
     try {
@@ -188,7 +189,9 @@ class DriverStatusController extends GetxController {
           CommonLogger.log.i(response.message);
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => CashCollectedScreen()),
+            MaterialPageRoute(builder: (context) => CashCollectedScreen(
+              Amount: Amount,
+            )),
           );
 
           resultMessage = response.message;
@@ -309,11 +312,16 @@ class DriverStatusController extends GetxController {
     BuildContext context, {
 
     required bool status,
+    required double latitude,
+    required double longitude,
   }) async {
     isLoading.value = true;
     try {
       final results = await apiDataSource.driverOnlineStatus(
+        latitude: latitude,
+        longitude: longitude,
         onlineStatus: status,
+
       );
       results.fold(
         (failure) {
@@ -368,7 +376,7 @@ class DriverStatusController extends GetxController {
     return '';
   }
 
-  Future<String?> weeklyChallenges() async {
+  Future<void> weeklyChallenges() async {
     try {
       final results = await apiDataSource.weeklyChallenge();
       CommonLogger.log.i("API called. Awaiting result...");
@@ -390,10 +398,10 @@ class DriverStatusController extends GetxController {
         },
       );
     } catch (e) {
-      return ' ';
+      return ;
     }
 
-    return '';
+    return ;
   }
 
   Future<String?> todayPackageActivity() async {

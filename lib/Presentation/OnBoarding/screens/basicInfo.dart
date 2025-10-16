@@ -68,7 +68,7 @@ class _BasicInfoState extends State<BasicInfo> {
   Widget build(BuildContext context) {
     final isFromGoogleSignIn = widget.type == 'googleSignIn';
     return Scaffold(
-      // appBar: AppBar(backgroundColor: AppColors.commonWhite),
+
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(

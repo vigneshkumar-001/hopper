@@ -37,7 +37,7 @@ class _CommonGoogleMapState extends State<CommonGoogleMap> {
 
       initialCameraPosition: CameraPosition(
         target: widget.initialPosition,
-        zoom: 16,
+        zoom: 17,
       ),
       onCameraMoveStarted: widget.onCameraMoveStarted,
       polylines: widget.polylines,

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Presentation/Authentication/models/loginResponse.dart';
 import 'package:hopper/Presentation/Authentication/models/otp_response.dart';
+import 'package:hopper/Presentation/Drawer/model/add_wallet_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/get_driver_status.dart';
 import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
@@ -21,7 +22,9 @@ import 'package:hopper/api/repository/request.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../Presentation/Authentication/controller/authController.dart';
+import '../../Presentation/Drawer/model/notification_response.dart';
 import '../../Presentation/Drawer/model/ride_history_response.dart';
+import '../../Presentation/Drawer/model/wallet_history_response.dart';
 import '../../Presentation/DriverScreen/models/booking_accept_model.dart';
 import '../../Presentation/DriverScreen/models/driver_online_status_model.dart';
 import '../../Presentation/DriverScreen/models/get_todays_activity_models.dart';
@@ -330,8 +333,9 @@ class ApiDataSource extends BaseApiDataSource {
 
   Future<Either<Failure, GetUserProfileModel>> getUserDetails() async {
     try {
-      String url =
-          "https://hoppr-backend-3d2b7f783917.herokuapp.com/api/users/getUserDetailsById";
+
+
+      String url = ApiConstents.getUserDetailsById;
 
       // Send GET request with the token in the header
       final response = await Request.sendGetRequest(url, {}, 'GET', true);
@@ -1153,6 +1157,8 @@ class ApiDataSource extends BaseApiDataSource {
 
   Future<Either<Failure, DriverOnlineStatusModel>> driverOnlineStatus({
     required bool onlineStatus,
+    required double latitude,
+    required double longitude,
   }) async {
     try {
       final driverId = await SharedPrefHelper.getDriverId();
@@ -1161,7 +1167,11 @@ class ApiDataSource extends BaseApiDataSource {
 
       final response = await Request.sendRequest(
         url,
-        {"onlineStatus": onlineStatus},
+        {
+          "onlineStatus": onlineStatus,
+          "latitude": latitude,
+          "longitude": longitude,
+        },
         'Post',
         false,
       );
@@ -1382,6 +1392,96 @@ class ApiDataSource extends BaseApiDataSource {
         return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
       } else {
         return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, WalletResponse>> customerWalletHistory() async {
+    try {
+      final url = ApiConstents.driverWalletHistory;
+
+      dynamic response = await Request.sendRequest(url, {}, 'GET', false);
+
+      if (response.statusCode == 200) {
+        if (response.data['success'] == true) {
+          return Right(WalletResponse.fromJson(response.data));
+        } else {
+          return Left(
+            ServerFailure(response.data['message'] ?? "Login failed"),
+          );
+        }
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(response.data['message'] ?? "Unexpected error"),
+        );
+      } else {
+        return Left(ServerFailure("Unknown error occurred"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, AddWalletResponse>> addWallet({
+    required double amount,
+    required String method,
+  }) async {
+    try {
+      final url = ApiConstents.addToWallet;
+
+      dynamic response = await Request.sendRequest(
+        url,
+        {'amount': amount, 'method': method},
+        'GET',
+        false,
+      );
+
+      if (response.statusCode == 200) {
+        if (response.data['success'] == true) {
+          return Right(AddWalletResponse.fromJson(response.data));
+        } else {
+          return Left(
+            ServerFailure(response.data['message'] ?? "Login failed"),
+          );
+        }
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(response.data['message'] ?? "Unexpected error"),
+        );
+      } else {
+        return Left(ServerFailure("Unknown error occurred"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, NotificationResponse>> getNotification() async {
+    try {
+      final url = ApiConstents.notification;
+      CommonLogger.log.i(url);
+
+      dynamic response = await Request.sendGetRequest(url, {}, 'GET', false);
+
+      if (response.statusCode == 200) {
+        if (response.data['success'] == true) {
+          return Right(NotificationResponse.fromJson(response.data));
+        } else {
+          return Left(
+            ServerFailure(response.data['message'] ?? "Login failed"),
+          );
+        }
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(response.data['message'] ?? "Unexpected error"),
+        );
+      } else {
+        return Left(ServerFailure("Unknown error occurred"));
       }
     } catch (e) {
       CommonLogger.log.e(e);

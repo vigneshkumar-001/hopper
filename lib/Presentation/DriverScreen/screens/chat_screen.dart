@@ -8,6 +8,7 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
@@ -319,6 +320,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _scrollToBottom();
     };*/
     _bookingMessageHandler = (data) {
+       CommonLogger.log.i('Chat Msg $data');
       final senderId = data['senderId'] ?? '';
       if (senderId == driverId) return;
 
@@ -362,6 +364,7 @@ class _ChatScreenState extends State<ChatScreen> {
     };
 
     socketService.on('booking-message', _bookingMessageHandler);
+    print('Chat Msg $_bookingMessageHandler');
   }
 
   late final Function(dynamic) _bookingMessageHandler;

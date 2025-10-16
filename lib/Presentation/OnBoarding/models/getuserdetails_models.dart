@@ -83,6 +83,8 @@ class GetUserProfileModel {
   final StatusModel? bikeOwnershipStatus;
   final StatusModel? carOwnershipStatus;
   final StatusModel? bikePhotosStatus;
+  final String? DriverStarRating;
+
 
   GetUserProfileModel({
     this.id,
@@ -151,6 +153,7 @@ class GetUserProfileModel {
     this.bikeOwnershipStatus,
     this.carOwnershipStatus,
     this.bikePhotosStatus,
+    this.DriverStarRating,
   });
 
   factory GetUserProfileModel.fromJson(Map<String, dynamic> json) {
@@ -208,6 +211,7 @@ class GetUserProfileModel {
       postalCode: json['postalCode'],
       landingPage: json['landingPage'],
       formStatus: json['formStatus'],
+      DriverStarRating: json['DriverStarRating'],
       basicInfoStatus:
           json['basicInfoStatus'] != null
               ? StatusModel.fromJson(json['basicInfoStatus'])

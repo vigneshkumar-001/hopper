@@ -4,8 +4,12 @@ import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
+import 'package:hopper/Presentation/Drawer/screens/notification_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/ride_activity.dart';
+import 'package:hopper/Presentation/Drawer/screens/settings_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/wallet_screen.dart';
+
+import '../../OnBoarding/controller/chooseservice_controller.dart';
 
 class DrawerScreen extends StatefulWidget {
   const DrawerScreen({super.key});
@@ -15,6 +19,13 @@ class DrawerScreen extends StatefulWidget {
 }
 
 class _DrawerScreenState extends State<DrawerScreen> {
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    getDetails. getUserDetails();
+  }
+  final ChooseServiceController getDetails = Get.put(ChooseServiceController());
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -31,7 +42,7 @@ class _DrawerScreenState extends State<DrawerScreen> {
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
+            padding: const EdgeInsets.symmetric(vertical: 5),
             child: Column(
               children: [
                 Expanded(
@@ -96,21 +107,33 @@ class _DrawerScreenState extends State<DrawerScreen> {
                         ),
 
                         const SizedBox(height: 30),
-                        CustomTextfield.textWithStyles700('Notifications'),
+                        InkWell(
+                          onTap: () {
+                            Get.to(() => NotificationScreen());
+                          },
+                          child: CustomTextfield.textWithStyles700(
+                            'Notifications',
+                          ),
+                        ),
                         const SizedBox(height: 20),
                         Divider(
                           color: AppColors.dividerColor.withOpacity(0.1),
                           thickness: 1.5,
                         ),
                         const SizedBox(height: 30),
-                        CustomTextfield.textWithStyles700('Help'),
-                        const SizedBox(height: 20),
-                        Divider(
-                          color: AppColors.dividerColor.withOpacity(0.1),
-                          thickness: 1.5,
-                        ),
-                        const SizedBox(height: 30),
-                        CustomTextfield.textWithStyles700('Settings'),
+                        // CustomTextfield.textWithStyles700('Help'),
+                        // const SizedBox(height: 20),
+                        // Divider(
+                        //   color: AppColors.dividerColor.withOpacity(0.1),
+                        //   thickness: 1.5,
+                        // ),
+                        // const SizedBox(height: 30),
+                        // InkWell(
+                        //   onTap: () {
+                        //     Get.to(() => SettingsScreen());
+                        //   },
+                        //   child: CustomTextfield.textWithStyles700('Settings'),
+                        // ),
                       ],
                     ),
                   ),
@@ -121,62 +144,132 @@ class _DrawerScreenState extends State<DrawerScreen> {
                     horizontal: 15,
                     vertical: 5,
                   ),
-                  child: Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(50),
-                        child: Image.asset(
-                          AppImages.dummy,
-                          height: 45,
-                          width: 45,
+                  child: Obx(() {
+                    final profile = getDetails.userProfile.value;
+
+                    return Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(50),
+                          child:
+                              profile?.profilePic != null
+                                  ? Image.network(
+                                    profile?.profilePic.toString() ?? '',
+                                    height: 45,
+                                    width: 45,
+                                    fit: BoxFit.cover,
+                                  )
+                                  : Icon(Icons.people, size: 20),
                         ),
-                      ),
-                      const SizedBox(width: 15),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              CustomTextfield.textWithStyles600(
-                                fontSize: 20,
-                                'Michael Francis',
-                              ),
-                              const SizedBox(width: 15),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 2,
+                        const SizedBox(width: 15),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                CustomTextfield.textWithStyles600(
+                                  fontSize: 20,
+                                  '${profile?.firstName ?? "Guest User"} ',
                                 ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.commonWhite,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Image.asset(
-                                      AppImages.star,
-                                      height: 15,
-                                      color: AppColors.drkGreen,
-                                    ),
-                                    const SizedBox(width: 5),
-                                    CustomTextfield.textWithStyles600(
-                                      fontSize: 15,
-                                      '4.5',
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          CustomTextfield.textWithStylesSmall(
-                            '+234 813 789 4562',
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                           const SizedBox(width: 15),
+                           Container(
+                             padding: const EdgeInsets.symmetric(
+                               horizontal: 10,
+                               vertical: 2,
+                             ),
+                             decoration: BoxDecoration(
+                               color: AppColors.commonWhite,
+                               borderRadius: BorderRadius.circular(10),
+                             ),
+                             child: Row(
+                               children: [
+                                 Image.asset(
+                                   AppImages.star,
+                                   height: 15,
+                                   color: AppColors.drkGreen,
+                                 ),
+                                 const SizedBox(width: 5),
+                                 CustomTextfield.textWithStyles600(
+                                   fontSize: 15,
+                                   profile?.DriverStarRating.toString()?? '0',
+                                 ),
+                               ],
+                             ),
+                           ),
+                              ],
+                            ),
+                            CustomTextfield.textWithStylesSmall(
+                              '${profile?.countryCode ?? ""} ${profile?.mobileNumber ?? "Loading..."}',
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  }),
                 ),
+
+                // Padding(
+                //   padding: const EdgeInsets.symmetric(
+                //     horizontal: 15,
+                //     vertical: 5,
+                //   ),
+                //   child: Row(
+                //     children: [
+                //       ClipRRect(
+                //         borderRadius: BorderRadius.circular(50),
+                //         child: Image.asset(
+                //           AppImages.dummy,
+                //           height: 45,
+                //           width: 45,
+                //         ),
+                //       ),
+                //       const SizedBox(width: 15),
+                //       Column(
+                //         crossAxisAlignment: CrossAxisAlignment.start,
+                //         children: [
+                //           Row(
+                //             children: [
+                //               CustomTextfield.textWithStyles600(
+                //                 fontSize: 20,
+                //                 'Michael Francis',
+                //               ),
+                //               const SizedBox(width: 15),
+                //               Container(
+                //                 padding: const EdgeInsets.symmetric(
+                //                   horizontal: 10,
+                //                   vertical: 2,
+                //                 ),
+                //                 decoration: BoxDecoration(
+                //                   color: AppColors.commonWhite,
+                //                   borderRadius: BorderRadius.circular(10),
+                //                 ),
+                //                 child: Row(
+                //                   children: [
+                //                     Image.asset(
+                //                       AppImages.star,
+                //                       height: 15,
+                //                       color: AppColors.drkGreen,
+                //                     ),
+                //                     const SizedBox(width: 5),
+                //                     CustomTextfield.textWithStyles600(
+                //                       fontSize: 15,
+                //                       '4.5',
+                //                     ),
+                //                   ],
+                //                 ),
+                //               ),
+                //             ],
+                //           ),
+                //           CustomTextfield.textWithStylesSmall(
+                //             '+234 813 789 4562',
+                //           ),
+                //         ],
+                //       ),
+                //     ],
+                //   ),
+                // ),
                 Divider(color: AppColors.dividerColor1, thickness: 2),
+                const SizedBox(height: 30),
               ],
             ),
           ),

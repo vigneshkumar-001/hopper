@@ -3,15 +3,18 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <application
         android:label="Hoppr Partner"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        android:theme="@style/NormalTheme">
         <service
-            android:name="com.baseflow.geolocator.foreground.GeolocatorForegroundService"
-            android:foregroundServiceType="location"
-            android:exported="false"/>
+            android:name="com.ekasetiawans.flutter_background_service.FlutterBackgroundService"
+            android:exported="true"
+            android:foregroundServiceType="location" />
+
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyCD-_GjHp5Zq383a3Q0UPTK4bHyTj0nuBw" />
@@ -20,7 +23,7 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
-            android:theme="@style/LaunchTheme"
+            android:theme="@style/Theme.AppCompat.DayNight"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">

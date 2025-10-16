@@ -11,7 +11,7 @@ class DriverOnlineStatusModel {
 
   factory DriverOnlineStatusModel.fromJson(Map<String, dynamic> json) {
     return DriverOnlineStatusModel(
-      status: json['status'] ,
+      status: json['status'],
       data: DriverStatusData.fromJson(json['data']),
       message: json['message'],
     );
@@ -69,7 +69,7 @@ class DriverStatusData {
       updatedAt: DateTime.parse(json['updatedAt']),
       requestDateAndTime: DateTime.parse(json['requestDateAndTime']),
       requestStatus: json['requestStatus'],
-      rideId: json['rideId'].toString()?? '',
+      rideId: json['rideId'].toString() ?? '',
       lastOnlineAt: DateTime.parse(json['lastOnlineAt']),
     );
   }

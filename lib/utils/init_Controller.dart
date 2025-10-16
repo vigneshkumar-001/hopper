@@ -3,6 +3,7 @@ import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.da
 import '../Presentation/Authentication/controller/authController.dart';
 import '../Presentation/Authentication/controller/network_handling_controller.dart';
 import '../Presentation/Authentication/controller/otp_controller.dart';
+import '../Presentation/Drawer/controller/notification_controller.dart';
 import '../Presentation/DriverScreen/controller/driver_status_controller.dart';
 import '../Presentation/OnBoarding/controller/basicInfo_controller.dart';
 import '../Presentation/OnBoarding/controller/caronwership_controller.dart';
@@ -40,4 +41,5 @@ Future<void> initController() async {
   Get.lazyPut(() => GuidelinesController());
   Get.lazyPut(() => DriverStatusController());
   Get.lazyPut(() => RideHistoryController());
+  Get.lazyPut(() => NotificationController());
 }

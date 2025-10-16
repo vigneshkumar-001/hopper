@@ -8,20 +8,27 @@ class AppImages {
   static String rightButton = "assets/images/rightButton.png";
   static String terms = "assets/images/terms.png";
   static String bike = "assets/images/bike.png";
+  static String star1 = "assets/images/star1.png";
   static String car = "assets/images/car.png";
   static String basicInfo = "assets/images/basicInfo.png";
+  static String payPall = "assets/images/payPall.png";
   static String docUpload = "assets/images/docUpload.png";
+  static String history = "assets/images/history.png";
   static String tick = "assets/images/tick.png";
   static String close = "assets/images/close.png";
   static String closeButton = "assets/images/closeButton.png";
+  static String clock = "assets/images/clock.png";
   static String ninDoc = "assets/images/ninDoc.png";
+  static String applePay = "assets/images/applePay.png";
   static String driverLicense = "assets/images/driverLicense.png";
   static String boxLine = "assets/images/boxLine.png";
   static String carOwnerDoc = "assets/images/carOwnerDoc.png";
   static String carOwnerShip = "assets/images/carOwnerShip.png";
   static String carDoc = "assets/images/carDoc.png";
+  static String stripe = "assets/images/stripe.png";
   static String carInterior = "assets/images/carInterior.png";
   static String consent = "assets/images/consent.png";
+  static String borderAdd = "assets/images/borderAdd.png";
   static String exclamationCircle = "assets/images/exclamationCircle.png";
   static String bikeOwner = "assets/images/bikeOwner.png";
   static String bikeExterior = "assets/images/bikeExterior.png";
@@ -73,4 +80,21 @@ class AppImages {
   static String box = "assets/images/box.png";
   static String leftTurn = "assets/images/left-turn.png";
   static String rightTurn = "assets/images/right-turn.png";
+
+  static String refund = "assets/images/refund.png";
+  static String wallet_top = "assets/images/wallet_top.png";
+  static String tripPayment = "assets/images/tripPayment.png";
+  static String packageDelivery = "assets/images/packageDelivery.png";
+  static String wallet = "assets/images/wallet.png";
+
+  static String currencyRound = "assets/images/currencyRound.png";
+  static String loc = "assets/images/loc.png";
+  static String help = "assets/images/help.png";
+  static String doc = "assets/images/doc.png";
+  static String sCar = "assets/images/sCar.png";
+
+  static String nCar = "assets/images/nCar.png";
+  static String twoPeople = "assets/images/twoPeople.png";
+  static String nPackage = "assets/images/nPackage.png";
+  static String nClose = "assets/images/nClose.png";
 }

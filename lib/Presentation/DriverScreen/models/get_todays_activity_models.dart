@@ -2,10 +2,7 @@ class GetTodayActivityModels {
   final int status;
   final TodayActivityData data;
 
-  GetTodayActivityModels({
-    required this.status,
-    required this.data,
-  });
+  GetTodayActivityModels({required this.status, required this.data});
 
   factory GetTodayActivityModels.fromJson(Map<String, dynamic> json) {
     return GetTodayActivityModels(
@@ -14,16 +11,13 @@ class GetTodayActivityModels {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'status': status,
-    'data': data.toJson(),
-  };
+  Map<String, dynamic> toJson() => {'status': status, 'data': data.toJson()};
 }
 
 class TodayActivityData {
-  final int earnings;
+  final String earnings;
   final String online;
-  final int rides;
+  final String rides;
 
   TodayActivityData({
     required this.earnings,
@@ -34,9 +28,9 @@ class TodayActivityData {
   factory TodayActivityData.fromJson(Map<String, dynamic> json) {
     print("📦 Parsing TodayActivityData: $json");
     return TodayActivityData(
-      earnings: json['earnings'] ?? 0,
-      online: json['online'] ?? '',
-      rides: json['rides'] ?? 0,
+      earnings: json['earnings'] ?? '0',
+      online: json['online'] ?? '0',
+      rides: json['rides'] ?? "0",
     );
   }
 
@@ -45,5 +39,4 @@ class TodayActivityData {
     'online': online,
     'rides': rides,
   };
-
 }

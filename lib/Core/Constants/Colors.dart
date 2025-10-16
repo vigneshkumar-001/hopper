@@ -6,6 +6,7 @@ class AppColors {
   static const dividerColor = Color(0xffAFAFAF);
   static const containerColor = Color(0xffF1F1F1);
   static const containerColor1 = Color(0xffF5F5F7);
+  static const circularClr = Color(0xffF3F4F6);
   static const containerBorder = Color(0xff1C1C1C);
   static final dotLineColor = Color(0xff979797);
   static const commonBlack = Color(0xff000000);
@@ -19,8 +20,12 @@ class AppColors {
   static const grey = Color(0xFF707072);
   static final resendBlue = Color(0xff006FD0);
   static final nBlue = Color(0xff357AE9);
+  static final walletCurrencyColor = Color(0xff009721);
   static final rideShareContainerColor = Color(0xffDADADA);
+  static final nCarColor = Color(0xffF0F6FE);
+  static final twoPeopleClr = Color(0xffF9F6FE);
   static final red = Color(0xffF71609);
+  static final addMoney = Color(0xFFE1EBFF);
   static final drkGreen = Color(0xff009721);
   static final directionColor = Color(0xffEEA000);
   static final directionColor1 = Color(0xffCD8702);
@@ -41,4 +46,6 @@ class AppColors {
   static final changeButtonColor = Color(0xff357AE9);
   static final walletText = Color(0xffDEDEDE);
   static final walletButton = Color(0xff7f70e8);
+  static final settingsClr = Color(0xffEFEEF2);
+  static final nPackageColor = Color(0xff5EC16A);
 }

@@ -14,7 +14,7 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  final ChooseServiceController controller = Get.find();
+  final ChooseServiceController controller = Get.put(ChooseServiceController());
   Future<void> loadAndNavigate() async {
     await controller.getUserDetails();
     // await Future.delayed(const Duration(seconds: 2));
@@ -31,7 +31,7 @@ class _SplashScreenState extends State<SplashScreen> {
     print('Iam Calling');
     //getUserDetail();
     loadAndNavigate();
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed(const Duration(seconds: 4), () {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const GetStartedScreens()),

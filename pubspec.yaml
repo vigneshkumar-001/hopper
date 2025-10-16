@@ -72,6 +72,10 @@ dependencies:
   location: ^8.0.1
   flutter_polyline_points: any
   flutter_sound: any
+  flutter_stripe: any
+  cached_network_image: any
+  flutter_background_service: ^5.1.0
+  flutter_background_service_android: ^6.3.1
 
 
 

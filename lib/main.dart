@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
 
+import 'Presentation/DriverScreen/screens/background_service.dart';
 import 'Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'dummy_screen.dart';
 import 'splash_screen.dart';
@@ -12,6 +13,7 @@ import 'package:flutter/services.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initController();
+
   await Firebase.initializeApp();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
