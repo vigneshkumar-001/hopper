@@ -3,6 +3,7 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:get/get.dart';
+import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 
 import '../../../Core/Utility/app_loader.dart';
 import '../controller/ride_history_controller.dart';
@@ -107,8 +108,7 @@ class _WalletScreenState extends State<WalletScreen> {
                           ),
                           child: Obx(
                             () => CustomTextfield.textWithImage(
-                              text: walletController.balance.value.toString()
-                           ,
+                              text: walletController.balance.value.toString(),
                               imagePath: AppImages.bCurrency,
                               fontWeight: FontWeight.w700,
                               fontSize: 20,
@@ -221,9 +221,8 @@ class _WalletScreenState extends State<WalletScreen> {
                           subtitle2: tx.createdAt.toString() ?? '',
                           image: _getImageByType(tx.imageType.toString() ?? ''),
                           title: tx.displayText.toString() ?? '',
-                          subtitle: _getSubtitle(tx),
-                          amount:
-                              "₦ ${tx.amount}", // no + or -
+                          subtitle: tx.walletDescription.toString() ?? '',
+                          amount: "₦ ${tx.amount}", // no + or -
                           amountColor:
                               tx.color?.toLowerCase() == "green"
                                   ? Colors.green
@@ -244,10 +243,15 @@ class _WalletScreenState extends State<WalletScreen> {
   Widget _buildHeader() {
     return Row(
       children: [
-        // GestureDetector(
-        //   onTap: () => Navigator.pop(context),
-        //   child: Image.asset(AppImages.backButton, height: 19, width: 19),
-        // ),
+        GestureDetector(
+          onTap:
+              () => Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => DrawerScreen()),
+                (route) => false,
+              ),
+          child: Image.asset(AppImages.backButton, height: 19, width: 19),
+        ),
         const Spacer(),
         CustomTextfield.textWithStyles700('Wallet', fontSize: 20),
         const Spacer(),
@@ -267,12 +271,6 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  String _getSubtitle(Transaction tx) {
-    if (tx.booking != null) {
-      return "${tx.booking!.pickupAddress} → ${tx.booking!.dropAddress}";
-    }
-    return "Wallet Transaction";
-  }
 
   String _getImageByType(String imageType) {
     switch (imageType) {

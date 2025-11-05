@@ -20,6 +20,7 @@ import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/log.dart';
 import '../../../Core/Utility/Buttons.dart';
 import '../../../Core/Utility/images.dart';
+import '../../OnBoarding/screens/takePictureScreen.dart';
 import '../controller/authController.dart';
 
 import 'package:google_sign_in/google_sign_in.dart';

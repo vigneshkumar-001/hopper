@@ -361,7 +361,7 @@ class _CompletedScreensState extends State<CompletedScreens> {
         Get.to(() => DriverAddress(fromCompleteScreens: true));
         break;
       case 2:
-        Get.to(() => TakePicture(fromCompleteScreens: true));
+        // Get.to(() => TakePicture(fromCompleteScreens: true));
         break;
       case 3:
         Get.to(() => NinScreens(fromCompleteScreens: true));

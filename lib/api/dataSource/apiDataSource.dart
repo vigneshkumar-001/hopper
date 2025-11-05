@@ -22,12 +22,16 @@ import 'package:hopper/api/repository/request.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../Presentation/Authentication/controller/authController.dart';
+import '../../Presentation/Authentication/models/fcm_response.dart';
 import '../../Presentation/Drawer/model/notification_response.dart';
 import '../../Presentation/Drawer/model/ride_history_response.dart';
 import '../../Presentation/Drawer/model/wallet_history_response.dart';
 import '../../Presentation/DriverScreen/models/booking_accept_model.dart';
+import '../../Presentation/DriverScreen/models/cash_collected_response.dart';
+import '../../Presentation/DriverScreen/models/chat_history_response.dart';
 import '../../Presentation/DriverScreen/models/driver_online_status_model.dart';
 import '../../Presentation/DriverScreen/models/get_todays_activity_models.dart';
+import '../../Presentation/DriverScreen/models/payment_response.dart';
 import '../../Presentation/DriverScreen/models/today_parcel_activity_response.dart';
 import '../repository/failure.dart';
 import 'package:dio/dio.dart';
@@ -333,8 +337,6 @@ class ApiDataSource extends BaseApiDataSource {
 
   Future<Either<Failure, GetUserProfileModel>> getUserDetails() async {
     try {
-
-
       String url = ApiConstents.getUserDetailsById;
 
       // Send GET request with the token in the header
@@ -1471,6 +1473,192 @@ class ApiDataSource extends BaseApiDataSource {
       if (response.statusCode == 200) {
         if (response.data['success'] == true) {
           return Right(NotificationResponse.fromJson(response.data));
+        } else {
+          return Left(
+            ServerFailure(response.data['message'] ?? "Login failed"),
+          );
+        }
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(response.data['message'] ?? "Unexpected error"),
+        );
+      } else {
+        return Left(ServerFailure("Unknown error occurred"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, PaymentStatusModel>> getAmountStatus({
+    required String bookingId,
+  }) async {
+    try {
+      String url = ApiConstents.checkPaymentType;
+
+      final response = await Request.sendRequest(
+        url,
+        {"bookingId": bookingId},
+        'post',
+        false,
+      );
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          CommonLogger.log.i("Parsing response data: ${response.data}");
+          final result = PaymentStatusModel.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, CashCollectedResponse>> amountCollectedStatus({
+    required String bookingId,
+  }) async {
+    try {
+      String url = ApiConstents.cashCollectedStatus;
+
+      final response = await Request.sendRequest(
+        url,
+        {"userBookingId": bookingId},
+        'post',
+        false,
+      );
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          CommonLogger.log.i("Parsing response data: ${response.data}");
+          final result = CashCollectedResponse.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, CashCollectedResponse>> driverRating({
+    required String bookingId,
+    required int rating,
+  }) async {
+    try {
+      String url = ApiConstents.driverRating(bookingId: bookingId);
+      final payLoad = {"rating": rating, "review": 'By driver'};
+      CommonLogger.log.i('RATING ++++++++++++++++++++++ $payLoad');
+      final response = await Request.sendRequest(url, payLoad, 'post', false);
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          CommonLogger.log.i("Parsing response data: ${response.data}");
+          final result = CashCollectedResponse.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, ChatHistoryResponse>> chatHistory({
+    required String bookingId,
+    required String pickupLatitude,
+    required String pickupLongitude,
+  }) async {
+    try {
+      final url = ApiConstents.chatHistory;
+      CommonLogger.log.i(url);
+
+      final payLoad = {
+        "bookingId": bookingId,
+        "senderType": "driver",
+        "pickupLatitude": pickupLatitude,
+        "pickupLongitude": pickupLongitude,
+      };
+      CommonLogger.log.i(payLoad);
+
+      final response = await Request.sendRequest(url, payLoad, 'Post', false);
+
+      // If you're using Dio, response is likely a Dio Response
+      final status = response.statusCode as int? ?? 0;
+
+      if (status == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final rawSuccess = data['success'];
+
+        // accept both bool true and string "true"
+        final success = rawSuccess == true || rawSuccess?.toString() == 'true';
+
+        if (success) {
+          return Right(ChatHistoryResponse.fromJson(data));
+        } else {
+          return Left(
+            ServerFailure(data['message']?.toString() ?? 'Request failed'),
+          );
+        }
+      } else {
+        // Non-200 http
+        final msg =
+            (response is Response &&
+                    response.data is Map &&
+                    response.data['message'] != null)
+                ? response.data['message'].toString()
+                : 'Unexpected error';
+        return Left(ServerFailure(msg));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, FcmResponse>> sendFcmToken({
+    required String fcmToken,
+  }) async {
+    try {
+      final url = ApiConstents.fcmToken;
+      CommonLogger.log.i(url);
+
+      dynamic response = await Request.sendRequest(
+        url,
+        {"fcm_token": fcmToken},
+        'POST',
+        false,
+      );
+
+      if (response.statusCode == 200) {
+        if (response.data['success'] == true) {
+          return Right(FcmResponse.fromJson(response.data));
         } else {
           return Left(
             ServerFailure(response.data['message'] ?? "Login failed"),

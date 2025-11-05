@@ -74,6 +74,7 @@ class Transaction {
   final String? commissionAmount;
   final String? bookingId;
   final String? displayText;
+  final String? walletDescription;
   final String? imageType;
   final String? color;
   final Booking? booking;
@@ -89,6 +90,7 @@ class Transaction {
     this.status,
     this.createdAt,
     this.commissionAmount,
+    this.walletDescription,
     this.bookingId,
     this.displayText,
     this.imageType,
@@ -107,6 +109,7 @@ class Transaction {
       ridePaymentstatus: json['ridePaymentstatus']?.toString(),
       status: json['status']?.toString(),
       createdAt: json['createdAt']?.toString(),
+      walletDescription: json['walletDescription']?.toString(),
       commissionAmount: json['commissionAmount']?.toString(),
       bookingId: json['bookingId']?.toString(),
       displayText: json['displayText']?.toString(),
@@ -129,6 +132,7 @@ class Transaction {
       'status': status,
       'createdAt': createdAt,
       'commissionAmount': commissionAmount,
+      'walletDescription': walletDescription,
       'bookingId': bookingId,
       'displayText': displayText,
       'imageType': imageType,

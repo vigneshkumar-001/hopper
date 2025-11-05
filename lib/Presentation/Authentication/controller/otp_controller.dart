@@ -51,7 +51,6 @@ class OtpController extends GetxController {
           return failure.message;
         },
         (response) async {
-          // Navigation should be deferred as well
           WidgetsBinding.instance.addPostFrameCallback((_) async {
             if (response.data.formStatus == 3) {
               await controller.getDriverStatus();
@@ -75,6 +74,8 @@ class OtpController extends GetxController {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('token', response.data.token);
           await prefs.setString('driverId', response.data.driverId);
+          final _fcmToken = prefs.getString('fcmToken');
+          sendFcmToken(fcmToken: _fcmToken!);
 
           return response.message;
         },
@@ -258,6 +259,33 @@ class OtpController extends GetxController {
       isLoading.value = false;
       return 'An error occurred';
     }
+  }
+
+  Future<String?> sendFcmToken({required String fcmToken}) async {
+    try {
+      final results = await apiDataSource.sendFcmToken(fcmToken: fcmToken);
+      results.fold(
+        (failure) {
+          // Get.snackbar(
+          //   "Error",
+          //   failure.message,
+          //   snackPosition: SnackPosition.TOP,
+          //   backgroundColor: Get.theme.colorScheme.secondary,
+          //   colorText: Get.theme.colorScheme.onSecondary,
+          // );
+          isLoading.value = false;
+        },
+        (response) {
+          isLoading.value = false;
+          CommonLogger.log.i('I Sended Fresh FCM Token');
+        },
+      );
+    } catch (e) {
+      isLoading.value = false;
+      return ' ';
+    }
+    isLoading.value = false;
+    return ' ';
   }
 
   void clearState() {

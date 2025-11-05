@@ -99,15 +99,7 @@ class RideHistoryController extends GetxController {
         },
         (response) {
           walletData.value = response;
-          Get.to(
-            () => WalletPaymentScreens(
-              clientSecret: response.clientSecret,
-              publishableKey: response.publishableKey,
-              transactionId: response.transactionId,
 
-              amount: amount.toInt(),
-            ),
-          );
           CommonLogger.log.i("✅ Raw response: ${response.toJson()}");
         },
       );

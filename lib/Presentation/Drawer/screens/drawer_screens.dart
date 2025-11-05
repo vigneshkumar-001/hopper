@@ -8,6 +8,7 @@ import 'package:hopper/Presentation/Drawer/screens/notification_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/ride_activity.dart';
 import 'package:hopper/Presentation/Drawer/screens/settings_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/wallet_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 
 import '../../OnBoarding/controller/chooseservice_controller.dart';
 
@@ -23,8 +24,9 @@ class _DrawerScreenState extends State<DrawerScreen> {
   void initState() {
     // TODO: implement initState
     super.initState();
-    getDetails. getUserDetails();
+    getDetails.getUserDetails();
   }
+
   final ChooseServiceController getDetails = Get.put(ChooseServiceController());
   @override
   Widget build(BuildContext context) {
@@ -58,7 +60,13 @@ class _DrawerScreenState extends State<DrawerScreen> {
                           children: [
                             InkWell(
                               onTap: () {
-                                Get.back();
+                                Navigator.pushAndRemoveUntil(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => DriverMainScreen(),
+                                  ),
+                                  (route) => false,
+                                );
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
@@ -171,31 +179,32 @@ class _DrawerScreenState extends State<DrawerScreen> {
                                   fontSize: 20,
                                   '${profile?.firstName ?? "Guest User"} ',
                                 ),
-                           const SizedBox(width: 15),
-                           Container(
-                             padding: const EdgeInsets.symmetric(
-                               horizontal: 10,
-                               vertical: 2,
-                             ),
-                             decoration: BoxDecoration(
-                               color: AppColors.commonWhite,
-                               borderRadius: BorderRadius.circular(10),
-                             ),
-                             child: Row(
-                               children: [
-                                 Image.asset(
-                                   AppImages.star,
-                                   height: 15,
-                                   color: AppColors.drkGreen,
-                                 ),
-                                 const SizedBox(width: 5),
-                                 CustomTextfield.textWithStyles600(
-                                   fontSize: 15,
-                                   profile?.DriverStarRating.toString()?? '0',
-                                 ),
-                               ],
-                             ),
-                           ),
+                                const SizedBox(width: 15),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.commonWhite,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Image.asset(
+                                        AppImages.star,
+                                        height: 15,
+                                        color: AppColors.drkGreen,
+                                      ),
+                                      const SizedBox(width: 5),
+                                      CustomTextfield.textWithStyles600(
+                                        fontSize: 15,
+                                        profile?.DriverStarRating.toString() ??
+                                            '0',
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ],
                             ),
                             CustomTextfield.textWithStylesSmall(

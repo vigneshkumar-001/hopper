@@ -76,7 +76,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   String plateNumber = '';
   String driverName = '';
   String cutomerProfile = '';
-  dynamic Amount ;
+  dynamic Amount;
   String carDetails = '';
   bool isDriverConfirmed = false;
   String pickupAddress = '';
@@ -103,7 +103,10 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   Timer? _timer;
 
   bool showRedTimer = false;
-  Future<BitmapDescriptor> _bitmapFromAsset(String path, {int width = 48}) async {
+  Future<BitmapDescriptor> _bitmapFromAsset(
+    String path, {
+    int width = 48,
+  }) async {
     final data = await rootBundle.load(path);
     final codec = await ui.instantiateImageCodec(
       data.buffer.asUint8List(),
@@ -113,6 +116,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     final bytes = await frame.image.toByteData(format: ui.ImageByteFormat.png);
     return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
   }
+
   Future<void> _loadMarkerIcons() async {
     try {
       final cfg = const ImageConfiguration(size: Size(52, 52));
@@ -121,7 +125,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
               ? AppImages.parcelBike
               : AppImages.movingCar;
 
-      final icon = await BitmapDescriptor.asset(height: 60,cfg, asset);
+      final icon = await BitmapDescriptor.asset(height: 60, cfg, asset);
       if (!mounted) return;
       setState(() {
         carIcon = icon;
@@ -130,7 +134,6 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
       carIcon = BitmapDescriptor.defaultMarker;
     }
   }
-
 
   void _startTimer() {
     _timer?.cancel();
@@ -200,7 +203,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
       final String color = vehicle['color'] ?? '';
       final String model = vehicle['model'] ?? '';
       final String customerName = data['customerName'] ?? '';
-      final   amount = data['amount'] ?? '';
+      final amount = data['amount'] ?? '';
       final String customerProfilePic = data['customerProfilePic'] ?? '';
       final String customerPhone = data['customerPhone'] ?? '';
       final bool driverAccepted = data['driver_accept_status'] == true;
@@ -222,9 +225,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 
       // profile & car photos
       final String picUrl = data['profilePic'] ?? '';
-      final List<dynamic> carPhotos = List.from(
-        data['carExteriorPhotos'] ?? [],
-      );
+      // final List<dynamic> carPhotos = List.from(
+      //   data['carExteriorPhotos'] ?? [],
+      // );
 
       String pickupAddrs = await getAddressFromLatLng(fromLat, fromLng);
       String dropoffAddrs = await getAddressFromLatLng(toLat, toLng);
@@ -240,7 +243,6 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
         customerFrom = pickupAddrs;
         customerTo = dropoffAddrs;
 
-
         CUSTOMERNAME = customerName;
         CUSTOMERPHN = customerPhone;
         cutomerProfile = customerProfilePic;
@@ -248,7 +250,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 
         driverCurrentLatLng = driverLatLng;
         driverProfilePic = picUrl;
-        carExteriorImages = carPhotos.map((e) => e.toString()).toList();
+        // carExteriorImages = carPhotos.map((e) => e.toString()).toList();
       });
 
       CommonLogger.log.i("🚕 Driver confirmed: $driverAccepted");
@@ -796,346 +798,203 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     };
 
     return NoInternetOverlay(
-      child: Scaffold(
-        body: Stack(
-          children: [
-            SizedBox(
-              height: 650,
-              child: CommonGoogleMap(
-                onCameraMove:
-                    (position) => _currentMapBearing = position.bearing,
-                myLocationEnabled: false,
-                onMapCreated: (controller) async {
-                  _mapController = controller;
-                  fitBoundsToDriverAndPickup();
-                  final style = await DefaultAssetBundle.of(
-                    context,
-                  ).loadString('assets/map_style/map_style1.json');
-                  _mapController?.setMapStyle(style);
-                },
-                initialPosition: widget.pickupLocation,
-                markers: markers,
-                polylines: {
-                  Polyline(
-                    polylineId: const PolylineId("route"),
-                    color: AppColors.commonBlack,
-                    width: 5,
-                    points: polylinePoints,
-                  ),
-                },
-              ),
-            ),
-
-            Positioned(
-              top: arrivedAtPickup ? 350 : 500,
-              right: 10,
-              child: FloatingActionButton(
-                mini: true,
-                backgroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
+      child: WillPopScope(
+        onWillPop: () async {
+          return await false;
+        },
+        child: Scaffold(
+          body: Stack(
+            children: [
+              SizedBox(
+                height: 650,
+                child: CommonGoogleMap(
+                  onCameraMove:
+                      (position) => _currentMapBearing = position.bearing,
+                  myLocationEnabled: false,
+                  onMapCreated: (controller) async {
+                    _mapController = controller;
+                    fitBoundsToDriverAndPickup();
+                    final style = await DefaultAssetBundle.of(
+                      context,
+                    ).loadString('assets/map_style/map_style1.json');
+                    _mapController?.setMapStyle(style);
+                  },
+                  initialPosition: widget.pickupLocation,
+                  markers: markers,
+                  polylines: {
+                    Polyline(
+                      polylineId: const PolylineId("route"),
+                      color: AppColors.commonBlack,
+                      width: 5,
+                      points: polylinePoints,
+                    ),
+                  },
                 ),
-                onPressed: _goToCurrentLocation,
-                child: const Icon(Icons.my_location, color: Colors.black),
               ),
-            ),
 
-            Positioned(
-              top: 45,
-              left: 10,
-              right: 10,
-              child: Row(
+              Positioned(
+                top: arrivedAtPickup ? 350 : 500,
+                right: 10,
+                child: FloatingActionButton(
+                  mini: true,
+                  backgroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  onPressed: _goToCurrentLocation,
+                  child: const Icon(Icons.my_location, color: Colors.black),
+                ),
+              ),
+
+              Positioned(
+                top: 45,
+                left: 10,
+                right: 10,
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 1,
+                      child: Container(
+                        height: 100,
+                        color: AppColors.directionColor,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 20,
+                            horizontal: 10,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Image.asset(
+                                getManeuverIcon(maneuver),
+                                height: 32,
+                                width: 32,
+                              ),
+                              const SizedBox(height: 5),
+                              CustomTextfield.textWithStyles600(
+                                distance,
+                                color: AppColors.commonWhite,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: Container(
+                        height: 100,
+                        color: AppColors.directionColor1,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 20,
+                            horizontal: 10,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              CustomTextfield.textWithStyles600(
+                                maxLine: 2,
+                                parseHtmlString(directionText),
+                                fontSize: 13,
+                                color: AppColors.commonWhite,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Bottom sheet + timer overlay
+              Stack(
                 children: [
-                  Expanded(
-                    flex: 1,
-                    child: Container(
-                      height: 100,
-                      color: AppColors.directionColor,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 20,
-                          horizontal: 10,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                  DraggableScrollableSheet(
+                    key: ValueKey(arrivedAtPickup),
+                    initialChildSize:
+                        arrivedAtPickup
+                            ? (showRedTimer ? 0.45 : 0.50)
+                            : (showRedTimer ? 0.35 : 0.30),
+                    minChildSize:
+                        arrivedAtPickup
+                            ? (showRedTimer ? 0.43 : 0.40)
+                            : (showRedTimer ? 0.35 : 0.30),
+                    maxChildSize:
+                        arrivedAtPickup
+                            ? (showRedTimer ? 0.46 : 0.65)
+                            : (showRedTimer ? 0.35 : 0.30),
+                    builder: (context, scrollController) {
+                      return Container(
+                        decoration: const BoxDecoration(color: Colors.white),
+                        child: ListView(
+                          physics: const BouncingScrollPhysics(),
+                          controller: scrollController,
                           children: [
-                            Image.asset(
-                              getManeuverIcon(maneuver),
-                              height: 32,
-                              width: 32,
-                            ),
-                            const SizedBox(height: 5),
-                            CustomTextfield.textWithStyles600(
-                              distance,
-                              color: AppColors.commonWhite,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Container(
-                      height: 100,
-                      color: AppColors.directionColor1,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 20,
-                          horizontal: 10,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CustomTextfield.textWithStyles600(
-                              maxLine: 2,
-                              parseHtmlString(directionText),
-                              fontSize: 13,
-                              color: AppColors.commonWhite,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Bottom sheet + timer overlay
-            Stack(
-              children: [
-                DraggableScrollableSheet(
-                  key: ValueKey(arrivedAtPickup),
-                  initialChildSize:
-                      arrivedAtPickup
-                          ? (showRedTimer ? 0.45 : 0.50)
-                          : (showRedTimer ? 0.35 : 0.30),
-                  minChildSize:
-                      arrivedAtPickup
-                          ? (showRedTimer ? 0.43 : 0.40)
-                          : (showRedTimer ? 0.35 : 0.30),
-                  maxChildSize:
-                      arrivedAtPickup
-                          ? (showRedTimer ? 0.46 : 0.65)
-                          : (showRedTimer ? 0.35 : 0.30),
-                  builder: (context, scrollController) {
-                    return Container(
-                      decoration: const BoxDecoration(color: Colors.white),
-                      child: ListView(
-                        physics: const BouncingScrollPhysics(),
-                        controller: scrollController,
-                        children: [
-                          Center(
-                            child: Container(
-                              width: 60,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[400],
-                                borderRadius: BorderRadius.circular(10),
+                            Center(
+                              child: Container(
+                                width: 60,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[400],
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 10),
-                          if (!arrivedAtPickup) ...[
-                            Column(
-                              children: [
-                                Visibility(
-                                  visible: showRedTimer,
-                                  maintainSize: false,
-                                  maintainAnimation: false,
-                                  maintainState: false,
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 20,
-                                    ),
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: AppColors.red.withOpacity(0.1),
-                                      ),
-                                      child: ListTile(
-                                        onTap: () {
-                                          Buttons.showCancelRideBottomSheet(
-                                            context,
-                                            onConfirmCancel: (reason) {
-                                              driverStatusController
-                                                  .cancelBooking(
-                                                    bookingId: widget.bookingId,
-                                                    context,
-                                                    reason: reason,
-                                                  );
-                                            },
-                                          );
-                                        },
-                                        trailing: Image.asset(
-                                          AppImages.redArrow,
-                                          height: 20,
-                                          width: 20,
-                                        ),
-                                        leading: Image.asset(
-                                          AppImages.close,
-                                          height: 20,
-                                          width: 20,
-                                        ),
-                                        title: CustomTextfield.textWithStyles600(
-                                          fontSize: 14,
-                                          color: AppColors.red,
-                                          'Tap to cancel the ride, If rider don’t show up',
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-
-                                ListTile(
-                                  trailing: GestureDetector(
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder:
-                                              (context) => ChatScreen(
-                                                bookingId: widget.bookingId,
-                                              ),
-                                        ),
-                                      );
-                                    },
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: AppColors.commonBlack
-                                            .withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(30),
-                                      ),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(10),
-                                        child: Image.asset(
-                                          AppImages.msg,
-                                          height: 25,
-                                          width: 25,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  leading: GestureDetector(
-                                    onTap: () async {
-                                      const phoneNumber = 'tel:+918248191110';
-                                      final Uri url = Uri.parse(phoneNumber);
-                                      if (await canLaunchUrl(url)) {
-                                        await launchUrl(url);
-                                      }
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(5),
-                                      child: ClipOval(
-                                        child: CachedNetworkImage(
-                                          imageUrl: cutomerProfile,
-                                          height: 45,
-                                          width: 45,
-                                          fit: BoxFit.cover,
-                                          placeholder:
-                                              (context, url) => const SizedBox(
-                                                height: 40,
-                                                width: 40,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                    ),
-                                              ),
-                                          errorWidget:
-                                              (context, url, error) =>
-                                                  const Icon(
-                                                    Icons.person,
-                                                    size: 30,
-                                                    color: Colors.black,
-                                                  ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  title: Center(
-                                    child: CustomTextfield.textWithStyles600(
-                                      fontSize: 20,
-                                      'Waiting for the Rider',
-                                    ),
-                                  ),
-                                  subtitle: Center(
-                                    child: CustomTextfield.textWithStylesSmall(
-                                      fontSize: 14,
-                                      colors: AppColors.textColorGrey,
-                                      CUSTOMERNAME,
-                                    ),
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 10,
-                                  ),
-                                  child: ActionSlider.standard(
-                                    controller: _sliderController,
-                                    action: (controller) async {
-                                      controller.loading();
-                                      await Future.delayed(
-                                        const Duration(seconds: 1),
-                                      );
-                                      final message =
-                                          await driverStatusController
-                                              .otpRequest(
-                                                pickupAddress:
-                                                    widget
-                                                        .pickupLocationAddress ??
-                                                    '',
-                                                dropAddress:
-                                                    widget
-                                                        .dropLocationAddress ??
-                                                    '',
-                                                custName: CUSTOMERNAME,
-                                                context,
-                                                bookingId: widget.bookingId,
-                                              );
-
-                                      if (message != null) {
-                                        controller.success();
-                                        _timer?.cancel();
-                                        _timer = null;
-                                      } else {
-                                        controller.failure();
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Failed to start ride',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                    height: 50,
-                                    backgroundColor: const Color(0xFF1C1C1C),
-                                    toggleColor: Colors.white,
-                                    icon: const Icon(
-                                      Icons.double_arrow,
-                                      color: Colors.black,
-                                      size: 28,
-                                    ),
-                                    child: Text(
-                                      'Swipe to Start Ride',
-                                      style: TextStyle(
-                                        color: AppColors.commonWhite,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ] else ...[
-                            if (!driverReached) ...[
+                            const SizedBox(height: 10),
+                            if (!arrivedAtPickup) ...[
                               Column(
                                 children: [
+                                  Visibility(
+                                    visible: showRedTimer,
+                                    maintainSize: false,
+                                    maintainAnimation: false,
+                                    maintainState: false,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 20,
+                                      ),
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: AppColors.red.withOpacity(0.1),
+                                        ),
+                                        child: ListTile(
+                                          onTap: () {
+                                            Buttons.showCancelRideBottomSheet(
+                                              context,
+                                              onConfirmCancel: (reason) {
+                                                driverStatusController
+                                                    .cancelBooking(
+                                                      bookingId:
+                                                          widget.bookingId,
+                                                      context,
+                                                      reason: reason,
+                                                    );
+                                              },
+                                            );
+                                          },
+                                          trailing: Image.asset(
+                                            AppImages.redArrow,
+                                            height: 20,
+                                            width: 20,
+                                          ),
+                                          leading: Image.asset(
+                                            AppImages.close,
+                                            height: 20,
+                                            width: 20,
+                                          ),
+                                          title: CustomTextfield.textWithStyles600(
+                                            fontSize: 14,
+                                            color: AppColors.red,
+                                            'Tap to cancel the ride, If rider don’t show up',
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
                                   ListTile(
                                     trailing: GestureDetector(
                                       onTap: () {
@@ -1175,79 +1034,21 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                           await launchUrl(url);
                                         }
                                       },
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          color: AppColors.commonBlack
-                                              .withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(
-                                            30,
-                                          ),
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(10),
-                                          child: Image.asset(
-                                            AppImages.call,
-                                            height: 25,
-                                            width: 25,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    title: Center(
-                                      child: Obx(
-                                        () => CustomTextfield.textWithStyles600(
-                                          formatDuration(
-                                            driverStatusController
-                                                .pickupDurationInMin
-                                                .value,
-                                          ),
-                                          fontSize: 20,
-                                        ),
-                                      ),
-                                    ),
-                                    subtitle: Center(
-                                      child:
-                                          CustomTextfield.textWithStylesSmall(
-                                            fontSize: 14,
-                                            colors: AppColors.textColorGrey,
-                                            'Picking up $CUSTOMERNAME',
-                                          ),
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 5,
-                                      horizontal: 15,
-                                    ),
-                                    child: Divider(
-                                      color: AppColors.dividerColor1,
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 5,
-                                      horizontal: 15,
-                                    ),
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        setState(() {
-                                          driverReached = !driverReached;
-                                        });
-                                      },
-                                      child: Row(
-                                        children: [
-                                          CachedNetworkImage(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(5),
+                                        child: ClipOval(
+                                          child: CachedNetworkImage(
                                             imageUrl: cutomerProfile,
-                                            height: 25,
-                                            width: 25,
-                                            fit: BoxFit.contain,
+                                            height: 45,
+                                            width: 45,
+                                            fit: BoxFit.cover,
                                             placeholder:
                                                 (
                                                   context,
                                                   url,
                                                 ) => const SizedBox(
-                                                  height: 25,
-                                                  width: 25,
+                                                  height: 40,
+                                                  width: 40,
                                                   child:
                                                       CircularProgressIndicator(
                                                         strokeWidth: 2,
@@ -1257,348 +1058,565 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                                 (context, url, error) =>
                                                     const Icon(
                                                       Icons.person,
-                                                      size: 25,
+                                                      size: 30,
                                                       color: Colors.black,
                                                     ),
                                           ),
-                                          const SizedBox(width: 15),
-                                          CustomTextfield.textWithStyles600(
-                                            CUSTOMERNAME,
-                                            fontSize: 20,
-                                          ),
-                                        ],
+                                        ),
                                       ),
+                                    ),
+                                    title: Center(
+                                      child: CustomTextfield.textWithStyles600(
+                                        fontSize: 20,
+                                        'Waiting for the Rider',
+                                      ),
+                                    ),
+                                    subtitle: Center(
+                                      child:
+                                          CustomTextfield.textWithStylesSmall(
+                                            fontSize: 14,
+                                            colors: AppColors.textColorGrey,
+                                            CUSTOMERNAME,
+                                          ),
                                     ),
                                   ),
                                   Padding(
                                     padding: const EdgeInsets.symmetric(
-                                      vertical: 5,
-                                      horizontal: 15,
+                                      horizontal: 20,
+                                      vertical: 10,
                                     ),
-                                    child: Divider(
-                                      color: AppColors.dividerColor1,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 15),
-                                ],
-                              ),
-                            ] else ...[
-                              const SizedBox(height: 10),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                ),
-                                child: Column(
-                                  children: [
-                                    Buttons.button(
-                                      buttonColor: AppColors.resendBlue,
-                                      borderRadius: 8,
-                                      onTap: () async {
-                                        final result =
-                                            await driverStatusController
-                                                .driverArrived(
-                                                  context,
-                                                  bookingId: widget.bookingId,
-                                                );
+                                    child: ActionSlider.standard(
+                                      controller: _sliderController,
+                                      action: (controller) async {
+                                        controller.loading();
+                                        await Future.delayed(
+                                          const Duration(seconds: 1),
+                                        );
+                                        final message = await driverStatusController
+                                            .otpRequest(
+                                              pickupAddress:
+                                                  widget
+                                                      .pickupLocationAddress ??
+                                                  '',
+                                              dropAddress:
+                                                  widget.dropLocationAddress ??
+                                                  '',
+                                              custName: CUSTOMERNAME,
+                                              context,
+                                              bookingId: widget.bookingId,
+                                            );
 
-                                        if (result != null &&
-                                            result.status == 200) {
-                                          if (!mounted) return;
-                                          setState(() {
-                                            arrivedAtPickup = false;
-                                            _seconds = 300;
-                                          });
-                                          _startTimer();
+                                        if (message != null) {
+                                          controller.success();
+                                          _timer?.cancel();
+                                          _timer = null;
                                         } else {
+                                          controller.failure();
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(
-                                            SnackBar(
+                                            const SnackBar(
                                               content: Text(
-                                                result?.message ??
-                                                    "Something went wrong",
+                                                'Failed to start ride',
                                               ),
                                             ),
                                           );
                                         }
                                       },
-                                      text:
-                                          driverStatusController
-                                                  .arrivedIsLoading
-                                                  .value
-                                              ? SizedBox(
-                                                height: 20,
-                                                width: 20,
-                                                child:
-                                                    AppLoader.circularLoader(),
-                                              )
-                                              : const Text(
-                                                'Arrived at Pickup Point',
-                                              ),
-                                    ),
-                                    const SizedBox(height: 20),
-                                    GestureDetector(
-                                      onTap: () {},
-                                      child: Row(
-                                        children: [
-                                          Padding(
-                                            padding: const EdgeInsets.all(5),
-                                            child: ClipOval(
-                                              child: CachedNetworkImage(
-                                                imageUrl: cutomerProfile,
-                                                height: 45,
-                                                width: 45,
-                                                fit: BoxFit.cover,
-                                                placeholder:
-                                                    (
-                                                      context,
-                                                      url,
-                                                    ) => const SizedBox(
-                                                      height: 40,
-                                                      width: 40,
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                            strokeWidth: 2,
-                                                          ),
-                                                    ),
-                                                errorWidget:
-                                                    (context, url, error) =>
-                                                        const Icon(
-                                                          Icons.person,
-                                                          size: 30,
-                                                          color: Colors.black,
-                                                        ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          CustomTextfield.textWithStyles600(
-                                            CUSTOMERNAME,
-                                            fontSize: 20,
-                                          ),
-                                        ],
+                                      height: 50,
+                                      backgroundColor: const Color(0xFF1C1C1C),
+                                      toggleColor: Colors.white,
+                                      icon: const Icon(
+                                        Icons.double_arrow,
+                                        color: Colors.black,
+                                        size: 28,
                                       ),
-                                    ),
-                                    const SizedBox(height: 15),
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        color: AppColors.containerColor1,
-                                      ),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 30,
-                                          vertical: 10,
+                                      child: Text(
+                                        'Swipe to Start Ride',
+                                        style: TextStyle(
+                                          color: AppColors.commonWhite,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
                                         ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ] else ...[
+                              if (!driverReached) ...[
+                                Column(
+                                  children: [
+                                    ListTile(
+                                      trailing: GestureDetector(
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder:
+                                                  (context) => ChatScreen(
+                                                    bookingId: widget.bookingId,
+                                                  ),
+                                            ),
+                                          );
+                                        },
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: AppColors.commonBlack
+                                                .withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(
+                                              30,
+                                            ),
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(10),
+                                            child: Image.asset(
+                                              AppImages.msg,
+                                              height: 25,
+                                              width: 25,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      leading: GestureDetector(
+                                        onTap: () async {
+                                          const phoneNumber =
+                                              'tel:+918248191110';
+                                          final Uri url = Uri.parse(
+                                            phoneNumber,
+                                          );
+                                          if (await canLaunchUrl(url)) {
+                                            await launchUrl(url);
+                                          }
+                                        },
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: AppColors.commonBlack
+                                                .withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(
+                                              30,
+                                            ),
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(10),
+                                            child: Image.asset(
+                                              AppImages.call,
+                                              height: 25,
+                                              width: 25,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      title: Center(
+                                        child: Obx(
+                                          () =>
+                                              CustomTextfield.textWithStyles600(
+                                                formatDuration(
+                                                  driverStatusController
+                                                      .pickupDurationInMin
+                                                      .value,
+                                                ),
+                                                fontSize: 20,
+                                              ),
+                                        ),
+                                      ),
+                                      subtitle: Center(
+                                        child:
+                                            CustomTextfield.textWithStylesSmall(
+                                              fontSize: 14,
+                                              colors: AppColors.textColorGrey,
+                                              'Picking up $CUSTOMERNAME',
+                                            ),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 5,
+                                        horizontal: 15,
+                                      ),
+                                      child: Divider(
+                                        color: AppColors.dividerColor1,
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 5,
+                                        horizontal: 15,
+                                      ),
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          setState(() {
+                                            driverReached = !driverReached;
+                                          });
+                                        },
                                         child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
                                           children: [
-                                            CustomTextfield.textWithImage(
-                                              colors: AppColors.commonBlack,
-                                              fontWeight: FontWeight.w500,
-                                              fontSize: 12,
-                                              text: 'Get Help',
-                                              imagePath: AppImages.getHelp,
+                                            CachedNetworkImage(
+                                              imageUrl: cutomerProfile,
+                                              height: 25,
+                                              width: 25,
+                                              fit: BoxFit.contain,
+                                              placeholder:
+                                                  (
+                                                    context,
+                                                    url,
+                                                  ) => const SizedBox(
+                                                    height: 25,
+                                                    width: 25,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                        ),
+                                                  ),
+                                              errorWidget:
+                                                  (context, url, error) =>
+                                                      const Icon(
+                                                        Icons.person,
+                                                        size: 25,
+                                                        color: Colors.black,
+                                                      ),
                                             ),
-                                            const SizedBox(
-                                              height: 20,
-                                              child: VerticalDivider(),
-                                            ),
-                                            CustomTextfield.textWithImage(
-                                              colors: AppColors.commonBlack,
-                                              fontWeight: FontWeight.w500,
-                                              fontSize: 12,
-                                              text: 'Share Trip Status',
-                                              imagePath: AppImages.share,
+                                            const SizedBox(width: 15),
+                                            CustomTextfield.textWithStyles600(
+                                              CUSTOMERNAME,
+                                              fontSize: 20,
                                             ),
                                           ],
                                         ),
                                       ),
                                     ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 5,
+                                        horizontal: 15,
+                                      ),
+                                      child: Divider(
+                                        color: AppColors.dividerColor1,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 15),
+                                  ],
+                                ),
+                              ] else ...[
+                                const SizedBox(height: 10),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Buttons.button(
+                                        buttonColor: AppColors.resendBlue,
+                                        borderRadius: 8,
+                                        onTap: () async {
+                                          final result =
+                                              await driverStatusController
+                                                  .driverArrived(
+                                                    context,
+                                                    bookingId: widget.bookingId,
+                                                  );
+
+                                          if (result != null &&
+                                              result.status == 200) {
+                                            if (!mounted) return;
+                                            setState(() {
+                                              arrivedAtPickup = false;
+                                              _seconds = 300;
+                                            });
+                                            _startTimer();
+                                          } else {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  result?.message ??
+                                                      "Something went wrong",
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        },
+                                        text:
+                                            driverStatusController
+                                                    .arrivedIsLoading
+                                                    .value
+                                                ? SizedBox(
+                                                  height: 20,
+                                                  width: 20,
+                                                  child:
+                                                      AppLoader.circularLoader(),
+                                                )
+                                                : const Text(
+                                                  'Arrived at Pickup Point',
+                                                ),
+                                      ),
+                                      const SizedBox(height: 20),
+                                      GestureDetector(
+                                        onTap: () {},
+                                        child: Row(
+                                          children: [
+                                            Padding(
+                                              padding: const EdgeInsets.all(5),
+                                              child: ClipOval(
+                                                child: CachedNetworkImage(
+                                                  imageUrl: cutomerProfile,
+                                                  height: 45,
+                                                  width: 45,
+                                                  fit: BoxFit.cover,
+                                                  placeholder:
+                                                      (
+                                                        context,
+                                                        url,
+                                                      ) => const SizedBox(
+                                                        height: 40,
+                                                        width: 40,
+                                                        child:
+                                                            CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                            ),
+                                                      ),
+                                                  errorWidget:
+                                                      (context, url, error) =>
+                                                          const Icon(
+                                                            Icons.person,
+                                                            size: 30,
+                                                            color: Colors.black,
+                                                          ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            CustomTextfield.textWithStyles600(
+                                              CUSTOMERNAME,
+                                              fontSize: 20,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 15),
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          color: AppColors.containerColor1,
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 30,
+                                            vertical: 10,
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              CustomTextfield.textWithImage(
+                                                colors: AppColors.commonBlack,
+                                                fontWeight: FontWeight.w500,
+                                                fontSize: 12,
+                                                text: 'Get Help',
+                                                imagePath: AppImages.getHelp,
+                                              ),
+                                              const SizedBox(
+                                                height: 20,
+                                                child: VerticalDivider(),
+                                              ),
+                                              CustomTextfield.textWithImage(
+                                                colors: AppColors.commonBlack,
+                                                fontWeight: FontWeight.w500,
+                                                fontSize: 12,
+                                                text: 'Share Trip Status',
+                                                imagePath: AppImages.share,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 20),
+                                    ],
+                                  ),
+                                ),
+                              ],
+
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 15,
+                                      ),
+                                      child: CustomTextfield.textWithStyles600(
+                                        'Ride Details',
+                                        fontSize: 16,
+                                      ),
+                                    ),
                                     const SizedBox(height: 20),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(
+                                              40,
+                                            ),
+                                            color: AppColors.commonBlack
+                                                .withOpacity(0.1),
+                                          ),
+                                          child: const Padding(
+                                            padding: EdgeInsets.all(4),
+                                            child: Icon(
+                                              Icons.circle,
+                                              color: Colors.black,
+                                              size: 10,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 20),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              CustomTextfield.textWithStyles600(
+                                                'Pickup',
+                                                fontSize: 16,
+                                              ),
+                                              CustomTextfield.textWithStylesSmall(
+                                                colors: AppColors.textColorGrey,
+                                                maxLine: 2,
+                                                widget.pickupLocationAddress ??
+                                                    '',
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 20),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(
+                                              40,
+                                            ),
+                                            color: AppColors.commonBlack
+                                                .withOpacity(0.1),
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(4),
+                                            child: Icon(
+                                              Icons.circle,
+                                              color: AppColors.grey,
+                                              size: 10,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 20),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              CustomTextfield.textWithStyles600(
+                                                'Drop off - Constitution Ave',
+                                                fontSize: 16,
+                                              ),
+                                              CustomTextfield.textWithStylesSmall(
+                                                widget.dropLocationAddress ??
+                                                    '',
+                                                colors: AppColors.textColorGrey,
+                                                maxLine: 2,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 20),
+                                    Buttons.button(
+                                      borderColor: AppColors.buttonBorder,
+                                      buttonColor: AppColors.commonWhite,
+                                      borderRadius: 8,
+                                      textColor: AppColors.commonBlack,
+                                      onTap:
+                                          () => Buttons.showDialogBox(
+                                            context: context,
+                                          ),
+                                      text: const Text('Stop New Ride Request'),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Buttons.button(
+                                      borderRadius: 8,
+                                      buttonColor: AppColors.red,
+                                      onTap: () {
+                                        Buttons.showCancelRideBottomSheet(
+                                          context,
+                                          onConfirmCancel: (reason) {
+                                            driverStatusController
+                                                .cancelBooking(
+                                                  bookingId: widget.bookingId,
+                                                  context,
+                                                  reason: reason,
+                                                );
+                                          },
+                                        );
+                                      },
+                                      text: const Text('Cancel this Ride'),
+                                    ),
+                                    const SizedBox(height: 15),
                                   ],
                                 ),
                               ),
                             ],
-
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 15,
-                                    ),
-                                    child: CustomTextfield.textWithStyles600(
-                                      'Ride Details',
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 20),
-                                  Row(
-                                    children: [
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            40,
-                                          ),
-                                          color: AppColors.commonBlack
-                                              .withOpacity(0.1),
-                                        ),
-                                        child: const Padding(
-                                          padding: EdgeInsets.all(4),
-                                          child: Icon(
-                                            Icons.circle,
-                                            color: Colors.black,
-                                            size: 10,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 20),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            CustomTextfield.textWithStyles600(
-                                              'Pickup',
-                                              fontSize: 16,
-                                            ),
-                                            CustomTextfield.textWithStylesSmall(
-                                              colors: AppColors.textColorGrey,
-                                              maxLine: 2,
-                                              widget.pickupLocationAddress ??
-                                                  '',
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 20),
-                                  Row(
-                                    children: [
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            40,
-                                          ),
-                                          color: AppColors.commonBlack
-                                              .withOpacity(0.1),
-                                        ),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(4),
-                                          child: Icon(
-                                            Icons.circle,
-                                            color: AppColors.grey,
-                                            size: 10,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 20),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            CustomTextfield.textWithStyles600(
-                                              'Drop off - Constitution Ave',
-                                              fontSize: 16,
-                                            ),
-                                            CustomTextfield.textWithStylesSmall(
-                                              widget.dropLocationAddress ?? '',
-                                              colors: AppColors.textColorGrey,
-                                              maxLine: 2,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 20),
-                                  Buttons.button(
-                                    borderColor: AppColors.buttonBorder,
-                                    buttonColor: AppColors.commonWhite,
-                                    borderRadius: 8,
-                                    textColor: AppColors.commonBlack,
-                                    onTap:
-                                        () => Buttons.showDialogBox(
-                                          context: context,
-                                        ),
-                                    text: const Text('Stop New Ride Request'),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Buttons.button(
-                                    borderRadius: 8,
-                                    buttonColor: AppColors.red,
-                                    onTap: () {
-                                      Buttons.showCancelRideBottomSheet(
-                                        context,
-                                        onConfirmCancel: (reason) {
-                                          driverStatusController.cancelBooking(
-                                            bookingId: widget.bookingId,
-                                            context,
-                                            reason: reason,
-                                          );
-                                        },
-                                      );
-                                    },
-                                    text: const Text('Cancel this Ride'),
-                                  ),
-                                  const SizedBox(height: 15),
-                                ],
-                              ),
-                            ),
                           ],
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                        ),
+                      );
+                    },
+                  ),
 
-                if (!arrivedAtPickup)
-                  Positioned(
-                    bottom: showRedTimer ? 285 : 240,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 22,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(30),
-                          border: Border.all(
-                            color:
-                                showRedTimer
-                                    ? AppColors.timerBorderColor
-                                    : AppColors.commonBlack.withOpacity(0.2),
-                            width: 6,
+                  if (!arrivedAtPickup)
+                    Positioned(
+                      bottom: showRedTimer ? 285 : 240,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 22,
+                            vertical: 7,
                           ),
-                        ),
-                        child: Text(
-                          timerText,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.5,
-                            color:
-                                showRedTimer
-                                    ? AppColors.timerBorderColor
-                                    : AppColors.commonBlack,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(30),
+                            border: Border.all(
+                              color:
+                                  showRedTimer
+                                      ? AppColors.timerBorderColor
+                                      : AppColors.commonBlack.withOpacity(0.2),
+                              width: 6,
+                            ),
+                          ),
+                          child: Text(
+                            timerText,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.5,
+                              color:
+                                  showRedTimer
+                                      ? AppColors.timerBorderColor
+                                      : AppColors.commonBlack,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

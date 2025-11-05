@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "399977568127",
-    "project_id": "hopper-64620",
-    "storage_bucket": "hopper-64620.firebasestorage.app"
+    "project_number": "900790291893",
+    "project_id": "hoppr-driver",
+    "storage_bucket": "hoppr-driver.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:399977568127:android:dbf272ed5417e43aeb6c4a",
+        "mobilesdk_app_id": "1:900790291893:android:2f26e9cb8f9733d854ddfc",
         "android_client_info": {
           "package_name": "com.hopper.hopper"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBf0JJKLFuTbCk8qMdjwdbn51FCl0fdg2k"
+          "current_key": "AIzaSyDXo06xbSM5A3PAShD_3Rgkr9GUX4dtetg"
         }
       ],
       "services": {

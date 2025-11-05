@@ -29,7 +29,8 @@ class DriverStatusController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
   final tripDistanceInMeters = 0.0.obs;
   final tripDurationInMin = 0.obs;
-
+  final RxString paymentType = ''.obs;
+  final RxString paymentStatus = ''.obs;
   final pickupDurationInMin = 0.0.obs;
   final pickupDistanceInMeters = 0.0.obs;
 
@@ -189,9 +190,11 @@ class DriverStatusController extends GetxController {
           CommonLogger.log.i(response.message);
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => CashCollectedScreen(
-              Amount: Amount,
-            )),
+            MaterialPageRoute(
+              builder:
+                  (context) =>
+                      CashCollectedScreen(Amount: Amount, bookingId: bookingId),
+            ),
           );
 
           resultMessage = response.message;
@@ -321,7 +324,6 @@ class DriverStatusController extends GetxController {
         latitude: latitude,
         longitude: longitude,
         onlineStatus: status,
-
       );
       results.fold(
         (failure) {
@@ -398,10 +400,10 @@ class DriverStatusController extends GetxController {
         },
       );
     } catch (e) {
-      return ;
+      return;
     }
 
-    return ;
+    return;
   }
 
   Future<String?> todayPackageActivity() async {
@@ -486,6 +488,83 @@ class DriverStatusController extends GetxController {
         },
       );
     } catch (e) {
+      CommonLogger.log.i(e);
+    }
+  }
+
+  Future<void> getAmountStatus({required String bookingId}) async {
+    try {
+      final results = await apiDataSource.getAmountStatus(bookingId: bookingId);
+
+      results.fold(
+            (failure) {
+          CommonLogger.log.e("failure: ${failure.message}");
+        },
+            (response) {
+          CommonLogger.log.i("Response: ${response.data}");
+          paymentType.value = response.data.paymentType;
+          paymentStatus.value = response.data.paymentStatus;
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.i(e);
+    }
+  }
+  Future<void> amountCollectedStatus({
+    required String booking,
+    VoidCallback? onSuccess, // callback for UI
+  }) async {
+    isLoading.value = true;
+    try {
+      final results = await apiDataSource.amountCollectedStatus(bookingId: booking);
+
+      results.fold(
+            (failure) {
+          isLoading.value = false;
+          CommonLogger.log.e("failure: ${failure.message}");
+        },
+            (response) {
+          isLoading.value = false;
+          CommonLogger.log.i(response.toJson());
+
+          // ✅ Trigger callback if success
+          if (response. status  == 200) {
+            if (onSuccess != null) onSuccess();
+          }
+        },
+      );
+    } catch (e) {
+      isLoading.value = false;
+      CommonLogger.log.i(e);
+    }
+  }
+
+  Future<void> driverRatingToCustomer({required String bookingId,required int rating,required BuildContext context}) async {
+    isLoading.value = true;
+    try {
+      final results = await apiDataSource.driverRating(bookingId: bookingId,rating: rating);
+
+      results.fold(
+        (failure) {
+          isLoading.value = false;
+          // CustomSnackBar.showError(failure.message);
+          CommonLogger.log.e("failure: ${failure.message}");
+
+          return '';
+        },
+        (response) {
+          isLoading.value = false;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => DriverMainScreen(),
+            ),
+          );
+          CommonLogger.log.i(response.toJson());
+        },
+      );
+    } catch (e) {
+      isLoading.value = false;
       CommonLogger.log.i(e);
     }
   }

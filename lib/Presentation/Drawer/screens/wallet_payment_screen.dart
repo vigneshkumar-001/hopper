@@ -19,21 +19,13 @@ import 'package:get/get.dart';
 
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Utility/images.dart';
+import '../../../Core/Utility/snackbar.dart';
+import '../../../payment_web_view.dart';
 
 class WalletPaymentScreens extends StatefulWidget {
-  final String? clientSecret;
-  final String? transactionId;
-  final String? publishableKey;
   final int? amount;
 
-  const WalletPaymentScreens({
-    super.key,
-
-    this.amount,
-    required this.publishableKey,
-    required this.transactionId,
-    required this.clientSecret,
-  });
+  const WalletPaymentScreens({super.key, this.amount});
 
   @override
   State<WalletPaymentScreens> createState() => _WalletPaymentScreensState();
@@ -43,264 +35,11 @@ class _WalletPaymentScreensState extends State<WalletPaymentScreens> {
   final RideHistoryController Controller = Get.put(RideHistoryController());
 
   bool _isLoading = false;
+  bool payStackLoading = false;
+  bool flutterWaveLoading = false;
   bool payPalLoading = false;
-  void _showRatingBottomSheet(BuildContext context) {
-    int selectedRating = 0;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      // shape: const RoundedRectangleBorder(
-      //   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      // ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return SingleChildScrollView(
-              child: Column(
-                children: [
-                  const SizedBox(height: 20),
-                  Center(
-                    child: Container(
-                      width: 60,
-                      height: 5,
-
-                      decoration: BoxDecoration(
-                        color: Colors.grey[400],
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 50),
-                    child: Column(
-                      children: [
-                        Image.asset(AppImages.dummy, height: 65, width: 65),
-                        const SizedBox(height: 20),
-                        CustomTextfield.textWithStyles600(
-                          textAlign: TextAlign.center,
-                          fontSize: 20,
-                          'Rate your Experience with Rebecca?',
-                        ),
-                        const SizedBox(height: 25),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 40),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: List.generate(5, (index) {
-                              return GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    selectedRating = index + 1;
-                                  });
-                                  CommonLogger.log.i(selectedRating);
-                                },
-                                child: Image.asset(
-                                  index < selectedRating
-                                      ? AppImages.starFill
-                                      : AppImages.star1,
-                                  height: 48,
-                                  width: 48,
-                                  color:
-                                      index < selectedRating
-                                          ? AppColors.commonBlack
-                                          : AppColors.buttonBorder,
-                                ),
-                              );
-                              return IconButton(
-                                icon: Icon(
-                                  Icons.star,
-                                  size: 45,
-                                  color:
-                                      index < selectedRating
-                                          ? AppColors.commonBlack
-                                          : AppColors.containerColor,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    selectedRating = index + 1;
-                                  });
-                                },
-                              );
-                            }),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Buttons.button1(
-                                  borderRadius: 8,
-                                  textColor: AppColors.commonBlack,
-                                  borderColor: AppColors.buttonBorder,
-                                  buttonColor: AppColors.commonWhite,
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                  },
-                                  text: Text('Close'),
-                                ),
-                              ),
-                              SizedBox(width: 10),
-                              Expanded(
-                                child: Buttons.button1(
-                                  borderRadius: 8,
-                                  buttonColor: AppColors.commonBlack,
-                                  onTap: () {
-                                    // final String bookingId =
-                                    //     widget.bookingId ?? '';
-                                    // selectedRating;
-                                    // AppLogger.log.i(selectedRating);
-                                    // driverSearchController.rateDriver(
-                                    //   bookingId: bookingId,
-                                    //   rating: selectedRating.toString(),
-                                    //   context: context,
-                                    // );
-                                  },
-                                  text: Text('Rate Ride'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
 
   Map<String, dynamic>? paymentIntentData;
-
-  /*Future<void> makePayment() async {
-    try {
-      paymentIntentData = await createPaymentIntent('1000') ?? {};
-
-      await Stripe.instance.initPaymentSheet(
-        paymentSheetParameters: SetupPaymentSheetParameters(
-          paymentIntentClientSecret: paymentIntentData!['clientSecret'],
-          style: ThemeMode.light,
-          customFlow: false,
-
-          merchantDisplayName: 'Hoppr',
-        ),
-      );
-
-      displayPaymentSheet();
-    } catch (e) {
-      AppLogger.log.i('Exception: $e');
-    }
-  }*/
-
-  Future<void> initStripe() async {
-     Stripe.publishableKey = widget.publishableKey ?? "";
-
-     // Initialize payment sheet
-     await Stripe.instance.initPaymentSheet(
-       paymentSheetParameters: SetupPaymentSheetParameters(
-         paymentIntentClientSecret: widget.clientSecret!, // ✅ Direct from API
-         merchantDisplayName: "Hoppr",
-         style: ThemeMode.light,
-       ),
-     );
-  }
-
-  Future<void> makePayment() async {
-  try {
-    await Stripe.instance.presentPaymentSheet();
-
-    // confirm payment to your backend
-    await confirmPayment(widget.transactionId ?? "");
-
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await Controller.customerWalletHistory();
-
-      CommonLogger.log.i("✅ Payment successful");
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Payment Successful")));
-
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => WalletScreen()),
-        (route) => false,
-      );
-    });
-  } catch (e) {
-    CommonLogger.log.e("❌ Stripe error: $e");
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text("Payment Failed")));
-  }
-  }
-
-  Future<void> confirmPayment(String transactionId) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
-      final String url = ApiConstents.addToWalletResponse;
-
-      // Extract the PaymentIntent ID (remove the _secret part)
-      final clientSecret = widget.clientSecret ?? "";
-      final paymentIntentId =
-          clientSecret.contains("_secret")
-              ? clientSecret.split("_secret").first
-              : clientSecret;
-
-      final response = await http.post(
-        Uri.parse(url),
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer $token",
-        },
-        body: jsonEncode({
-          "transactionId": transactionId,
-          "paymentIntentId": paymentIntentId,
-        }),
-      );
-
-      CommonLogger.log.i(
-        "📩 Confirm Payment API response: ${response.statusCode}",
-      );
-      CommonLogger.log.i("📩 Response body: ${response.body}");
-    } catch (e) {
-      CommonLogger.log.e("❌ Error in confirmPayment: $e");
-    }
-  }
-
-  /*  Future<void> makePayment() async {
-    try {
-      final result = await createPaymentIntent('1500000');
-
-      if (result == null || !result.containsKey('clientSecret')) {
-        AppLogger.log.e("❌ Payment Intent is null or missing 'clientSecret'");
-        return;
-      }
-
-      paymentIntentData = result;
-
-      await Stripe.instance.initPaymentSheet(
-        paymentSheetParameters: SetupPaymentSheetParameters(
-          paymentIntentClientSecret: paymentIntentData!['clientSecret'],
-          style: ThemeMode.light,
-          customFlow: false,
-          merchantDisplayName: 'Hoppr',
-        ),
-      );
-
-      displayPaymentSheet();
-    } catch (e) {
-      AppLogger.log.e('💡 Exception in makePayment: $e');
-    }
-  }*/
 
   Future<void> payPall() async {
     // Navigator.push(
@@ -315,112 +54,471 @@ class _WalletPaymentScreensState extends State<WalletPaymentScreens> {
     // );
   }
 
-  // displayPaymentSheet() async {
-  //   try {
-  //     await Stripe.instance.presentPaymentSheet();
-  //
-  //     ScaffoldMessenger.of(
-  //       context,
-  //     ).showSnackBar(SnackBar(content: Text("Payment successful")));
-  //   } catch (e) {
-  //     AppLogger.log.i('Error: $e');
-  //   }
-  // }
-  /*  displayPaymentSheet() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('token');
+  Future<void> makePayment() async {
+    try {
+      // 1️⃣ Create Payment Intent
+      paymentIntentData = await createPaymentIntent(widget.amount) ?? {};
+
+      final publishableKey = paymentIntentData!['publishableKey'];
+      final clientSecret = paymentIntentData!['clientSecret'];
+
+      if (publishableKey == null || clientSecret == null) {
+        CommonLogger.log.e("❌ Missing publishableKey or clientSecret");
+        return;
+      }
+
+      // 2️⃣ Set the publishable key
+      Stripe.publishableKey = publishableKey;
+      await Stripe.instance.applySettings();
+
+      // 3️⃣ Initialize the payment sheet
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'Hoppr',
+          style: ThemeMode.light,
+          allowsDelayedPaymentMethods: false,
+        ),
+      );
+
+      CommonLogger.log.i("✅ Payment sheet initialized successfully");
+
+      // 4️⃣ Present the payment sheet (only once!)
+      await Stripe.instance.presentPaymentSheet();
+      CommonLogger.log.i("✅ Payment sheet presented successfully");
+
+      // 5️⃣ Confirm payment on backend
+      await confirmPaymentBackend();
+    } catch (e, s) {
+      CommonLogger.log.e('❌ Stripe makePayment error: $e');
+      CommonLogger.log.e('Stack trace: $s');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Payment failed: $e")));
+    }
+  }
+
+  // ✅ Backend confirmation only — no presentPaymentSheet here
+  Future<void> confirmPaymentBackend() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
 
     if (token == null) {
-      AppLogger.log.i('⚠️ Token not found in shared preferences');
+      CommonLogger.log.e('⚠️ Token not found');
       return;
     }
 
     try {
-      final String transactionId = widget.transactionId ?? '';
-      await Stripe.instance.presentPaymentSheet();
+      final transactionId = paymentIntentData?['transactionId'];
+      final clientSecret = paymentIntentData?['clientSecret'];
+      final paymentIntentId = clientSecret?.split('_secret').first;
 
-      String? clientSecret = paymentIntentData?['clientSecret'];
-
-      // if (clientSecret != null && clientSecret.contains('_secret')) {
-      //   transactionId = clientSecret.split('_secret').first;
-      // }
-
-      if (transactionId != null) {
-        final String url =  ApiConsents.addToWalletResponse;
-        final response = await http.post(
-          Uri.parse(
-            url,
-          ),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode({
-            "transactionId": transactionId,
-            "paymentIntentId": transactionId,
-          }),
-        );
-
-        AppLogger.log.i('Confirm Payment Response: ${response.body}');
-        if (response.statusCode == 200) {
-          _showRatingBottomSheet(context);
-          AppLogger.log.i('✅ Payment response confirmed successfully');
-        } else {
-          AppLogger.log.i('❌ Failed to confirm payment response');
-        }
+      if (transactionId == null || paymentIntentId == null) {
+        CommonLogger.log.e('❌ Missing transactionId or paymentIntentId');
+        return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Payment successful\nTransaction ID: $transactionId"),
-        ),
-      );
-
-      AppLogger.log.i('✅ Payment successful. Transaction ID: $transactionId');
-    } catch (e) {
-      AppLogger.log.i('❌ Error during payment sheet presentation: $e');
-    }
-  }*/
-
-  /*  createPaymentIntent(String amount) async {
-    try {
-      final String transactionId = widget.transactionId ?? '';
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      String? token = prefs.getString('token');
-
-      String url = ApiConsents.addToWalletResponse;
+      final body = jsonEncode({
+        "transactionId": transactionId,
+        "paymentIntentId": paymentIntentId,
+      });
 
       final response = await http.post(
-        Uri.parse(url),
-
+        Uri.parse(ApiConstents.addToWalletResponse),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: jsonEncode({
-          'transactionId': transactionId,
-          'paymentIntentId': widget.clientSecret,
-        }),
+        body: body,
       );
 
-      AppLogger.log.i('Status code: ${response.statusCode}');
-      AppLogger.log.i('Response body: ${response.body}');
+      CommonLogger.log.i('Confirm Payment Response: ${response.body}');
+
+      if (response.statusCode == 200) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => WalletScreen()),
+            (route) => false,
+          );
+          await Controller.customerWalletHistory();
+
+          CommonLogger.log.i("✅ Payment successful");
+
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text("Payment Successful")));
+        });
+      } else {
+        CommonLogger.log.e('❌ Failed to confirm payment: ${response.body}');
+      }
+    } catch (e, s) {
+      CommonLogger.log.e('❌ Error confirming payment: $e');
+      CommonLogger.log.e('Stack: $s');
+    }
+  }
+
+  Future<Map<String, dynamic>?> createPaymentIntent(int? amount) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        CommonLogger.log.e('⚠️ Token not found');
+        return null;
+      }
+
+      final response = await http.post(
+        Uri.parse(ApiConstents.addToWallet),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'amount': amount, 'method': "STRIPE"}),
+      );
+
+      CommonLogger.log.i('Status code: ${response.statusCode}');
+      CommonLogger.log.i('Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-        AppLogger.log.i('Decoded payment intent response: $decoded');
+        CommonLogger.log.i('Decoded payment intent response: $decoded');
         return decoded;
       } else {
         throw Exception('Failed to create payment intent');
       }
     } catch (err) {
-      AppLogger.log.i('err charging user: $err');
+      CommonLogger.log.e('err charging user: $err');
+      return null;
     }
-  }*/
+  }
+
+  Future<void> payWithFlutterWave() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    String? email = prefs.getString('flutterwave_email');
+    String? name = prefs.getString('flutterwave_name');
+    String? phone = prefs.getString('flutterwave_phone');
+
+    // If any field is empty, show bottom sheet to enter info
+    if (email == null ||
+        email.isNotEmpty ||
+        name == null ||
+        name.isEmpty ||
+        phone == null ||
+        phone.isEmpty) {
+      final result = await _showUserInfoBottomSheet(
+        context,
+        email,
+        name,
+        phone,
+      );
+
+      // If user canceled bottom sheet, stop
+      if (result != true) return;
+
+      // After saving, read values again
+      email = prefs.getString('flutterwave_email');
+      name = prefs.getString('flutterwave_name');
+      phone = prefs.getString('flutterwave_phone');
+    }
+
+    setState(() => flutterWaveLoading = true);
+
+    try {
+      String? token = prefs.getString('token');
+      final response = await http.post(
+        Uri.parse(
+          'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api/users/flutterwave/wallet/initialize',
+        ),
+        headers: {
+          "Content-Type": "application/json",
+          if (token != null)
+            "Authorization": "Bearer $token", // ✅ Add Bearer token
+        },
+        body: jsonEncode({
+          "amount": widget.amount.toString(),
+          "email": email,
+          "name": name,
+          "phone": phone,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        final paymentLink = data['paymentLink'];
+
+        if (paymentLink != null) {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PaymentWebView(url: paymentLink, page: 'wallet'),
+            ),
+          );
+
+          if (result != null && result["status"] == "success") {
+            await Controller.customerWalletHistory();
+            CustomSnackBar.showSuccess('Payment Successful');
+            CommonLogger.log.i(
+              "Payment Successful: ${result["transactionId"]}",
+            );
+
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => WalletScreen()),
+              (route) => false,
+            );
+          } else {
+            CustomSnackBar.showError("Payment failed or cancelled");
+          }
+        } else {
+          final errorMsg = data['message'] ?? "Failed to initialize payment";
+          CustomSnackBar.showError(errorMsg);
+        }
+      } else {
+        final errorMsg = data['message'] ?? "Failed to initialize payment";
+        CustomSnackBar.showError(errorMsg);
+        CommonLogger.log.e(
+          'Failed to initialize Flutterwave payment: ${response.body}',
+        );
+      }
+    } catch (e) {
+      CustomSnackBar.showError(e.toString());
+      CommonLogger.log.e("Error during Flutterwave payment: $e");
+    } finally {
+      setState(() => flutterWaveLoading = false);
+    }
+  }
+
+  Future<bool?> _showUserInfoBottomSheet(
+    BuildContext context,
+    String? email,
+    String? name,
+    String? phone,
+  ) {
+    final _emailController = TextEditingController(text: email);
+    final _nameController = TextEditingController(text: name);
+    final _phoneController = TextEditingController(text: phone);
+
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent, // Transparent to get rounded corners
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 10,
+                  offset: Offset(0, -4),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 50,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                SizedBox(height: 15),
+                Text(
+                  "Enter Payment Info",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                SizedBox(height: 25),
+                _buildTextField(
+                  _emailController,
+                  "Email",
+                  Icons.email,
+                  TextInputType.emailAddress,
+                ),
+                SizedBox(height: 15),
+                _buildTextField(
+                  _nameController,
+                  "Name",
+                  Icons.person,
+                  TextInputType.name,
+                ),
+                SizedBox(height: 15),
+                _buildTextField(
+                  _phoneController,
+                  "Phone",
+                  Icons.phone,
+                  TextInputType.phone,
+                ),
+                SizedBox(height: 25),
+                Buttons.button(
+                  buttonColor: AppColors.commonBlack,
+                  onTap: () async {
+                    if (_emailController.text.isEmpty ||
+                        _nameController.text.isEmpty ||
+                        _phoneController.text.isEmpty) {
+                      CustomSnackBar.showError("All fields are required");
+                      return;
+                    }
+
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setString(
+                      'flutterwave_email',
+                      _emailController.text,
+                    );
+                    await prefs.setString(
+                      'flutterwave_name',
+                      _nameController.text,
+                    );
+                    await prefs.setString(
+                      'flutterwave_phone',
+                      _phoneController.text,
+                    );
+
+                    Navigator.pop(context, true);
+                  },
+                  text: Text('Save & Continue'),
+                ),
+
+                SizedBox(height: 20),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label,
+    IconData icon,
+    TextInputType type,
+  ) {
+    return TextField(
+      controller: controller,
+      keyboardType: type,
+      decoration: InputDecoration(
+        prefixIcon: Icon(icon, color: AppColors.commonBlack),
+        labelText: label,
+        labelStyle: TextStyle(color: Colors.grey[700]),
+        filled: true,
+        fillColor: Colors.grey[100],
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+      ),
+    );
+  }
+
+  Future<void> payWithPayStack() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    String? email = prefs.getString('flutterwave_email');
+    String? name = prefs.getString('flutterwave_name');
+    String? phone = prefs.getString('flutterwave_phone');
+
+    if (email == null ||
+        email.isNotEmpty ||
+        name == null ||
+        name.isEmpty ||
+        phone == null ||
+        phone.isEmpty) {
+      final result = await _showUserInfoBottomSheet(
+        context,
+        email,
+        name,
+        phone,
+      );
+
+      if (result != true) return;
+
+      email = prefs.getString('flutterwave_email');
+      name = prefs.getString('flutterwave_name');
+      phone = prefs.getString('flutterwave_phone');
+    }
+
+    setState(() => payStackLoading = true);
+
+    try {
+      String? token = prefs.getString('token');
+      final response = await http.post(
+        Uri.parse(
+          'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api/users/paystack/wallet/initialize',
+        ),
+        headers: {
+          "Content-Type": "application/json",
+          if (token != null) "Authorization": "Bearer $token",
+        },
+        body: jsonEncode({"amount": widget.amount, "email": email}),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        final paymentLink = data['paymentLink'];
+
+        if (paymentLink != null) {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => PaymentWebView(url: paymentLink)),
+          );
+
+          if (result != null && result["status"] == "success") {
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              // await Controller.getWalletBalance();
+
+              CommonLogger.log.i("✅ Payment successful");
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text("Payment Successful")));
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => WalletScreen()),
+                (route) => false,
+              );
+            });
+          } else {
+            CustomSnackBar.showError("Payment failed or cancelled");
+          }
+        } else {
+          final errorMsg = data['message'] ?? "Failed to initialize payment";
+          CustomSnackBar.showError(errorMsg);
+        }
+      } else {
+        final errorMsg = data['message'] ?? "Failed to initialize payment";
+        CustomSnackBar.showError(errorMsg);
+        CommonLogger.log.e(
+          'Failed to initialize Flutterwave payment: ${response.body}',
+        );
+      }
+    } catch (e) {
+      CustomSnackBar.showError(e.toString());
+      CommonLogger.log.e("Error during Flutterwave payment: $e");
+    } finally {
+      setState(() => payStackLoading = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    initStripe();
   }
 
   String? selectedPaymentMethod;
@@ -535,78 +633,158 @@ class _WalletPaymentScreensState extends State<WalletPaymentScreens> {
                         ),
                       ),
 
-                      Container(
-                        height: 50,
-                        width: 170,
-                        padding: EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.containerColor1,
-                          border: Border.all(color: AppColors.containerColor),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          children: [
-                            Image.asset(
-                              AppImages.applePay,
-                              height: 24,
-                              width: 40,
-                            ),
-                            SizedBox(width: 10),
-                            CustomTextfield.textWithStylesSmall(
-                              'Apple Pay',
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              colors: AppColors.commonBlack,
-                            ),
-                          ],
+                      InkWell(
+                        onTap:
+                            flutterWaveLoading
+                                ? null
+                                : () async {
+                                  setState(() {
+                                    flutterWaveLoading = true;
+                                  });
+
+                                  await payWithFlutterWave();
+
+                                  setState(() {
+                                    flutterWaveLoading = false;
+                                  });
+                                },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          height: 50,
+                          width: 170,
+                          padding: EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.commonWhite,
+                            border: Border.all(color: AppColors.containerColor),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Center(
+                            child:
+                                flutterWaveLoading
+                                    ? const SizedBox(
+                                      height: 24,
+                                      width: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color:
+                                            Colors
+                                                .black, // you can change to AppColors.commonBlack
+                                      ),
+                                    )
+                                    : Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Image.asset(
+                                          AppImages.flutter_wave,
+                                          height: 24,
+                                          width: 40,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        CustomTextfield.textWithStylesSmall(
+                                          'Flutter wave',
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                          colors: AppColors.commonBlack,
+                                        ),
+                                      ],
+                                    ),
+                          ),
                         ),
                       ),
                     ],
                   ),
                   SizedBox(height: 15),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(30),
-                    onTap:
-                        _isLoading
-                            ? null
-                            : () async {
-                              setState(() {
-                                selectedPaymentMethod = "Stripe";
-                                _isLoading = true;
-                              });
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      InkWell(
+                        borderRadius: BorderRadius.circular(30),
+                        onTap:
+                            _isLoading
+                                ? null
+                                : () async {
+                                  setState(() {
+                                    selectedPaymentMethod = "Stripe";
+                                    _isLoading = true;
+                                  });
 
-                              await makePayment();
+                                  await makePayment();
 
-                              setState(() {
-                                _isLoading = false;
-                              });
-                            },
-                    child: Container(
-                      height: 50,
-                      width: 170,
-                      padding: EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.commonWhite,
-                        border: Border.all(color: AppColors.containerColor),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child:
-                          _isLoading
-                              ? Center(child: AppLoader.circularLoader())
-                              : Row(
-                                children: [
-                                  Image.asset(AppImages.stripe),
-                                  SizedBox(width: 10),
-                                  CustomTextfield.textWithStylesSmall(
-                                    'Stripe',
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                    colors: AppColors.commonBlack,
+                                  setState(() {
+                                    _isLoading = false;
+                                  });
+                                },
+                        child: Container(
+                          height: 50,
+                          width: 170,
+                          padding: EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.commonWhite,
+                            border: Border.all(color: AppColors.containerColor),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child:
+                              _isLoading
+                                  ? Center(child: AppLoader.circularLoader())
+                                  : Row(
+                                    children: [
+                                      Image.asset(AppImages.stripe),
+                                      SizedBox(width: 10),
+                                      CustomTextfield.textWithStylesSmall(
+                                        'Stripe',
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                        colors: AppColors.commonBlack,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                    ),
+                        ),
+                      ),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(30),
+                        onTap:
+                            payStackLoading
+                                ? null
+                                : () async {
+                                  setState(() {
+                                    payStackLoading = true;
+                                    // selectedIndex = 4;
+                                  });
+                                  await payWithPayStack();
+                                  setState(() {
+                                    payStackLoading = false;
+                                  });
+                                },
+                        child: Container(
+                          height: 50,
+                          width: 170,
+                          padding: EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.commonWhite,
+                            border: Border.all(color: AppColors.containerColor),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child:
+                              payStackLoading
+                                  ? Center(child: AppLoader.circularLoader())
+                                  : Row(
+                                    children: [
+                                      Image.asset(AppImages.payStack),
+                                      SizedBox(width: 10),
+                                      CustomTextfield.textWithStylesSmall(
+                                        'paystack',
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                        colors: AppColors.commonBlack,
+                                      ),
+                                    ],
+                                  ),
+                        ),
+                      ),
+                    ],
                   ),
+
                   SizedBox(height: 15),
 
                   CustomTextfield.textWithStyles700('Card', fontSize: 16),

@@ -6,6 +6,7 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
 
 import 'package:get/get.dart';
+import 'package:hopper/Presentation/Drawer/screens/wallet_payment_screen.dart';
 
 import '../../../Core/Utility/app_loader.dart';
 import '../controller/ride_history_controller.dart';
@@ -195,11 +196,15 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                                 Get.snackbar("Error", "Invalid amount entered");
                                 return;
                               }
-
-                              walletController.addWallet(
-                                amount: amount,
-                                method: 'STRIPE',
+                              Get.to(
+                                () => WalletPaymentScreens(
+                                  amount: amount.toInt(),
+                                ),
                               );
+                              // walletController.addWallet(
+                              //   amount: amount,
+                              //   method: 'STRIPE',
+                              // );
                             },
 
                     text: Text('Add Money'),

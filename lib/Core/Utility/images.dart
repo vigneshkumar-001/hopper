@@ -47,6 +47,7 @@ class AppImages {
 
   static String lock = "assets/images/lock.png";
   static String parcelBike = "assets/images/parcelBike.png";
+  static String hopprPackage = "assets/images/hopprPackage.png";
   static String search = "assets/images/search.png";
   static String drawer = "assets/images/drawer.png";
   static String offlineCar = "assets/images/offlineCar.png";
@@ -97,4 +98,7 @@ class AppImages {
   static String twoPeople = "assets/images/twoPeople.png";
   static String nPackage = "assets/images/nPackage.png";
   static String nClose = "assets/images/nClose.png";
+
+  static String flutter_wave = "assets/images/flutter_wave.png";
+  static String payStack = "assets/images/payStack.png";
 }
