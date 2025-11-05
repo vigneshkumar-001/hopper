@@ -454,7 +454,7 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                           textColor: AppColors.commonBlack,
 
                           onTap: () {
-                            // signInWithApple();
+                        signInWithApple();
                           },
                           text: Text('Continue with Apple'),
                         ),

@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>900790291893-5ue9to4ci60gehgsqdkpp311qv1q6rte.apps.googleusercontent.com</string>
+	<string>900790291893-59ji57lpjfuvskgiqrg2nqh7b42iekkd.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.900790291893-5ue9to4ci60gehgsqdkpp311qv1q6rte</string>
+	<string>com.googleusercontent.apps.900790291893-59ji57lpjfuvskgiqrg2nqh7b42iekkd</string>
 	<key>ANDROID_CLIENT_ID</key>
 	<string>900790291893-sq38hjhmvps6vooap8j86g4b3l5baaic.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
@@ -15,7 +15,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.hopper.hopper</string>
+	<string>com.hopper.hopperdriver</string>
 	<key>PROJECT_ID</key>
 	<string>hoppr-driver</string>
 	<key>STORAGE_BUCKET</key>
@@ -31,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:900790291893:ios:156d7381be78e41f54ddfc</string>
+	<string>1:900790291893:ios:033a6477761d21af54ddfc</string>
 </dict>
 </plist>
