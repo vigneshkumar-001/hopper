@@ -61,10 +61,10 @@ class _ProfilePicAccessState extends State<ProfilePicAccess> {
               SizedBox(height: 16),
               GestureDetector(
                 onTap: () {
-                   Navigator.push(
-                     context,
-                     MaterialPageRoute(builder: (context) => TakePicture()),
-                   );
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => TakePicture()),
+                  );
                 },
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
