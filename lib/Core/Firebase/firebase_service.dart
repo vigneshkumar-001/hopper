@@ -1,4 +1,3 @@
-
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -8,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Presentation/Authentication/controller/otp_controller.dart';
 
-/// Background message handler (must be top-level)
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
@@ -17,7 +15,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 class FirebaseService {
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-  FlutterLocalNotificationsPlugin();
+      FlutterLocalNotificationsPlugin();
   final OtpController controller = Get.put(OtpController());
 
   final AndroidNotificationChannel channel = const AndroidNotificationChannel(
@@ -30,11 +28,12 @@ class FirebaseService {
   String? _fcmToken;
   String? get fcmToken => _fcmToken;
 
-  /// Initialize Firebase Messaging + Local Notifications
   Future<void> initializeFirebase() async {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -57,7 +56,8 @@ class FirebaseService {
 
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(channel);
 
     await _requestNotificationPermission();
@@ -71,7 +71,9 @@ class FirebaseService {
       sound: true,
     );
 
-    CommonLogger.log.i('🔔 Notification permission: ${settings.authorizationStatus}');
+    CommonLogger.log.i(
+      '🔔 Notification permission: ${settings.authorizationStatus}',
+    );
     if (settings.authorizationStatus != AuthorizationStatus.authorized) {
       CommonLogger.log.w('🚫 User denied notification permission');
       Get.snackbar(
@@ -180,7 +182,6 @@ class FirebaseService {
     }
   }
 }
-
 
 //
 // import 'package:firebase_core/firebase_core.dart';
