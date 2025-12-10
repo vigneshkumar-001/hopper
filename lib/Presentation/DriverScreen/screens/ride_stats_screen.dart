@@ -104,7 +104,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
       curve: Curves.easeInOut,
     );
 
-    // Apply animated changes once per frame during an animation
+
     _markerController.addListener(() {
       if (!mounted ||
           _latTween == null ||
@@ -270,11 +270,11 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     }
   }
 
-  // --- motion thresholds to kill jitter ---
-  static const double _MAX_ACCURACY_M = 20.0; // ignore noisy fixes
+
+  static const double _MAX_ACCURACY_M = 20.0;
   static const double _MIN_MOVE_METERS =
-      3.0; // must move ≥ 3 m to change bearing
-  static const double _MIN_SPEED_MS = 1.0; // ~3.6 km/h
+      3.0;
+  static const double _MIN_SPEED_MS = 1.0;
   static const double _HEADING_TRUST_MS =
       2.0; // use sensor heading only if ≥ 2 m/s
   static const double _MIN_TURN_DEG = 10.0; // ignore tiny turns when slow
@@ -741,7 +741,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                 ),
               ),
 
-              // Direction header
+
               Positioned(
                 top: 45,
                 left: 10,
@@ -1126,7 +1126,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
           buttonColor: AppColors.commonWhite,
           borderRadius: 8,
           textColor: AppColors.commonBlack,
-          onTap: () => Buttons.showDialogBox(context: context),
+          onTap: () => Buttons.showDialogBox(context: context,onConfirmStop: ()async{}),
           text: const Text('Stop New Ride Request'),
         ),
         const SizedBox(height: 10),
@@ -1136,7 +1136,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
           onTap: () {
             Buttons.showCancelRideBottomSheet(
               context,
-              onConfirmCancel: (reason) {
+              onConfirmCancel: (reason) async{
                 driverStatusController.cancelBooking(
                   bookingId: widget.bookingId,
                   context,
@@ -1165,6 +1165,9 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     return h > 0 ? '$h hr $m min' : '$m min';
   }
 }
+
+
+
 
 // import 'dart:async';
 // import 'package:cached_network_image/cached_network_image.dart';

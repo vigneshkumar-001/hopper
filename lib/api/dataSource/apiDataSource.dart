@@ -3,10 +3,12 @@ import 'dart:developer';
 
 import 'dart:io';
 import 'package:hopper/Core/Constants/log.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/models/loginResponse.dart';
 import 'package:hopper/Presentation/Authentication/models/otp_response.dart';
 import 'package:hopper/Presentation/Drawer/model/add_wallet_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/get_driver_status.dart';
+import 'package:hopper/Presentation/DriverScreen/models/stop_request_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/models/baseinfo_response.dart';
@@ -874,8 +876,7 @@ class ApiDataSource extends BaseApiDataSource {
 
   Future<Either<Failure, StateListModels>> getCityList(String state) async {
     try {
-      String url =
-          'https://hoppr-backend-3d2b7f783917.herokuapp.com/api/users/districts?state=$state';
+      String url = ApiConstents.getCityList(state: state);
 
       final response = await Request.sendGetRequest(url, {}, 'GET', true);
 
@@ -900,8 +901,7 @@ class ApiDataSource extends BaseApiDataSource {
     String selectedService,
   ) async {
     try {
-      String url =
-          'https://hoppr-backend-3d2b7f783917.herokuapp.com/api/users/brands?type=$selectedService';
+      String url = ApiConstents.getBrandList(selectedService: selectedService);
 
       final response = await Request.sendGetRequest(url, {}, 'GET', true);
 
@@ -927,8 +927,10 @@ class ApiDataSource extends BaseApiDataSource {
     String selectedService,
   ) async {
     try {
-      String url =
-          'https://hoppr-backend-3d2b7f783917.herokuapp.com/api/users/models/$brand?type=$selectedService';
+      String url = ApiConstents.getModel(
+        brand: brand,
+        selectedService: selectedService,
+      );
 
       final response = await Request.sendGetRequest(url, {}, 'GET', true);
 
@@ -983,8 +985,11 @@ class ApiDataSource extends BaseApiDataSource {
     String selectedService,
   ) async {
     try {
-      String url =
-          'https://hoppr-backend-3d2b7f783917.herokuapp.com/api/users/details/$brand/$model?type=$selectedService';
+      String url = ApiConstents.getYear(
+        brand: brand,
+        selectedService: selectedService,
+        model: model,
+      );
 
       final response = await Request.sendGetRequest(url, {}, 'GET', true);
 
@@ -1007,8 +1012,7 @@ class ApiDataSource extends BaseApiDataSource {
 
   Future<Either<Failure, GuideLinesResponse>> guideLines(String type) async {
     try {
-      String url =
-          'https://hoppr-backend-3d2b7f783917.herokuapp.com/api/users/guidelines/$type';
+      String url = ApiConstents.guideLines(type: type);
 
       final response = await Request.sendGetRequest(url, {}, 'GET', true);
 
@@ -1035,8 +1039,7 @@ class ApiDataSource extends BaseApiDataSource {
   }) async {
     try {
       final driverId = await SharedPrefHelper.getDriverId();
-      String url =
-          'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api/users/driver-response';
+      String url = ApiConstents.driverAccept;
 
       final response = await Request.sendRequest(
         url,
@@ -1374,11 +1377,14 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
-  Future<Either<Failure, RideActivityHistoryResponse>> rideHistory() async {
+  Future<Either<Failure, RideActivityHistoryResponse>> rideHistory({
+    required int page,
+  }) async {
     try {
       String url = ApiConstents.rideHistory;
-
-      final response = await Request.sendGetRequest(url, {}, 'Get', false);
+      final payLoad = {"page": page.toString(), "limit": "10"};
+      CommonLogger.log.i(payLoad);
+      final response = await Request.sendRequest(url, payLoad, 'Post', false);
 
       if (response is Response && response.statusCode == 200) {
         if (response.data != null && response.data is Map<String, dynamic>) {
@@ -1401,11 +1407,13 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
-  Future<Either<Failure, WalletResponse>> customerWalletHistory() async {
+  Future<Either<Failure, WalletResponse>> customerWalletHistory({
+    required int page,
+  }) async {
     try {
       final url = ApiConstents.driverWalletHistory;
-
-      dynamic response = await Request.sendRequest(url, {}, 'GET', false);
+      final payload = {"page": page.toString(), "limit": "10"};
+      dynamic response = await Request.sendRequest(url, payload, 'POST', false);
 
       if (response.statusCode == 200) {
         if (response.data['success'] == true) {
@@ -1463,12 +1471,14 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
-  Future<Either<Failure, NotificationResponse>> getNotification() async {
+  Future<Either<Failure, NotificationResponse>> getNotification({
+    required int page,
+  }) async {
     try {
       final url = ApiConstents.notification;
       CommonLogger.log.i(url);
-
-      dynamic response = await Request.sendGetRequest(url, {}, 'GET', false);
+      final payLoad = {"page": page.toString(), "limit": "10"};
+      dynamic response = await Request.sendRequest(url, payLoad, 'POST', false);
 
       if (response.statusCode == 200) {
         if (response.data['success'] == true) {
@@ -1540,6 +1550,7 @@ class ApiDataSource extends BaseApiDataSource {
 
       if (response is Response && response.statusCode == 200) {
         if (response.data != null && response.data is Map<String, dynamic>) {
+          CustomSnackBar.showError(response.data['message']);
           CommonLogger.log.i("Parsing response data: ${response.data}");
           final result = CashCollectedResponse.fromJson(response.data);
           return Right(result);
@@ -1670,6 +1681,41 @@ class ApiDataSource extends BaseApiDataSource {
         );
       } else {
         return Left(ServerFailure("Unknown error occurred"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, StopRequestResponse>> stopNewRideRequest({
+    required bool stop,
+  }) async {
+    try {
+
+      String url = ApiConstents.stopNewRequests;
+
+      final response = await Request.sendRequest(
+        url,
+        {"stop": stop},
+        'Post',
+        false,
+      );
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          CommonLogger.log.i("Parsing response data: ${response.data}");
+          final result = StopRequestResponse.fromJson(response.data);
+          return Right(result);
+        } else {
+          return Left(ServerFailure("Invalid or empty response"));
+        }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
       }
     } catch (e) {
       CommonLogger.log.e(e);

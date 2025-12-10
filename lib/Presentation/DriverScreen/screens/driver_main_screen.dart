@@ -7,7 +7,10 @@ import 'package:geocoding/geocoding.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/booking_overlay_request.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/shared_screens.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/picking_customer_screen.dart';
+import 'package:hopper/api/repository/api_constents.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
@@ -26,6 +29,7 @@ import 'package:get/get.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 
 import '../../Drawer/controller/ride_history_controller.dart';
+import 'SharedBooking/Controller/booking_request_controller.dart';
 
 class DriverMainScreen extends StatefulWidget {
   const DriverMainScreen({super.key});
@@ -41,7 +45,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
   Tween<double>? _lngTween;
   Tween<double>? _rotationTween;
   Animation<double>? _animation;
-
+  final bookingController = Get.find<BookingRequestController>();
   final RideHistoryController controller = Get.put(RideHistoryController());
   final DriverStatusController statusController = Get.put(
     DriverStatusController(),
@@ -94,6 +98,48 @@ class _DriverMainScreenState extends State<DriverMainScreen>
 
   LatLng? _lastPosition;
   void _updateCarMarker(LatLng newPosition) {
+    if (!mounted) return;
+    if (_carIcon == null) return;
+    if (_animationController == null || _animation == null) return;
+
+    if (_lastPosition == null) {
+      // First time placement – no animation
+      _carMarker = Marker(
+        markerId: const MarkerId('car'),
+        position: newPosition,
+        icon: _carIcon!,
+        rotation: 0,
+        anchor: const Offset(0.5, 0.5),
+        flat: true,
+      );
+      _lastPosition = newPosition;
+      setState(() {});
+      return;
+    }
+
+    // compute bearing
+    double bearing = _bearingBetween(_lastPosition!, newPosition);
+
+    // update tweens for new animation
+    _latTween = Tween(
+      begin: _lastPosition!.latitude,
+      end: newPosition.latitude,
+    );
+    _lngTween = Tween(
+      begin: _lastPosition!.longitude,
+      end: newPosition.longitude,
+    );
+    _rotationTween = Tween(begin: _carMarker?.rotation ?? 0, end: bearing);
+
+    // restart animation
+    _animationController!
+      ..reset()
+      ..forward();
+
+    _lastPosition = newPosition;
+  }
+
+  /*  void _updateCarMarker(LatLng newPosition) {
     if (!mounted) return; // <- Prevent running after dispose
     if (_carIcon == null) return;
 
@@ -160,7 +206,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
 
     _animationController!.forward();
     _lastPosition = newPosition;
-  }
+  }*/
 
   /*  Future<void> _loadCustomCarIcon() async {
     _carIcon = await BitmapDescriptor.asset(
@@ -338,6 +384,10 @@ class _DriverMainScreenState extends State<DriverMainScreen>
   String? _currentBookingId;
   String? pickupAddress;
   String? dropAddress;
+  StreamSubscription? locationSub;
+  Timer? emitTimer;
+  Map<String, dynamic>? latestLocation;
+
   double safeToDouble(dynamic value) {
     if (value is double) return value;
     if (value is int) return value.toDouble();
@@ -373,89 +423,239 @@ class _DriverMainScreenState extends State<DriverMainScreen>
 
     socketService = SocketService();
 
-    socketService.initSocket(
-      'https://hoppr-face-two-dbe557472d7f.herokuapp.com',
-    );
+    socketService.initSocket(ApiConstents.baseUrl1);
 
+    // When socket connects
     socketService.on('connect', (_) {
       CommonLogger.log.i('🟢 Connected to socket');
 
-      socketService.emit('register', {'userId': driverId, 'type': 'driver'});
+      socketService.registerDriver(
+        driverId!,
+        bookingId: _currentBookingId,
+        ack: (response) {
+          // response comes from server
+          if (response['status'] == true) {
+            CommonLogger.log.i("✅ Driver registration ACK received: $response");
+          } else {
+            CommonLogger.log.e("❌ Driver registration failed: $response");
+          }
+        },
+      );
     });
+
+    // // When driver successfully registered
+    // socketService.on('registered', (data) {
+    //   CommonLogger.log.i('✅ Driver Registered: $data');
+    //
+    //   // Start location tracking
+    //   Geolocator.getPositionStream(
+    //     locationSettings: const LocationSettings(
+    //       accuracy: LocationAccuracy.high,
+    //       distanceFilter: 0,
+    //     ),
+    //   ).listen((position) {
+    //     final locationData = {
+    //       'userId': driverId,
+    //       'latitude': position.latitude,
+    //       'longitude': position.longitude,
+    //       if (_currentBookingId != null) 'bookingId': _currentBookingId,
+    //     };
+    //
+    //     socketService.emit('updateLocation', locationData);
+    //
+    //     final newLatLng = LatLng(position.latitude, position.longitude);
+    //     _updateCarMarker(newLatLng);
+    //
+    //     CommonLogger.log.i("📍 Emitting Location → $locationData");
+    //   });
+    // });
+    int emitCount = 0;
 
     socketService.on('registered', (data) {
       CommonLogger.log.i('✅ Driver Registered: $data');
-      Geolocator.getPositionStream(
+
+      // STOP OLD STREAM + TIMER (avoid duplicate emissions)
+      locationSub?.cancel();
+      emitTimer?.cancel();
+
+      // 1. Listen to geolocator fast stream
+      locationSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
           distanceFilter: 0,
         ),
       ).listen((position) {
-        final locationData = {
+        latestLocation = {
           'userId': driverId,
           'latitude': position.latitude,
           'longitude': position.longitude,
           if (_currentBookingId != null) 'bookingId': _currentBookingId,
         };
-
-        SocketService().emit('updateLocation', locationData);
-        final newLatLng = LatLng(position.latitude, position.longitude);
-        _updateCarMarker(newLatLng);
-        CommonLogger.log.i("📍 Emitting Location: $locationData");
       });
 
-      // _locationStream = Geolocator.getPositionStream(
-      //   locationSettings: const LocationSettings(
-      //     accuracy: LocationAccuracy.high,
-      //     distanceFilter: 0, // Emit even without movement
-      //   ),
-      // ).listen((position) {
-      //   final locationData = {
-      //     'userId': driverId,
-      //     'latitude': position.latitude,
-      //     'longitude': position.longitude,
-      //     if (_currentBookingId != null) 'bookingId': _currentBookingId,
-      //   };
-      //
-      //   socketService.emit('updateLocation', locationData);
-      //
-      //   CommonLogger.log.i("📍 Emitting Location: $locationData");
-      // });
+      emitTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        if (latestLocation != null) {
+          emitCount++;
+
+          socketService.emit('updateLocation', latestLocation!);
+
+          CommonLogger.log.i(
+            "📍 [$emitCount] Emitted Location → $latestLocation",
+          );
+
+          final newLatLng = LatLng(
+            latestLocation!['latitude'],
+            latestLocation!['longitude'],
+          );
+          _updateCarMarker(newLatLng);
+        }
+      });
     });
 
     socketService.on('booking-request', (data) async {
-      BookingDataService().setBookingData(data);
-      CommonLogger.log.i('📦 Booking Request: $data');
-      _currentBookingId = data['bookingId'];
+      if (data == null) return;
 
-      // Get lat/lng from incoming data
+      BookingDataService().setBookingData(data);
+      CommonLogger.log.i('📦 Booking Request → $data');
+
+      // 🔹 CASE 1: active-bookings payload (from your log)
+      if (data['type'] == 'active-bookings') {
+        final List active = data['activeBookings'] ?? [];
+        if (active.isEmpty) {
+          CommonLogger.log.w('⚠️ activeBookings empty, nothing to show');
+          return;
+        }
+
+        final booking = active.first;
+
+        _currentBookingId = booking['bookingId']?.toString();
+
+        final fromLat = (booking['fromLatitude'] as num?)?.toDouble();
+        final fromLng = (booking['fromLongitude'] as num?)?.toDouble();
+        final toLat = (booking['toLatitude'] as num?)?.toDouble();
+        final toLng = (booking['toLongitude'] as num?)?.toDouble();
+
+        if (fromLat == null ||
+            fromLng == null ||
+            toLat == null ||
+            toLng == null) {
+          CommonLogger.log.w(
+            '⚠️ Missing coords in activeBookings booking: $booking',
+          );
+          return;
+        }
+
+        final pickupAddr = await getAddressFromLatLng(fromLat, fromLng);
+        final dropAddr = await getAddressFromLatLng(toLat, toLng);
+
+        bookingController.showRequest(
+          rawData: booking, // 👈 or `data` if you need full wrapper
+          pickupAddress: pickupAddr,
+          dropAddress: dropAddr,
+        );
+        return; // ✅ don’t fall through to normal path
+      }
+
+      // 🔹 CASE 2: normal payload with pickupLocation / dropLocation
+      _currentBookingId = data['bookingId']?.toString();
+
       final pickup = data['pickupLocation'];
       final drop = data['dropLocation'];
 
-      // Convert to address
-      pickupAddress = await getAddressFromLatLng(
+      if (pickup == null || drop == null) {
+        CommonLogger.log.w(
+          '⚠️ pickupLocation/dropLocation missing in booking-request: $data',
+        );
+        return;
+      }
+
+      final pickupLat = (pickup['latitude'] as num?)?.toDouble();
+      final pickupLng = (pickup['longitude'] as num?)?.toDouble();
+      final dropLat = (drop['latitude'] as num?)?.toDouble();
+      final dropLng = (drop['longitude'] as num?)?.toDouble();
+
+      if (pickupLat == null ||
+          pickupLng == null ||
+          dropLat == null ||
+          dropLng == null) {
+        CommonLogger.log.w(
+          '⚠️ latitude/longitude missing in pickup/drop: pickup=$pickup drop=$drop',
+        );
+        return;
+      }
+
+      final pickupAddr = await getAddressFromLatLng(pickupLat, pickupLng);
+      final dropAddr = await getAddressFromLatLng(dropLat, dropLng);
+
+      bookingController.showRequest(
+        rawData: data,
+        pickupAddress: pickupAddr,
+        dropAddress: dropAddr,
+      );
+    });
+
+    /* socketService.on('booking-request', (data) async {
+      BookingDataService().setBookingData(data);
+      CommonLogger.log.i('📦 Booking Request → $data');
+
+      _currentBookingId = data['bookingId'];
+
+      final pickup = data['pickupLocation'];
+      final drop = data['dropLocation'];
+
+      final pickupAddr = await getAddressFromLatLng(
         pickup['latitude'],
         pickup['longitude'],
       );
-      dropAddress = await getAddressFromLatLng(
+      final dropAddr = await getAddressFromLatLng(
         drop['latitude'],
         drop['longitude'],
       );
-      if (!mounted) return;
-      setState(() {
-        bookingRequestData = data;
-      });
-      _startTimer();
 
-      CommonLogger.log.i('📍 Pickup: $pickupAddress');
-      CommonLogger.log.i('📍 Drop: $dropAddress');
-    });
+      // ❌ DO NOT CHECK `mounted` HERE
+      // This method does not use setState, only GetX controller
 
-    // socketService.on('driver-arrived', (data) {
-    //   CommonLogger.log.i('🚗 Driver arrived: $data');
+      bookingController.showRequest(
+        rawData: data,
+        pickupAddress: pickupAddr,
+        dropAddress: dropAddr,
+      );
+    });*/
+
+    //   // When a new booking request arrives
+    // socketService.on('booking-request', (data) async {
+    //   BookingDataService().setBookingData(data);
+    //   CommonLogger.log.i('📦 Booking Request → $data');
+    //
+    //   _currentBookingId = data['bookingId'];
+    //
+    //   // Extract pickup/drop coordinates
+    //   final pickup = data['pickupLocation'];
+    //   final drop = data['dropLocation'];
+    //
+    //   // Convert to address
+    //   pickupAddress = await getAddressFromLatLng(
+    //     pickup['latitude'],
+    //     pickup['longitude'],
+    //   );
+    //   dropAddress = await getAddressFromLatLng(
+    //     drop['latitude'],
+    //     drop['longitude'],
+    //   );
+    //
+    //   if (!mounted) return;
+    //
+    //   setState(() {
+    //     bookingRequestData = data;
+    //   });
+    //
+    //   _startTimer();
+    //
+    //   CommonLogger.log.i('📍 Pickup Address → $pickupAddress');
+    //   CommonLogger.log.i('📍 Drop Address → $dropAddress');
     // });
 
-    // Initialize location tracking if needed
+    // Initialize location services/UI if needed
     _initLocation(context);
   }
 
@@ -494,6 +694,39 @@ class _DriverMainScreenState extends State<DriverMainScreen>
   @override
   void initState() {
     super.initState();
+
+    // 1️⃣ Setup animation controller ONCE
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+
+    _animation = CurvedAnimation(
+      parent: _animationController!,
+      curve: Curves.easeInOut,
+    )..addListener(() {
+      if (!mounted) return;
+      if (_latTween == null || _lngTween == null || _rotationTween == null) {
+        return;
+      }
+
+      final lat = _latTween!.evaluate(_animation!);
+      final lng = _lngTween!.evaluate(_animation!);
+      final rotation = _rotationTween!.evaluate(_animation!);
+
+      setState(() {
+        _carMarker = Marker(
+          markerId: const MarkerId('car'),
+          position: LatLng(lat, lng),
+          icon: _carIcon ?? BitmapDescriptor.defaultMarker,
+          rotation: rotation,
+          anchor: const Offset(0.5, 0.5),
+          flat: true,
+        );
+      });
+    });
+
+    // 2️⃣ then your existing setup
     _prepareApp();
   }
 
@@ -504,7 +737,6 @@ class _DriverMainScreenState extends State<DriverMainScreen>
     // 2. Now load the correct car/bike icon
     await _loadCustomCarIcon();
 
-    // 3. Update UI
     setState(() {});
 
     // 4. Other initializations
@@ -537,7 +769,18 @@ class _DriverMainScreenState extends State<DriverMainScreen>
   @override
   void dispose() {
     _timer?.cancel();
+    emitTimer?.cancel();
+    locationSub?.cancel();
+    _locationStream.cancel(); // if you’re using it
+    _positionStream?.cancel();
+    _compassStream?.cancel();
+
     _animationController?.dispose();
+
+    // if you have socket:
+    try {
+      socketService.dispose?.call(); // or socketService.disconnect();
+    } catch (_) {}
 
     super.dispose();
   }
@@ -746,7 +989,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                       0.65, // Start with 80% height
                                   minChildSize: 0.65,
                                   maxChildSize:
-                                      0.80, // Can expand up to 95% height
+                                      0.9999, // Can expand up to 95% height
                                   builder: (context, scrollController) {
                                     return Container(
                                       decoration: const BoxDecoration(
@@ -786,16 +1029,33 @@ class _DriverMainScreenState extends State<DriverMainScreen>
 
                                             const SizedBox(height: 20),
 
-                                            Center(
-                                              child:
-                                                  CustomTextfield.textWithStyles700(
-                                                    'Hoppr Car',
-                                                    color: AppColors.commonBlack
-                                                        .withOpacity(0.5),
-                                                  ),
+                                            GestureDetector(
+                                              onTap: () {},
+                                              child: Center(
+                                                child:
+                                                    CustomTextfield.textWithStyles700(
+                                                      'Hoppr Car',
+                                                      color: AppColors
+                                                          .commonBlack
+                                                          .withOpacity(0.5),
+                                                    ),
+                                              ),
                                             ),
-                                            if (bookingRequestData != null) ...[
-                                              Column(
+
+                                            Obx(() {
+                                              final data =
+                                                  bookingController
+                                                      .bookingRequestData
+                                                      .value;
+                                              if (data == null) {
+                                                return const SizedBox.shrink();
+                                              }
+
+                                              final secondsText =
+                                                  bookingController
+                                                      .formatCountdown();
+
+                                              return Column(
                                                 children: [
                                                   Row(
                                                     mainAxisAlignment:
@@ -804,7 +1064,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                     children: [
                                                       Container(
                                                         padding:
-                                                            EdgeInsets.symmetric(
+                                                            const EdgeInsets.symmetric(
                                                               horizontal: 10,
                                                               vertical: 5,
                                                             ),
@@ -819,11 +1079,11 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                           color:
                                                               AppColors
                                                                   .commonWhite,
-                                                          '${formatCountdown(remainingSeconds)} ',
+                                                          '${secondsText}s',
                                                         ),
                                                       ),
-                                                      SizedBox(width: 15),
-                                                      Text(
+                                                      const SizedBox(width: 15),
+                                                      const Text(
                                                         "Respond within 15 seconds",
                                                         style: TextStyle(
                                                           fontWeight:
@@ -832,7 +1092,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                       ),
                                                     ],
                                                   ),
-                                                  SizedBox(height: 10),
+                                                  const SizedBox(height: 10),
                                                   Card(
                                                     elevation: 3,
                                                     child: Container(
@@ -845,16 +1105,16 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                               10,
                                                             ),
                                                       ),
-
                                                       child: Column(
                                                         children: [
+                                                          // header
                                                           Container(
                                                             width:
                                                                 double.infinity,
                                                             height: 54,
                                                             decoration: BoxDecoration(
                                                               borderRadius:
-                                                                  BorderRadius.only(
+                                                                  const BorderRadius.only(
                                                                     topLeft:
                                                                         Radius.circular(
                                                                           10,
@@ -882,11 +1142,11 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                     height: 25,
                                                                     width: 25,
                                                                   ),
-                                                                  SizedBox(
+                                                                  const SizedBox(
                                                                     width: 10,
                                                                   ),
                                                                   CustomTextfield.textWithStyles600(
-                                                                    bookingRequestData!['rideType'] ==
+                                                                    data['rideType'] ==
                                                                             'Bike'
                                                                         ? 'New Package Request'
                                                                         : 'New Ride Request',
@@ -894,14 +1154,13 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                         AppColors
                                                                             .commonWhite,
                                                                   ),
-
-                                                                  Spacer(),
+                                                                  const Spacer(),
                                                                   CustomTextfield.textWithImage(
                                                                     imageColors:
                                                                         AppColors
                                                                             .commonWhite,
                                                                     text:
-                                                                        '${bookingRequestData!['estimatedPrice']}',
+                                                                        '${data['estimatedPrice']}',
                                                                     imagePath:
                                                                         AppImages
                                                                             .bCurrency,
@@ -916,6 +1175,8 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                               ),
                                                             ),
                                                           ),
+
+                                                          // addresses
                                                           Padding(
                                                             padding:
                                                                 const EdgeInsets.all(
@@ -925,7 +1186,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                               children: [
                                                                 Row(
                                                                   children: [
-                                                                    Icon(
+                                                                    const Icon(
                                                                       Icons
                                                                           .circle,
                                                                       color:
@@ -933,13 +1194,17 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                               .green,
                                                                       size: 12,
                                                                     ),
-                                                                    SizedBox(
+                                                                    const SizedBox(
                                                                       width: 8,
                                                                     ),
                                                                     Expanded(
                                                                       child: Text(
-                                                                        bookingRequestData!['pickupAddress'] ??
+                                                                        data['pickupAddress'] ??
                                                                             '',
+                                                                        maxLines:
+                                                                            2,
+                                                                        overflow:
+                                                                            TextOverflow.ellipsis,
                                                                       ),
                                                                     ),
                                                                   ],
@@ -949,7 +1214,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                 ),
                                                                 Row(
                                                                   children: [
-                                                                    Icon(
+                                                                    const Icon(
                                                                       Icons
                                                                           .circle,
                                                                       color:
@@ -957,13 +1222,17 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                               .red,
                                                                       size: 12,
                                                                     ),
-                                                                    SizedBox(
+                                                                    const SizedBox(
                                                                       width: 8,
                                                                     ),
                                                                     Expanded(
                                                                       child: Text(
-                                                                        bookingRequestData!['dropAddress'] ??
-                                                                            "",
+                                                                        data['dropAddress'] ??
+                                                                            '',
+                                                                        maxLines:
+                                                                            2,
+                                                                        overflow:
+                                                                            TextOverflow.ellipsis,
                                                                       ),
                                                                     ),
                                                                   ],
@@ -987,6 +1256,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                             ),
                                                           ),
 
+                                                          // duration + distance
                                                           Padding(
                                                             padding:
                                                                 const EdgeInsets.symmetric(
@@ -998,35 +1268,6 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                   MainAxisAlignment
                                                                       .spaceAround,
                                                               children: [
-                                                                // Row(
-                                                                //   children: [
-                                                                //     Icon(
-                                                                //       Icons
-                                                                //           .person_outline,
-                                                                //       color:
-                                                                //           AppColors.nBlue,
-                                                                //     ),
-                                                                //     const SizedBox(
-                                                                //       width: 10,
-                                                                //     ),
-                                                                //     Text(
-                                                                //       '${bookingRequestData!['sharedCount']}',
-                                                                //       style: TextStyle(
-                                                                //         fontWeight:
-                                                                //             FontWeight
-                                                                //                 .w500,
-                                                                //       ),
-                                                                //     ),
-                                                                //   ],
-                                                                // ),
-                                                                // SizedBox(
-                                                                //   height: 40,
-                                                                //   child: VerticalDivider(
-                                                                //     color: AppColors
-                                                                //         .commonBlack
-                                                                //         .withOpacity(0.1),
-                                                                //   ),
-                                                                // ),
                                                                 Row(
                                                                   children: [
                                                                     Image.asset(
@@ -1042,10 +1283,10 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                     Text(
                                                                       formatDuration(
                                                                         safeToInt(
-                                                                          bookingRequestData?['estimateDuration'],
+                                                                          data['estimateDuration'],
                                                                         ),
                                                                       ),
-                                                                      style: TextStyle(
+                                                                      style: const TextStyle(
                                                                         fontWeight:
                                                                             FontWeight.w500,
                                                                       ),
@@ -1077,10 +1318,10 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                     Text(
                                                                       formatDistance(
                                                                         safeToDouble(
-                                                                          bookingRequestData?['estimatedDistance'],
+                                                                          data['estimatedDistance'],
                                                                         ),
                                                                       ),
-                                                                      style: TextStyle(
+                                                                      style: const TextStyle(
                                                                         fontWeight:
                                                                             FontWeight.w500,
                                                                       ),
@@ -1090,6 +1331,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                               ],
                                                             ),
                                                           ),
+
                                                           Padding(
                                                             padding:
                                                                 const EdgeInsets.symmetric(
@@ -1105,6 +1347,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                             ),
                                                           ),
 
+                                                          // buttons
                                                           Padding(
                                                             padding:
                                                                 const EdgeInsets.symmetric(
@@ -1114,6 +1357,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                 ),
                                                             child: Row(
                                                               children: [
+                                                                // DECLINE
                                                                 Expanded(
                                                                   child: Buttons.button(
                                                                     borderRadius:
@@ -1125,40 +1369,19 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                         statusController.isLoading.value
                                                                             ? null
                                                                             : () {
-                                                                              final bookingId =
-                                                                                  bookingRequestData!['bookingId'];
-                                                                              CommonLogger.log.i(
-                                                                                bookingId,
-                                                                              );
-
-                                                                              // Get.to(
-                                                                              //   PickingCustomerScreen(),
-                                                                              // );
-                                                                              // statusController
-                                                                              //     .bookingAccept(
-                                                                              //       context,
-                                                                              //       bookingId:
-                                                                              //           bookingId,
-                                                                              //       status:
-                                                                              //           'REJECT',
-                                                                              //
-                                                                              //
-                                                                              //     );
-                                                                              setState(
-                                                                                () {
-                                                                                  bookingRequestData =
-                                                                                      null;
-                                                                                },
-                                                                              );
+                                                                              // just hide popup (optionally call REJECT API)
+                                                                              bookingController.clear();
                                                                             },
-                                                                    text: Text(
+                                                                    text: const Text(
                                                                       'Decline',
                                                                     ),
                                                                   ),
                                                                 ),
-                                                                SizedBox(
+                                                                const SizedBox(
                                                                   width: 20,
                                                                 ),
+
+                                                                // ACCEPT
                                                                 Obx(() {
                                                                   return Expanded(
                                                                     child: Buttons.button(
@@ -1173,18 +1396,19 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                               : () async {
                                                                                 try {
                                                                                   final bookingId =
-                                                                                      bookingRequestData!['bookingId'];
-                                                                                  final address =
-                                                                                      bookingRequestData!['pickupAddress'] ??
+                                                                                      data['bookingId'];
+                                                                                  final pickupAddress =
+                                                                                      data['pickupAddress'] ??
                                                                                       '';
-
                                                                                   final dropAddress =
-                                                                                      bookingRequestData!['dropAddress'] ??
+                                                                                      data['dropAddress'] ??
                                                                                       '';
 
                                                                                   final pickup = LatLng(
-                                                                                    bookingRequestData!['pickupLocation']['latitude'],
-                                                                                    bookingRequestData!['pickupLocation']['longitude'],
+                                                                                    data['pickupLocation']['latitude']
+                                                                                        as double,
+                                                                                    data['pickupLocation']['longitude']
+                                                                                        as double,
                                                                                   );
 
                                                                                   final position = await Geolocator.getCurrentPosition(
@@ -1199,10 +1423,9 @@ class _DriverMainScreenState extends State<DriverMainScreen>
 
                                                                                   await statusController.bookingAccept(
                                                                                     pickupLocationAddress:
-                                                                                        address,
+                                                                                        pickupAddress,
                                                                                     dropLocationAddress:
                                                                                         dropAddress,
-
                                                                                     context,
                                                                                     bookingId:
                                                                                         bookingId,
@@ -1213,12 +1436,10 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                                     driverLocation:
                                                                                         driverLocation,
                                                                                   );
-                                                                                  setState(
-                                                                                    () {
-                                                                                      bookingRequestData =
-                                                                                          null;
-                                                                                    },
-                                                                                  );
+
+                                                                                  // hide popup globally
+                                                                                  bookingController.clear();
+
                                                                                 } catch (
                                                                                   e
                                                                                 ) {
@@ -1237,7 +1458,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                                                 child:
                                                                                     AppLoader.circularLoader(),
                                                                               )
-                                                                              : Text(
+                                                                              : const Text(
                                                                                 'Accept',
                                                                               ),
                                                                     ),
@@ -1251,9 +1472,8 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                     ),
                                                   ),
                                                 ],
-                                              ),
-                                            ] else
-                                              ...[],
+                                              );
+                                            }),
                                             statusController.isOnline.value
                                                 ? SizedBox.shrink()
                                                 : GestureDetector(
@@ -2114,7 +2334,8 @@ class _DriverMainScreenState extends State<DriverMainScreen>
 
                                             Center(
                                               child: Opacity(
-                                                opacity: 0.7, // 👈 0.0 = fully transparent, 1.0 = fully opaque
+                                                opacity:
+                                                    0.7, // 👈 0.0 = fully transparent, 1.0 = fully opaque
                                                 child: Image.asset(
                                                   AppImages.hopprPackage,
                                                   height: 25,
@@ -2132,7 +2353,6 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.start,
                                                 children: [
-
                                                   CustomTextfield.textWithStyles700(
                                                     "Today's Activity",
                                                     fontSize: 16,

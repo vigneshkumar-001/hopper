@@ -13,9 +13,10 @@ class NotificationResponse {
     return NotificationResponse(
       success: json['success'] ?? false,
       count: json['count'] ?? 0,
-      data: (json['data'] as List<dynamic>?)
-          ?.map((e) => NotificationData.fromJson(e))
-          .toList() ??
+      data:
+          (json['data'] as List<dynamic>?)
+              ?.map((e) => NotificationData.fromJson(e))
+              .toList() ??
           [],
     );
   }
@@ -128,11 +129,12 @@ class NotificationDataDetail {
 
   factory NotificationDataDetail.fromJson(Map<String, dynamic> json) {
     return NotificationDataDetail(
-      amount: json['amount'] != null
-          ? (json['amount'] is int
-          ? (json['amount'] as int).toDouble()
-          : json['amount'] as double?)
-          : null,
+      amount:
+          json['amount'] != null
+              ? (json['amount'] is int
+                  ? (json['amount'] as int).toDouble()
+                  : json['amount'] as double?)
+              : null,
       transactionId: json['transactionId'],
       paymentMethod: json['paymentMethod'],
       time: json['time'],

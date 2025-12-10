@@ -16,7 +16,9 @@ import '../../OnBoarding/controller/chooseservice_controller.dart';
 class CashCollectedScreen extends StatefulWidget {
   final dynamic Amount;
   final String? bookingId;
-  const CashCollectedScreen({super.key, this.Amount, this.bookingId});
+  final bool isSharedRide;
+
+  const CashCollectedScreen({super.key, this.Amount, this.bookingId,  this.isSharedRide = false,  });
 
   @override
   State<CashCollectedScreen> createState() => _CashCollectedScreenState();
@@ -33,20 +35,19 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
   void initState() {
     super.initState();
 
-    // ✅ Poll API every 2 seconds
     _timer = Timer.periodic(const Duration(seconds: 3), (timer) {
       final bookingId = widget.bookingId?.toString() ?? '';
       if (bookingId.isNotEmpty) {
-        driverStatusController.getAmountStatus(bookingId: bookingId); // ✅ named argument
+        driverStatusController.getAmountStatus(
+          bookingId: bookingId,
+        ); // ✅ named argument
       }
     });
   }
 
-
-
   @override
   void dispose() {
-    _timer?.cancel(); // ✅ stop polling
+    _timer?.cancel();
     super.dispose();
   }
 
@@ -55,243 +56,253 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
     final bookingData = BookingDataService().getBookingData();
 
     return NoInternetOverlay(
-      child: WillPopScope(
-        onWillPop: () async {
-          return await false;
-        },
-        child: Scaffold(
-          body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20.0,
-                vertical: 20,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Image.asset(
-                      AppImages.backButton,
-                      height: 25,
-                      width: 25,
-                    ),
+      child: Scaffold(
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    if (widget.isSharedRide) {
+                      // shared flow: tell parent "not collected"
+                      Get.back<bool>(result: false);
+                    } else {
+                      // single ride: normal back
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: Image.asset(
+                    AppImages.backButton,
+                    height: 25,
+                    width: 25,
                   ),
-                  const Spacer(),
+                ),
 
-                  // ✅ User Profile
-                  Obx(() {
-                    final profilePic =
-                        getDetails.userProfile.value?.profilePic ?? '';
-                    final firstName =
-                        getDetails.userProfile.value?.firstName ?? 'Customer';
 
-                    return Column(
-                      children: [
-                        Center(
-                          child:
-                              profilePic.isNotEmpty
-                                  ? CachedNetworkImage(
-                                    imageUrl: profilePic,
-                                    height: 80,
-                                    width: 80,
-                                    imageBuilder:
-                                        (context, imageProvider) => Container(
-                                          height: 80,
-                                          width: 80,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            image: DecorationImage(
-                                              image: imageProvider,
-                                              fit: BoxFit.cover,
-                                            ),
+                // GestureDetector(
+                //   onTap: () => Navigator.pop(context),
+                //   child: Image.asset(
+                //     AppImages.backButton,
+                //     height: 25,
+                //     width: 25,
+                //   ),
+                // ),
+                const Spacer(),
+
+                // ✅ User Profile
+                Obx(() {
+                  final profilePic =
+                      getDetails.userProfile.value?.profilePic ?? '';
+                  final firstName =
+                      getDetails.userProfile.value?.firstName ?? 'Customer';
+
+                  return Column(
+                    children: [
+                      Center(
+                        child:
+                            profilePic.isNotEmpty
+                                ? CachedNetworkImage(
+                                  imageUrl: profilePic,
+                                  height: 80,
+                                  width: 80,
+                                  imageBuilder:
+                                      (context, imageProvider) => Container(
+                                        height: 80,
+                                        width: 80,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          image: DecorationImage(
+                                            image: imageProvider,
+                                            fit: BoxFit.cover,
                                           ),
                                         ),
-                                    placeholder:
-                                        (context, url) =>
-                                            const CircularProgressIndicator(),
-                                    errorWidget:
-                                        (context, url, error) => const Icon(
-                                          Icons.person,
-                                          size: 80,
-                                          color: Colors.grey,
-                                        ),
-                                  )
-                                  : const Icon(
-                                    Icons.person,
-                                    size: 80,
-                                    color: Colors.grey,
-                                  ),
-                        ),
-                        const SizedBox(height: 10),
-                        CustomTextfield.textWithStylesSmall(
-                          'Collect cash from $firstName',
-                          colors: AppColors.grey,
-                          fontSize: 14,
-                        ),
-                        const SizedBox(height: 10),
-                        CustomTextfield.textWithStyles600(
-                          widget.Amount.toString(),
-                        ),
-                        const SizedBox(height: 15),
-
-                        Obx(
-                          () => Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.commonWhite,
-                              border: Border.all(
-                                color: AppColors.containerColor1,
-                                width: 1,
-                              ),
-                              borderRadius: BorderRadius.circular(10),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.grey.withOpacity(0.1),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Payment Type
-                                RichText(
-                                  text: TextSpan(
-                                    text: "Payment Type: ",
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.black87,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    children: [
-                                      TextSpan(
-                                        text:
-                                            driverStatusController
-                                                .paymentType
-                                                .value,
-                                        style: const TextStyle(
-                                          color:
-                                              Colors
-                                                  .blue, // ✅ Different color for value
-                                          fontWeight: FontWeight.w600,
-                                        ),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-
-                                // Payment Status
-                                RichText(
-                                  text: TextSpan(
-                                    text: "Payment Status: ",
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.black87,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    children: [
-                                      TextSpan(
-                                        text:
-                                            driverStatusController
-                                                .paymentStatus
-                                                .value,
-                                        style: TextStyle(
-                                          color:
-                                              driverStatusController
-                                                          .paymentStatus
-                                                          .value
-                                                          .toUpperCase() ==
-                                                      "PAID"
-                                                  ? Colors.green
-                                                  : Colors.redAccent,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                  placeholder:
+                                      (context, url) =>
+                                          const CircularProgressIndicator(),
+                                  errorWidget:
+                                      (context, url, error) => const Icon(
+                                        Icons.person,
+                                        size: 80,
+                                        color: Colors.grey,
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  }),
-
-                  const Spacer(),
-
-                  // ✅ Info Box
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.directionColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Image.asset(
-                          color: AppColors.directionColor,
-                          AppImages.exclamationCircle,
-                          width: 20,
-                          height: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: CustomTextfield.textWithStylesSmall(
-                            fontWeight: FontWeight.w400,
-                            colors: AppColors.commonBlack,
-                            'If rider doesn’t have change, ask them to pay in wholesums. Extra amount paid will be credited to rider’s account.',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 30),
-
-                  // ✅ Manual trigger (optional)
-                  SafeArea(
-                    child: Obx(
-                      () => Buttons.button(
-                        borderRadius: 7,
-                        buttonColor: AppColors.commonBlack,
-                        onTap:
-                            driverStatusController.isLoading.value
-                                ? null
-                                : () {
-                                  driverStatusController.amountCollectedStatus(
-                                    booking: widget.bookingId.toString(),
-                                    onSuccess: () {
-                                      // ✅ Pop up the rating sheet automatically
-                                      _showRatingBottomSheet(context);
-                                    },
-                                  );
-                                },
-                        text:
-                            driverStatusController.isLoading.value
-                                ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
                                 )
-                                : const Text('Cash Collected'),
+                                : const Icon(
+                                  Icons.person,
+                                  size: 80,
+                                  color: Colors.grey,
+                                ),
                       ),
+                      const SizedBox(height: 10),
+                      CustomTextfield.textWithStylesSmall(
+                        'Collect cash from $firstName',
+                        colors: AppColors.grey,
+                        fontSize: 14,
+                      ),
+                      const SizedBox(height: 10),
+                      CustomTextfield.textWithStyles600(
+                        widget.Amount.toString(),
+                      ),
+                      const SizedBox(height: 15),
+
+                      Obx(
+                        () => Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.commonWhite,
+                            border: Border.all(
+                              color: AppColors.containerColor1,
+                              width: 1,
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.grey.withOpacity(0.1),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Payment Type
+                              RichText(
+                                text: TextSpan(
+                                  text: "Payment Type: ",
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  children: [
+                                    TextSpan(
+                                      text:
+                                          driverStatusController
+                                              .paymentType
+                                              .value,
+                                      style: const TextStyle(
+                                        color:
+                                            Colors
+                                                .blue, // ✅ Different color for value
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+
+                              // Payment Status
+                              RichText(
+                                text: TextSpan(
+                                  text: "Payment Status: ",
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  children: [
+                                    TextSpan(
+                                      text:
+                                          driverStatusController
+                                              .paymentStatus
+                                              .value,
+                                      style: TextStyle(
+                                        color:
+                                            driverStatusController
+                                                        .paymentStatus
+                                                        .value
+                                                        .toUpperCase() ==
+                                                    "PAID"
+                                                ? Colors.green
+                                                : Colors.redAccent,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+
+                const Spacer(),
+
+                // ✅ Info Box
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.directionColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Image.asset(
+                        color: AppColors.directionColor,
+                        AppImages.exclamationCircle,
+                        width: 20,
+                        height: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: CustomTextfield.textWithStylesSmall(
+                          fontWeight: FontWeight.w400,
+                          colors: AppColors.commonBlack,
+                          'If rider doesn’t have change, ask them to pay in wholesums. Extra amount paid will be credited to rider’s account.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 30),
+
+                // ✅ Manual trigger (optional)
+                SafeArea(
+                  child: Obx(
+                    () => Buttons.button(
+                      borderRadius: 7,
+                      buttonColor: AppColors.commonBlack,
+                      onTap:
+                          driverStatusController.isLoading.value
+                              ? null
+                              : () {
+                                driverStatusController.amountCollectedStatus(
+                                  booking: widget.bookingId.toString(),
+                                  onSuccess: () {
+                                    // ✅ Pop up the rating sheet automatically
+                                    _showRatingBottomSheet(context);
+                                  },
+                                );
+                              },
+                      text:
+                          driverStatusController.isLoading.value
+                              ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Text('Cash Collected'),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -401,7 +412,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Expanded(
+                        /*   Expanded(
                           child: Obx(
                             () => Buttons.button(
                               borderRadius: 8,
@@ -435,7 +446,53 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                       : const Text('Rate Ride'),
                             ),
                           ),
+                        ),*/
+                        Expanded(
+                          child: Obx(
+                                () => Buttons.button(
+                              borderRadius: 8,
+                              buttonColor: AppColors.commonBlack,
+                              onTap: driverStatusController.isLoading.value
+                                  ? null
+                                  : () async {
+                                _timer?.cancel();
+
+                                await driverStatusController.driverRatingToCustomer(
+                                  context: context,
+                                  rating: selectedRating,
+                                  bookingId: widget.bookingId.toString(),
+                                  goToMainOnSuccess: !widget.isSharedRide,
+                                  // 👉 single ride = true (go to main)
+                                  // 👉 shared ride = false (stay in pool)
+                                );
+
+                                CommonLogger.log.i("Selected Rating: $selectedRating");
+
+                                // 1) close bottom sheet
+                                Navigator.pop(context);
+
+                                if (widget.isSharedRide) {
+                                  // 2) shared ride → close cash screen and
+                                  //    tell ShareRideStartScreen: "this rider done"
+                                  Get.back<bool>(result: true);
+                                }
+                                // single ride: do nothing more here,
+                                // driverRatingToCustomer will push DriverMainScreen
+                              },
+                              text: driverStatusController.isLoading.value
+                                  ? SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  color: AppColors.commonBlack,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                                  : const Text('Rate Ride'),
+                            ),
+                          ),
                         ),
+
                       ],
                     ),
                   ),
@@ -449,6 +506,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
     );
   }
 }
+
 
 // import 'dart:async';
 //

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hopper/Presentation/Authentication/screens/GetStarted_Screens.dart';
 import '../../../Core/Constants/Colors.dart';
 
 import '../../../Core/Utility/images.dart';
@@ -88,18 +89,8 @@ class _TermsScreenState extends State<TermsScreen> {
       ),
       bottomNavigationBar: CommonBottomNavigationBar(
         height: 120.h,
-        onBackPressed: () => Navigator.pop(context),
+        onBackPressed: () =>   Get.offAll(() => GetStartedScreens()),
 
-        // onNextPressed: () {
-        //   if (isChecked == false) {
-        //     CustomSnackBar.showInfo('Please Accept terms and condition');
-        //   } else {
-        //     Navigator.push(
-        //       context,
-        //       MaterialPageRoute(builder: (context) => ChooseService()),
-        //     );
-        //   }
-        // },
         onNextPressed: () {
           if (isChecked && !isNextClicked) {
             setState(() {

@@ -1,6 +1,21 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SharedPrefHelper {
+  SharedPrefHelper._();
+  static final SharedPrefHelper instance = SharedPrefHelper._();
+
+  static const _keySharedBookingEnabled = 'shared_booking_enabled';
+
+  Future<bool> getSharedBookingEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keySharedBookingEnabled) ?? false;
+  }
+
+  Future<void> setSharedBookingEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keySharedBookingEnabled, value);
+  }
+
   static Future<String?> getToken() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     return prefs.getString('token');

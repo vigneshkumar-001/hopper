@@ -24,13 +24,26 @@ class _RideAndPackageHistoryScreenState
   final RideHistoryController controller = Get.put(RideHistoryController());
   // bool isExpanded = false; // Track dropdown state
   List<bool> expandedList = [];
+  final ScrollController scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (controller.rideHistoryData.isEmpty) {
-        controller.rideHistory();
+        controller.rideHistory(isRefresh: true);
+        _paginationListener();
+      }
+    });
+  }
+
+  void _paginationListener() {
+    scrollController.addListener(() {
+      if (scrollController.position.pixels >=
+          scrollController.position.maxScrollExtent - 150) {
+        if (!controller.isMoreLoading.value && controller.hasMore.value) {
+          controller.rideHistory();
+        }
       }
     });
   }
@@ -95,15 +108,34 @@ class _RideAndPackageHistoryScreenState
 
                 return RefreshIndicator(
                   onRefresh: () async {
-                    return await controller.rideHistory();
+                    return await controller.rideHistory(isRefresh: true);
                   },
                   child: ListView.builder(
+                    controller: scrollController,
                     physics: AlwaysScrollableScrollPhysics(
                       parent: BouncingScrollPhysics(),
                     ),
-                    itemCount: data.length,
+                    itemCount: data.length + (controller.hasMore.value ? 1 : 0),
+
                     itemBuilder: (context, index) {
+                      if (index == data.length) {
+                        // bottom loader
+                        return controller.isMoreLoading.value
+                            ? const Padding(
+                              padding: EdgeInsets.all(20),
+                              child: Center(child: CircularProgressIndicator()),
+                            )
+                            : const SizedBox.shrink();
+                      }
                       final historyData = data[index];
+                      // if (index == data.length - 1 &&
+                      //     controller.isMoreLoading.value) {
+                      //   return Padding(
+                      //     padding: const EdgeInsets.all(20),
+                      //     child: Center(child: AppLoader.circularLoader()),
+                      //   );
+                      // }
+
                       return Container(
                         margin: const EdgeInsets.symmetric(
                           horizontal: 15,
@@ -299,7 +331,9 @@ class _RideAndPackageHistoryScreenState
                                                   ),
                                                   Spacer(),
                                                   CustomTextfield.textWithStylesSmall(
-                                                    historyData.pickup.time,
+                                                    historyData.pickup.time
+                                                            .toString() ??
+                                                        '',
                                                   ),
                                                 ],
                                               ),
@@ -472,8 +506,10 @@ class _RideAndPackageHistoryScreenState
                                                   ),
                                                   CustomTextfield.textWithStyles600(
                                                     historyData
-                                                        .paymentDetails
-                                                        .method,
+                                                            .paymentDetails
+                                                            ?.method
+                                                            .toString() ??
+                                                        '',
                                                     fontSize: 12,
                                                   ),
                                                 ],
@@ -489,8 +525,10 @@ class _RideAndPackageHistoryScreenState
                                                   ),
                                                   CustomTextfield.textWithStyles600(
                                                     historyData
-                                                        .paymentDetails
-                                                        .status,
+                                                            .paymentDetails
+                                                            ?.status
+                                                            .toString() ??
+                                                        '',
                                                     fontSize: 12,
                                                   ),
                                                 ],
@@ -499,7 +537,6 @@ class _RideAndPackageHistoryScreenState
                                           ),
                                           const SizedBox(height: 10),
 
-                                          /// Fare breakdown
                                           Container(
                                             margin: const EdgeInsets.only(
                                               top: 10,

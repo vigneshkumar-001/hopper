@@ -964,7 +964,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                           onTap: () {
                                             Buttons.showCancelRideBottomSheet(
                                               context,
-                                              onConfirmCancel: (reason) {
+                                              onConfirmCancel: (reason) async {
                                                 driverStatusController
                                                     .cancelBooking(
                                                       bookingId:
@@ -1337,19 +1337,22 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                             );
                                           }
                                         },
-                                        text:
-                                            driverStatusController
-                                                    .arrivedIsLoading
-                                                    .value
-                                                ? SizedBox(
-                                                  height: 20,
-                                                  width: 20,
-                                                  child:
-                                                      AppLoader.circularLoader(),
-                                                )
-                                                : const Text(
-                                                  'Arrived at Pickup Point',
-                                                ),
+                                        text: const Text(
+                                          'Arrived at Pickup Point',
+                                        ),
+                                        // text:
+                                        //     driverStatusController
+                                        //             .arrivedIsLoading
+                                        //             .value
+                                        //         ? SizedBox(
+                                        //           height: 20,
+                                        //           width: 20,
+                                        //           child:
+                                        //               AppLoader.circularLoader(),
+                                        //         )
+                                        //         : const Text(
+                                        //           'Arrived at Pickup Point',
+                                        //         ),
                                       ),
                                       const SizedBox(height: 20),
                                       GestureDetector(
@@ -1542,6 +1545,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                       textColor: AppColors.commonBlack,
                                       onTap:
                                           () => Buttons.showDialogBox(
+                                            onConfirmStop: ()async{},
                                             context: context,
                                           ),
                                       text: const Text('Stop New Ride Request'),
@@ -1553,7 +1557,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                       onTap: () {
                                         Buttons.showCancelRideBottomSheet(
                                           context,
-                                          onConfirmCancel: (reason) {
+                                          onConfirmCancel: (reason) async {
                                             driverStatusController
                                                 .cancelBooking(
                                                   bookingId: widget.bookingId,

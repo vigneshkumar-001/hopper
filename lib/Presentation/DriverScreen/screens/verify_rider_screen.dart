@@ -1,3 +1,318 @@
+// lib/Presentation/DriverScreen/screens/verify_rider_screen.dart
+
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:get/get.dart';
+import 'package:pin_code_fields/pin_code_fields.dart';
+
+import 'package:hopper/Core/Constants/Colors.dart';
+import 'package:hopper/Core/Utility/Buttons.dart';
+import 'package:hopper/Core/Utility/app_loader.dart';
+import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Presentation/Authentication/widgets/bottomNavigation.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/ride_stats_screen.dart';
+
+class VerifyRiderScreen extends StatefulWidget {
+  final String bookingId;
+  final String custName;
+  final String? pickupAddress;
+  final String? dropAddress;
+
+  /// 👉 For shared ride flow, set this to true and we will just `pop(true)`
+  /// instead of navigating to RideStatsScreen.
+  final bool isSharedRide;
+
+  const VerifyRiderScreen({
+    super.key,
+    required this.bookingId,
+    required this.custName,
+    this.pickupAddress,
+    this.dropAddress,
+    this.isSharedRide = false,
+  });
+
+  @override
+  State<VerifyRiderScreen> createState() => _VerifyRiderScreenState();
+}
+
+class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
+  final TextEditingController otp = TextEditingController(text: "");
+  final formKey = GlobalKey<FormState>();
+  final FocusNode otpFocusNode = FocusNode();
+
+  /// ✅ Use GetX controller (same instance everywhere)
+  final DriverStatusController driverStatusController =
+  Get.find<DriverStatusController>();
+
+  String verifyCode = '';
+  String? otpError;
+  bool otpVerified = false;
+  bool _isNavigating = false;
+
+  Color enableColor = AppColors.containerColor1;
+  late final StreamController<ErrorAnimationType> errorController;
+
+  @override
+  void initState() {
+    super.initState();
+    errorController = StreamController<ErrorAnimationType>.broadcast();
+  }
+
+  @override
+  void dispose() {
+    errorController.close();
+    if (!_isNavigating) {
+      otp.dispose();
+      otpFocusNode.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _onVerifyTap() async {
+    final enteredOtp = otp.text.trim();
+
+    if (enteredOtp.isEmpty) {
+      setState(() {
+        otpError = "Please enter the OTP";
+      });
+      errorController.add(ErrorAnimationType.shake);
+      return;
+    } else if (enteredOtp.length != 4) {
+      setState(() {
+        otpError = "OTP must be 4 digits";
+      });
+      errorController.add(ErrorAnimationType.shake);
+      return;
+    }
+
+    setState(() => otpError = null);
+
+    // Hide keyboard
+    FocusScope.of(context).unfocus();
+
+    final result = await driverStatusController.otpInsert(
+      context,
+      bookingId: widget.bookingId,
+      otp: enteredOtp,
+    );
+
+    if (!mounted) return;
+
+    if (result == null) {
+      // already showed snackbar in controller
+      return;
+    }
+
+    // ✅ OTP success
+    otpVerified = true;
+
+    // Small delay for UI smoothness
+    await Future.delayed(const Duration(milliseconds: 120));
+
+    _isNavigating = true;
+
+    if (widget.isSharedRide) {
+      // 👉 Shared ride flow: just tell previous screen "OTP verified"
+      Navigator.pop<bool>(context, true);
+    } else {
+      // 👉 Normal flow: go to RideStatsScreen (your existing behaviour)
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RideStatsScreen(
+            pickupAddress: widget.pickupAddress,
+            dropAddress: widget.dropAddress,
+            bookingId: widget.bookingId,
+          ),
+        ),
+      );
+    }
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        body: SafeArea(
+          child: Obx(() {
+            if (driverStatusController.isLoading.value) {
+              return Center(child: AppLoader.appLoader());
+            }
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 15,
+                vertical: 20,
+              ),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        spacing: 32,
+                        children: [
+                          // Back button (tap can be wired later if needed)
+                          Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.commonBlack.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Image.asset(
+                                AppImages.backButton,
+                                height: 25,
+                                width: 25,
+                              ),
+                            ),
+                          ),
+
+                          Text(
+                            textAlign: TextAlign.center,
+                            'Enter the ${widget.custName}’s Verification Code',
+                            style: TextStyle(
+                              color: AppColors.commonBlack,
+                              fontSize: 25,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+
+                          // OTP field + error text
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Form(
+                                key: formKey,
+                                child: PinCodeTextField(
+                                  errorAnimationController: errorController,
+                                  autoDisposeControllers: false,
+                                  textStyle: TextStyle(
+                                    fontSize: 20,
+                                    color: otpError != null
+                                        ? AppColors.red
+                                        : Colors.black,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  autoFocus: !otpVerified,
+                                  autoDismissKeyboard: true,
+                                  focusNode: otpFocusNode,
+                                  appContext: context,
+                                  length: 4,
+                                  blinkWhenObscuring: true,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  animationType: AnimationType.fade,
+                                  controller: otp,
+                                  keyboardType: TextInputType.number,
+                                  enableActiveFill: true,
+                                  cursorColor: Colors.black,
+                                  animationDuration:
+                                  const Duration(milliseconds: 300),
+                                  boxShadows: const [
+                                    BoxShadow(
+                                      offset: Offset(0, 1),
+                                      color: Colors.black12,
+                                      blurRadius: 5,
+                                    ),
+                                  ],
+                                  pinTheme: PinTheme(
+                                    shape: PinCodeFieldShape.box,
+                                    borderRadius: BorderRadius.circular(4.sp),
+                                    fieldHeight: 48.sp,
+                                    fieldWidth: 48.sp,
+                                    selectedColor: otpError != null
+                                        ? AppColors.red
+                                        : AppColors.commonBlack,
+                                    activeColor: otpError != null
+                                        ? AppColors.red
+                                        : AppColors.containerColor,
+                                    activeFillColor: otpError != null
+                                        ? Colors.transparent
+                                        : AppColors.containerColor,
+                                    inactiveColor: otpError != null
+                                        ? AppColors.red
+                                        : AppColors.containerColor,
+                                    selectedFillColor: otpError != null
+                                        ? Colors.transparent
+                                        : AppColors.containerColor,
+                                    inactiveFillColor: otpError != null
+                                        ? Colors.transparent
+                                        : AppColors.containerColor,
+                                    fieldOuterPadding:
+                                    const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      verifyCode = value;
+                                      if (value.isEmpty) {
+                                        otpError = "Please enter the OTP";
+                                        enableColor =
+                                            AppColors.containerColor1;
+                                      } else if (value.length != 4) {
+                                        otpError = "OTP must be 4 digits";
+                                        enableColor =
+                                            AppColors.containerColor1;
+                                      } else {
+                                        otpError = null;
+                                        enableColor = Colors.black;
+                                      }
+                                    });
+                                  },
+                                  beforeTextPaste: (text) => true,
+                                ),
+                              ),
+                              if (otpError != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    otpError!,
+                                    style: TextStyle(
+                                      color: AppColors.red,
+                                      fontSize: 14,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Verify button
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 0),
+                    child: Buttons.button(
+                      borderRadius: 7,
+                      buttonColor: enableColor,
+                      onTap: () async {
+                        if (driverStatusController.isLoading.value) return;
+                        await _onVerifyTap();
+                      },
+                      text: Text('Verify ${widget.custName}'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+}
+
+
+/*
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -115,7 +430,8 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                 ),
                               ),
 
-                              /*   Form(
+                              */
+/*   Form(
                                 key: formKey,
                                 child: PinCodeTextField(
                                   autoFocus: true,
@@ -217,7 +533,8 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                     return true;
                                   },
                                 ),
-                              ),*/
+                              ),*//*
+
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
@@ -379,7 +696,8 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                           borderRadius: 7,
                           buttonColor: enableColor,
 
-                          /*                          onTap: () async {
+                          */
+/*                          onTap: () async {
                             final enteredOtp = otp.text.trim();
 
                             if (enteredOtp.isEmpty || enteredOtp.length != 4) {
@@ -423,7 +741,8 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                 );
                               }
                             }
-                          },*/
+                          },*//*
+
                           onTap: () async {
                             final enteredOtp = otp.text.trim();
 
@@ -487,3 +806,4 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
     );
   }
 }
+*/

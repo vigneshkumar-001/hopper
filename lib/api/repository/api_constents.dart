@@ -3,10 +3,11 @@ class ApiConstents {
       'https://hoppr-backend-3d2b7f783917.herokuapp.com/api';
   // static String googleMapApiKey = 'AIzaSyA5wtbZ30XrpN1WE9-ZM1CYbY0g31NlT_A';
   static String googleMapApiKey = 'AIzaSyCvU6g43_aujUMDTTHpCtg1wkHszDhdC28';
-  static String baseUrl =
+  static String baseUrl12 =
       'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api';
 
-  static String baseUrl1 = 'https://4wsg7ghz-3000.inc1.devtunnels.ms/api';
+  static String baseUrl1 = 'https://q29l3cr9-3000.inc1.devtunnels.ms';
+  static String baseUrl = 'https://q29l3cr9-3000.inc1.devtunnels.ms/api';
   static String chatHistory = '$baseUrl/customer/chat-history';
   static String notification = '$baseUrl/users/notifications';
   static String loginApi = '$baseUrl/users/signUp';
@@ -28,6 +29,8 @@ class ApiConstents {
   static String checkPaymentType = '$baseUrl/users/check-payment-type';
   static String cashCollectedStatus = '$baseUrl/cashonhand/byuser/orders';
   static String addToWalletResponse = '$baseUrl/users/add-to-wallet-reponse';
+  static String driverAccept = '$baseUrl/users/driver-response';
+  static String stopNewRequests = '$baseUrl/users/stopNewRequests';
   // static String driverOnlineStatus =
   //     '$baseUrl2/users/toggle-status/683fed0a00aa693559289fbc';
 
@@ -60,6 +63,26 @@ class ApiConstents {
 
   static String driverArrived({required String booking}) {
     return '$baseUrl/users/driver-arrived/$booking';
+  }
+  static String getCityList({required String state}) {
+    return '$baseUrl/users/districts?state=$state';
+  }
+
+  static String getBrandList({required String selectedService}) {
+    return '$baseUrl/users/brands?type=$selectedService';
+  }
+
+
+  static String getModel({required String brand,required String selectedService}) {
+    return '$baseUrl/users/models/$brand?type=$selectedService';
+  }
+
+  static String getYear({required String brand,required String selectedService,required String model}) {
+    return '$baseUrl/users/details/$brand/$model?type=$selectedService';
+  }
+
+    static String guideLines({required String type, }) {
+    return '$baseUrl/users/guidelines/$type';
   }
 
   // https://hoppr-backend-3d2b7f783917.herokuapp.com/api/users/districts?state=$state

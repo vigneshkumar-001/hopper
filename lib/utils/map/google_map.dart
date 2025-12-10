@@ -11,9 +11,10 @@ class CommonGoogleMap extends StatefulWidget {
   final Function(GoogleMapController)? onMapCreated;
   final VoidCallback? onCameraMoveStarted;
   final Function(CameraPosition)? onCameraMove;
-
+  final Set<Circle> circles; // 👈 add this
   const CommonGoogleMap({
     Key? key,
+    this.circles = const {}, // 👈 default empty
     required this.initialPosition,
     this.polylines = const {},
     this.markers = const {},
@@ -45,10 +46,13 @@ class _CommonGoogleMapState extends State<CommonGoogleMap> {
       myLocationEnabled: widget.myLocationEnabled,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
-
+      circles: widget.circles, // 👈 forward to GoogleMap
       compassEnabled: false,
       mapToolbarEnabled: false,
+
       rotateGesturesEnabled: true,
+      tiltGesturesEnabled: false,
+      trafficEnabled: false,
       gestureRecognizers: {
         Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
       },

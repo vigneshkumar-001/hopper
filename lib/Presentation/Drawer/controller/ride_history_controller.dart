@@ -25,6 +25,9 @@ class RideHistoryController extends GetxController {
   Rx<AddWalletResponse?> walletData = Rx<AddWalletResponse?>(null);
   RxList<Transaction> traction = RxList<Transaction>([]);
   var balance = ''.obs; // ✅ Correct (RxString)
+  var page = 1;
+  var hasMore = true.obs;
+  var isMoreLoading = false.obs;
 
   @override
   void onInit() {
@@ -32,56 +35,149 @@ class RideHistoryController extends GetxController {
     //  rideHistory();
   }
 
-  Future<void> rideHistory() async {
-    isLoading.value = true;
-    try {
-      final results = await apiDataSource.rideHistory();
-      results.fold(
-        (failure) {
-          CustomSnackBar.showError(failure.message);
-          isLoading.value = false;
+  Future<void> rideHistory({bool isRefresh = false}) async {
+    if (isMoreLoading.value || isLoading.value) return;
 
-          return;
-        },
-        (response) {
-          isLoading.value = false;
-          rideHistoryData.value = response.remappedBookings;
-          return;
-        },
-      );
-    } catch (e) {
-      isLoading.value = false;
-      return;
+    if (isRefresh) {
+      page = 1;
+      hasMore.value = true;
+      rideHistoryData.clear();
+      isLoading.value = true;
+    } else {
+      if (!hasMore.value) return; // stop if no more
+      isMoreLoading.value = true;
     }
-    isLoading.value = false;
-    return;
-  }
 
-  Future<void> customerWalletHistory() async {
-    isLoading.value = true;
     try {
-      final results = await apiDataSource.customerWalletHistory();
-      results.fold(
-        (failure) {
-          print("❌ Ride history fetch failed: $failure");
-        },
-        (response) {
-          traction.value = response.transactions;
-          final amount = response.balance?.amount ?? 0.0;
-          final cashOnHand = response.balance?.cashOnHand ?? 0.0;
+      final result = await apiDataSource.rideHistory(page: page);
 
-          balance.value = amount.toString() ?? '';
-          print("✅ Raw response: ${response.transactions}");
-          return response.transactions.toString();
+      result.fold(
+            (failure) {
+          CustomSnackBar.showError(failure.message);
+        },
+            (response) {
+          final newItems = response. bookings ?? [];
+
+          if (isRefresh) {
+            rideHistoryData.value = newItems;
+          } else {
+            rideHistoryData.addAll(newItems);
+          }
+
+          // Pagination logic
+          if (newItems.length < 10) {
+            hasMore.value = false;
+          } else {
+            page++;
+          }
         },
       );
-    } catch (e) {
-      print("❌ Exception while fetching rides: $e");
     } finally {
       isLoading.value = false;
+      isMoreLoading.value = false;
     }
-    return null;
   }
+
+  Future<void> customerWalletHistory({bool isRefresh = false}) async {
+
+    if (isMoreLoading.value || isLoading.value) return;
+
+    if (isRefresh) {
+      page = 1;
+      hasMore.value = true;
+      traction.clear();
+      isLoading.value = true;
+    } else {
+      if (!hasMore.value) return;
+      isMoreLoading.value = true;
+    }
+
+    try {
+      final results = await apiDataSource.customerWalletHistory(page: page);
+
+      results.fold(
+            (failure) {
+          CustomSnackBar.showError(failure.message);
+        },
+            (response) {
+          final newItems = response.transactions;
+
+          if (isRefresh) {
+            traction.value = newItems;
+          } else {
+            traction.addAll(newItems);
+          }
+
+          // Balance update
+          final amount = response.balance?.amount ?? 0.0;
+          balance.value = amount.toString();
+
+          // Pagination check
+          if (newItems.length < 10) {
+            hasMore.value = false;
+          } else {
+            page++;
+          }
+        },
+      );
+
+    } finally {
+      isLoading.value = false;
+      isMoreLoading.value = false;
+    }
+  }
+
+
+  // Future<void> rideHistory() async {
+  //   isLoading.value = true;
+  //   try {
+  //     final results = await apiDataSource.rideHistory();
+  //     results.fold(
+  //       (failure) {
+  //         CustomSnackBar.showError(failure.message);
+  //         isLoading.value = false;
+  //
+  //         return;
+  //       },
+  //       (response) {
+  //         isLoading.value = false;
+  //         rideHistoryData.value = response.remappedBookings;
+  //         return;
+  //       },
+  //     );
+  //   } catch (e) {
+  //     isLoading.value = false;
+  //     return;
+  //   }
+  //   isLoading.value = false;
+  //   return;
+  // }
+
+  // Future<void> customerWalletHistory() async {
+  //   isLoading.value = true;
+  //   try {
+  //     final results = await apiDataSource.customerWalletHistory();
+  //     results.fold(
+  //       (failure) {
+  //         print("❌ Ride history fetch failed: $failure");
+  //       },
+  //       (response) {
+  //         traction.value = response.transactions;
+  //         final amount = response.balance?.amount ?? 0.0;
+  //         final cashOnHand = response.balance?.cashOnHand ?? 0.0;
+  //
+  //         balance.value = amount.toString() ?? '';
+  //         print("✅ Raw response: ${response.transactions}");
+  //         return response.transactions.toString();
+  //       },
+  //     );
+  //   } catch (e) {
+  //     print("❌ Exception while fetching rides: $e");
+  //   } finally {
+  //     isLoading.value = false;
+  //   }
+  //   return null;
+  // }
 
   Future<void> addWallet({
     required double amount,
