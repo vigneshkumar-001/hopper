@@ -18,8 +18,7 @@ class Request {
     String? token = prefs.getString('token');
     String? userId = prefs.getString('userId');
 
-    AuthController authController = getx.Get.find();
-    OtpController otpController = getx.Get.find();
+
     Dio dio = Dio(
       BaseOptions(
         connectTimeout: const Duration(seconds: 10),

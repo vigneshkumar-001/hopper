@@ -5,6 +5,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+import java.util.Properties
+        import java.io.FileInputStream
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties") // reads android/key.properties
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.hopper.hopper"
     compileSdk = flutter.compileSdkVersion
@@ -28,20 +37,66 @@ android {
         jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String
+            keyPassword = keystoreProperties["keyPassword"] as String
+            storeFile = file(keystoreProperties["storeFile"] as String)
+            storePassword = keystoreProperties["storePassword"] as String
+        }
+    }
+
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release") // ✅ changed
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 file("proguard-rules.pro")
             )
         }
     }
-
-
 }
+
+//android {
+//    namespace = "com.hopper.hopper"
+//    compileSdk = flutter.compileSdkVersion
+//    ndkVersion = "27.0.12077973"
+//
+//    defaultConfig {
+//        applicationId = "com.hopper.hopper"
+//        minSdk = 24
+//        targetSdk = flutter.targetSdkVersion
+//        versionCode = flutter.versionCode
+//        versionName = flutter.versionName
+//    }
+//
+//    compileOptions {
+//        sourceCompatibility = JavaVersion.VERSION_11
+//        targetCompatibility = JavaVersion.VERSION_11
+//        isCoreLibraryDesugaringEnabled = true
+//    }
+//
+//    kotlinOptions {
+//        jvmTarget = JavaVersion.VERSION_11.toString()
+//    }
+//
+//    buildTypes {
+//        release {
+//            isMinifyEnabled = true
+//            isShrinkResources = true
+//            signingConfig = signingConfigs.getByName("debug")
+//            proguardFiles(
+//                getDefaultProguardFile("proguard-android-optimize.txt"),
+//                file("proguard-rules.pro")
+//            )
+//        }
+//    }
+//
+//
+//}
 
 flutter {
     source = "../.."

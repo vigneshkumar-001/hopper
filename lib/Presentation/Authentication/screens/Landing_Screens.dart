@@ -15,10 +15,10 @@ class LandingScreens extends StatefulWidget {
 
 class _LandingScreensState extends State<LandingScreens> {
   final ChooseServiceController controller = Get.find();
-  Future<void> loadAndNavigate() async {
-    await controller.getUserDetails();
-    controller.handleLandingPageNavigation(Get.context!);
-  }
+  // Future<void> loadAndNavigate() async {
+  //   await controller.getUserDetails();
+  //   controller.handleLandingPageNavigation(Get.context!);
+  // }
 
   Future<void> getUserDetail() async {
     await controller.getUserDetails();
@@ -105,7 +105,7 @@ class _LandingScreensState extends State<LandingScreens> {
                             ),
                           ),
                           onPressed: () {
-                            loadAndNavigate();
+                            // loadAndNavigate();
                             Navigator.push(
                               context,
                               MaterialPageRoute(

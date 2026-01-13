@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Presentation/Authentication/screens/GetStarted_Screens.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
 import 'package:hopper/Presentation/Drawer/controller/notification_controller.dart';
 import 'package:hopper/Presentation/Drawer/screens/notification_screen.dart';
@@ -10,6 +11,7 @@ import 'package:hopper/Presentation/Drawer/screens/ride_activity.dart';
 import 'package:hopper/Presentation/Drawer/screens/settings_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/wallet_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../OnBoarding/controller/chooseservice_controller.dart';
 
@@ -140,14 +142,44 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             CustomTextfield.textWithStyles700('Shared Booking'),
                             Obx(
                               () => Switch(
-                                value: sharedCtrl.isSharedEnabled.value,
-                                onChanged: (val) {
-                                  sharedCtrl.setSharedEnabled(val);
-                                },
+                                value: sharedCtrl.cfg.isSharedEnabled.value,
+                                onChanged: sharedCtrl.setSharedEnabled,
                                 activeColor: AppColors.drkGreen,
                               ),
                             ),
+
+                            // Obx(
+                            //   () => Switch(
+                            //     value: sharedCtrl.isSharedEnabled.value,
+                            //     onChanged: (val) {
+                            //       sharedCtrl.setSharedEnabled(val);
+                            //     },
+                            //     activeColor: AppColors.drkGreen,
+                            //   ),
+                            // ),
                           ],
+                        ),
+                        const SizedBox(height: 20),
+                        Divider(
+                          color: AppColors.dividerColor.withOpacity(0.1),
+                          thickness: 1.5,
+                        ),
+                        const SizedBox(height: 20),
+
+                        // 🔴 NEW: Shared Booking toggle
+                        InkWell(
+                          onTap: () => _showLogoutDialog(context),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              CustomTextfield.textWithStyles700('Log out'),
+                              const Icon(
+                                Icons.logout,
+                                color: Colors.red,
+                                size: 22,
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -232,6 +264,111 @@ class _DrawerScreenState extends State<DrawerScreen> {
       ),
     );
   }
+
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: AppColors.commonWhite,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Icon
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.logout, color: Colors.red, size: 28),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Title
+                const Text(
+                  'Log out',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+
+                const SizedBox(height: 8),
+
+                // Message
+                const Text(
+                  'Do you want to log out?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Colors.black54),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.pop(context); // No
+                        },
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('No'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          _logout(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Yes'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+Future<void> _logout(BuildContext context) async {
+  final prefs = await SharedPreferences.getInstance();
+
+  await prefs.remove('token');
+  await prefs.remove('refreshToken');
+  await prefs.remove('sessionToken');
+  await prefs.remove('role');
+  await prefs.remove('contacts_synced');
+
+  if (!context.mounted) return;
+
+  Navigator.pushAndRemoveUntil(
+    context,
+    MaterialPageRoute(builder: (_) => const GetStartedScreens()),
+    (route) => false, // ❌ removes ALL previous routes
+  );
 }
 
 // import 'package:flutter/material.dart';

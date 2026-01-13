@@ -12,13 +12,36 @@ import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
 import '../../../utils/sharedprefsHelper/booking_local_data.dart';
 import '../../OnBoarding/controller/chooseservice_controller.dart';
+import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:hopper/Core/Constants/Colors.dart';
+import 'package:hopper/Core/Constants/log.dart';
+import 'package:hopper/Core/Utility/Buttons.dart';
+import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
+import '../../../utils/netWorkHandling/network_handling_screen.dart';
+import '../../../utils/sharedprefsHelper/booking_local_data.dart';
+import '../../OnBoarding/controller/chooseservice_controller.dart';
 
 class CashCollectedScreen extends StatefulWidget {
   final dynamic Amount;
   final String? bookingId;
+  final String? imageUrl;
+  final String? name;
   final bool isSharedRide;
 
-  const CashCollectedScreen({super.key, this.Amount, this.bookingId,  this.isSharedRide = false,  });
+  const CashCollectedScreen({
+    super.key,
+    this.Amount,
+    this.bookingId,
+    this.imageUrl,
+    this.name,
+    this.isSharedRide = false,
+  });
 
   @override
   State<CashCollectedScreen> createState() => _CashCollectedScreenState();
@@ -38,9 +61,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
     _timer = Timer.periodic(const Duration(seconds: 3), (timer) {
       final bookingId = widget.bookingId?.toString() ?? '';
       if (bookingId.isNotEmpty) {
-        driverStatusController.getAmountStatus(
-          bookingId: bookingId,
-        ); // ✅ named argument
+        driverStatusController.getAmountStatus(bookingId: bookingId);
       }
     });
   }
@@ -49,6 +70,21 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
   void dispose() {
     _timer?.cancel();
     super.dispose();
+  }
+
+  /// ✅ Shared flow complete → go back to ShareRideStartScreen (Navigator result)
+  Future<void> _finishSharedAndPop({required bool success}) async {
+    _timer?.cancel();
+    try {
+      Get.closeAllSnackbars();
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    // ✅ ONLY Navigator pop with result
+    if (Navigator.of(context).canPop()) {
+      Navigator.pop<bool>(context, success);
+    }
   }
 
   @override
@@ -63,14 +99,15 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                /// 🔙 TOP BACK
                 GestureDetector(
-                  onTap: () {
+                  onTap: () async {
                     if (widget.isSharedRide) {
-                      // shared flow: tell parent "not collected"
-                      Get.back<bool>(result: false);
+                      await _finishSharedAndPop(success: false);
                     } else {
-                      // single ride: normal back
-                      Navigator.pop(context);
+                      if (Navigator.of(context).canPop()) {
+                        Navigator.pop(context);
+                      }
                     }
                   },
                   child: Image.asset(
@@ -80,18 +117,9 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                   ),
                 ),
 
-
-                // GestureDetector(
-                //   onTap: () => Navigator.pop(context),
-                //   child: Image.asset(
-                //     AppImages.backButton,
-                //     height: 25,
-                //     width: 25,
-                //   ),
-                // ),
                 const Spacer(),
 
-                // ✅ User Profile
+                /// 👤 USER PROFILE + AMOUNT + PAYMENT STATUS
                 Obx(() {
                   final profilePic =
                       getDetails.userProfile.value?.profilePic ?? '';
@@ -104,7 +132,10 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                         child:
                             profilePic.isNotEmpty
                                 ? CachedNetworkImage(
-                                  imageUrl: profilePic,
+                                  imageUrl:
+                                      widget.imageUrl == null
+                                          ? profilePic
+                                          : widget.imageUrl.toString() ?? '',
                                   height: 80,
                                   width: 80,
                                   imageBuilder:
@@ -137,7 +168,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                       ),
                       const SizedBox(height: 10),
                       CustomTextfield.textWithStylesSmall(
-                        'Collect cash from $firstName',
+                        'Collect cash from ${widget.name == null ? firstName : widget.name.toString() ?? ''}',
                         colors: AppColors.grey,
                         fontSize: 14,
                       ),
@@ -147,6 +178,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                       ),
                       const SizedBox(height: 15),
 
+                      /// 💳 PAYMENT INFO BOX
                       Obx(
                         () => Container(
                           padding: const EdgeInsets.symmetric(
@@ -171,7 +203,6 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Payment Type
                               RichText(
                                 text: TextSpan(
                                   text: "Payment Type: ",
@@ -187,9 +218,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                               .paymentType
                                               .value,
                                       style: const TextStyle(
-                                        color:
-                                            Colors
-                                                .blue, // ✅ Different color for value
+                                        color: Colors.blue,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -197,8 +226,6 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                 ),
                               ),
                               const SizedBox(height: 6),
-
-                              // Payment Status
                               RichText(
                                 text: TextSpan(
                                   text: "Payment Status: ",
@@ -238,7 +265,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
 
                 const Spacer(),
 
-                // ✅ Info Box
+                /// ℹ️ INFO BOX
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -270,7 +297,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                 ),
                 const SizedBox(height: 30),
 
-                // ✅ Manual trigger (optional)
+                /// 🤑 CASH COLLECTED BUTTON
                 SafeArea(
                   child: Obx(
                     () => Buttons.button(
@@ -283,7 +310,6 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                 driverStatusController.amountCollectedStatus(
                                   booking: widget.bookingId.toString(),
                                   onSuccess: () {
-                                    // ✅ Pop up the rating sheet automatically
                                     _showRatingBottomSheet(context);
                                   },
                                 );
@@ -310,72 +336,73 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
     );
   }
 
-  // ✅ Bottom Sheet for Rating
-  void _showRatingBottomSheet(BuildContext context) {
+  /// ⭐ RATING BOTTOM SHEET
+  void _showRatingBottomSheet(BuildContext pageContext) {
     int selectedRating = 0;
 
     showModalBottomSheet(
-      context: context,
+      context: pageContext,
       isScrollControlled: true,
       isDismissible: false,
       enableDrag: false,
       backgroundColor: Colors.white,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            final profilePic = getDetails.userProfile.value?.profilePic ?? '';
-            final firstName =
-                getDetails.userProfile.value?.firstName ?? 'Customer';
+      builder: (sheetContext) {
+        final profilePic = getDetails.userProfile.value?.profilePic ?? '';
+        final firstName = getDetails.userProfile.value?.firstName ?? 'Customer';
 
-            return SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(vertical: 50),
-              child: Column(
-                children: [
-                  Center(
-                    child:
-                        profilePic.isNotEmpty
-                            ? CachedNetworkImage(
-                              imageUrl: profilePic,
-                              height: 65,
-                              width: 65,
-                              imageBuilder:
-                                  (context, imageProvider) => Container(
-                                    height: 65,
-                                    width: 65,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      image: DecorationImage(
-                                        image: imageProvider,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    ),
+        return SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 50),
+          child: Column(
+            children: [
+              Center(
+                child:
+                    profilePic.isNotEmpty
+                        ? CachedNetworkImage(
+                          imageUrl: profilePic,
+                          height: 65,
+                          width: 65,
+                          imageBuilder:
+                              (context, imageProvider) => Container(
+                                height: 65,
+                                width: 65,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  image: DecorationImage(
+                                    image: imageProvider,
+                                    fit: BoxFit.cover,
                                   ),
-                              placeholder:
-                                  (context, url) =>
-                                      const CircularProgressIndicator(),
-                              errorWidget:
-                                  (context, url, error) => const Icon(
-                                    Icons.person,
-                                    size: 65,
-                                    color: Colors.grey,
-                                  ),
-                            )
-                            : const Icon(
-                              Icons.person,
-                              size: 65,
-                              color: Colors.grey,
-                            ),
-                  ),
-                  const SizedBox(height: 20),
-                  CustomTextfield.textWithStyles600(
-                    textAlign: TextAlign.center,
-                    fontSize: 20,
-                    'Rate your Experience with $firstName?',
-                  ),
-                  const SizedBox(height: 20),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 40),
-                    child: Row(
+                                ),
+                              ),
+                          placeholder:
+                              (context, url) =>
+                                  const CircularProgressIndicator(),
+                          errorWidget:
+                              (context, url, error) => const Icon(
+                                Icons.person,
+                                size: 65,
+                                color: Colors.grey,
+                              ),
+                        )
+                        : const Icon(
+                          Icons.person,
+                          size: 65,
+                          color: Colors.grey,
+                        ),
+              ),
+              const SizedBox(height: 20),
+              CustomTextfield.textWithStyles600(
+                textAlign: TextAlign.center,
+                fontSize: 20,
+                'Rate your Experience with $firstName?',
+              ),
+              const SizedBox(height: 20),
+
+              /// ⭐ STARS
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                child: StatefulBuilder(
+                  builder: (ctx, setState) {
+                    return Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: List.generate(5, (index) {
                         return GestureDetector(
@@ -394,124 +421,108 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                           ),
                         );
                       }),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              /// BUTTONS
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  children: [
+                    /// ❌ CLOSE
+                    Expanded(
+                      child: Buttons.button(
+                        borderRadius: 8,
+                        textColor: AppColors.commonBlack,
+                        borderColor: AppColors.buttonBorder,
+                        buttonColor: AppColors.commonWhite,
+                        onTap: () async {
+                          // close sheet first
+                          Navigator.pop(sheetContext);
+
+                          if (widget.isSharedRide) {
+                            // ✅ pop cash screen with success
+                            await _finishSharedAndPop(success: true);
+                          } else {
+                            Navigator.pushReplacement(
+                              pageContext,
+                              MaterialPageRoute(
+                                builder: (_) => DriverMainScreen(),
+                              ),
+                            );
+                          }
+                        },
+                        text: const Text('Close'),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Buttons.button(
-                            borderRadius: 8,
-                            textColor: AppColors.commonBlack,
-                            borderColor: AppColors.buttonBorder,
-                            buttonColor: AppColors.commonWhite,
-                            onTap: () => Navigator.pop(context),
-                            text: const Text('Close'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        /*   Expanded(
-                          child: Obx(
-                            () => Buttons.button(
-                              borderRadius: 8,
-                              buttonColor: AppColors.commonBlack,
-                              onTap:
-                                  driverStatusController.isLoading.value
-                                      ? null
-                                      : () {
-                                    _timer?.cancel();
-                                        driverStatusController
-                                            .driverRatingToCustomer(
-                                              context: context,
-                                              rating: selectedRating,
-                                              bookingId:
-                                                  widget.bookingId.toString(),
-                                            );
-                                        CommonLogger.log.i(
-                                          "Selected Rating: $selectedRating",
-                                        );
-                                      },
-                              text:
-                                  driverStatusController.isLoading.value
-                                      ? SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: CircularProgressIndicator(
-                                          color: AppColors.commonBlack,
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                      : const Text('Rate Ride'),
-                            ),
-                          ),
-                        ),*/
-                        Expanded(
-                          child: Obx(
-                                () => Buttons.button(
-                              borderRadius: 8,
-                              buttonColor: AppColors.commonBlack,
-                              onTap: driverStatusController.isLoading.value
+                    const SizedBox(width: 10),
+
+                    /// ⭐ RATE RIDE
+                    Expanded(
+                      child: Obx(
+                        () => Buttons.button(
+                          borderRadius: 8,
+                          buttonColor: AppColors.commonBlack,
+                          onTap:
+                              driverStatusController.isLoading.value
                                   ? null
                                   : () async {
-                                _timer?.cancel();
+                                    _timer?.cancel();
 
-                                await driverStatusController.driverRatingToCustomer(
-                                  context: context,
-                                  rating: selectedRating,
-                                  bookingId: widget.bookingId.toString(),
-                                  goToMainOnSuccess: !widget.isSharedRide,
-                                  // 👉 single ride = true (go to main)
-                                  // 👉 shared ride = false (stay in pool)
-                                );
+                                    await driverStatusController
+                                        .driverRatingToCustomer(
+                                          context: pageContext,
+                                          rating: selectedRating,
+                                          bookingId:
+                                              widget.bookingId.toString(),
+                                          goToMainOnSuccess:
+                                              !widget.isSharedRide,
+                                        );
 
-                                CommonLogger.log.i("Selected Rating: $selectedRating");
+                                    CommonLogger.log.i(
+                                      "Selected Rating: $selectedRating",
+                                    );
 
-                                // 1) close bottom sheet
-                                Navigator.pop(context);
-
-                                if (widget.isSharedRide) {
-                                  // 2) shared ride → close cash screen and
-                                  //    tell ShareRideStartScreen: "this rider done"
-                                  Get.back<bool>(result: true);
-                                }
-                                // single ride: do nothing more here,
-                                // driverRatingToCustomer will push DriverMainScreen
-                              },
-                              text: driverStatusController.isLoading.value
-                                  ? SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  color: AppColors.commonBlack,
-                                  strokeWidth: 2,
-                                ),
-                              )
+                                    if (widget.isSharedRide) {
+                                      // close sheet
+                                      Navigator.pop(sheetContext);
+                                      // ✅ pop cash screen
+                                      await _finishSharedAndPop(success: true);
+                                    }
+                                  },
+                          text:
+                              driverStatusController.isLoading.value
+                                  ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
                                   : const Text('Rate Ride'),
-                            ),
-                          ),
                         ),
-
-                      ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
+                  ],
+                ),
               ),
-            );
-          },
+              const SizedBox(height: 10),
+            ],
+          ),
         );
       },
     );
   }
 }
 
-
 // import 'dart:async';
-//
 // import 'package:cached_network_image/cached_network_image.dart';
 // import 'package:flutter/material.dart';
+// import 'package:get/get.dart';
 // import 'package:hopper/Core/Constants/Colors.dart';
 // import 'package:hopper/Core/Constants/log.dart';
 // import 'package:hopper/Core/Utility/Buttons.dart';
@@ -519,15 +530,16 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
 // import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 // import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 // import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
-//
 // import '../../../utils/netWorkHandling/network_handling_screen.dart';
 // import '../../../utils/sharedprefsHelper/booking_local_data.dart';
 // import '../../OnBoarding/controller/chooseservice_controller.dart';
-// import 'package:get/get.dart';
 //
 // class CashCollectedScreen extends StatefulWidget {
 //   final dynamic Amount;
-//   const CashCollectedScreen({super.key, this.Amount});
+//   final String? bookingId;
+//   final bool isSharedRide;
+//
+//   const CashCollectedScreen({super.key, this.Amount, this.bookingId,  this.isSharedRide = false,  });
 //
 //   @override
 //   State<CashCollectedScreen> createState() => _CashCollectedScreenState();
@@ -539,17 +551,23 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
 //     DriverStatusController(),
 //   );
 //   Timer? _timer;
+//
 //   @override
 //   void initState() {
-//     // TODO: implement initState
 //     super.initState();
-//     _timer = Timer.periodic(const Duration(seconds: 2), (timer) {
-//       driverStatusController.getAmountStatus();
+//
+//     _timer = Timer.periodic(const Duration(seconds: 3), (timer) {
+//       final bookingId = widget.bookingId?.toString() ?? '';
+//       if (bookingId.isNotEmpty) {
+//         driverStatusController.getAmountStatus(
+//           bookingId: bookingId,
+//         ); // ✅ named argument
+//       }
 //     });
 //   }
+//
 //   @override
 //   void dispose() {
-//     // ✅ Always cancel timer to avoid memory leaks
 //     _timer?.cancel();
 //     super.dispose();
 //   }
@@ -557,20 +575,24 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
 //   @override
 //   Widget build(BuildContext context) {
 //     final bookingData = BookingDataService().getBookingData();
-//     print(bookingData?['estimatedPrice']);
 //
 //     return NoInternetOverlay(
 //       child: Scaffold(
 //         body: SafeArea(
 //           child: Padding(
-//             padding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 20),
+//             padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20),
 //             child: Column(
 //               crossAxisAlignment: CrossAxisAlignment.start,
-//
 //               children: [
 //                 GestureDetector(
 //                   onTap: () {
-//                     Navigator.pop(context);
+//                     if (widget.isSharedRide) {
+//                       // shared flow: tell parent "not collected"
+//                       Get.back<bool>(result: false);
+//                     } else {
+//                       // single ride: normal back
+//                       Navigator.pop(context);
+//                     }
 //                   },
 //                   child: Image.asset(
 //                     AppImages.backButton,
@@ -578,7 +600,19 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
 //                     width: 25,
 //                   ),
 //                 ),
-//                 const Spacer(), // pushes content to center vertically
+//
+//
+//                 // GestureDetector(
+//                 //   onTap: () => Navigator.pop(context),
+//                 //   child: Image.asset(
+//                 //     AppImages.backButton,
+//                 //     height: 25,
+//                 //     width: 25,
+//                 //   ),
+//                 // ),
+//                 const Spacer(),
+//
+//                 // ✅ User Profile
 //                 Obx(() {
 //                   final profilePic =
 //                       getDetails.userProfile.value?.profilePic ?? '';
@@ -628,20 +662,112 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
 //                         colors: AppColors.grey,
 //                         fontSize: 14,
 //                       ),
-//
 //                       const SizedBox(height: 10),
 //                       CustomTextfield.textWithStyles600(
-//                         widget.Amount.toString() ?? '',
+//                         widget.Amount.toString(),
+//                       ),
+//                       const SizedBox(height: 15),
+//
+//                       Obx(
+//                         () => Container(
+//                           padding: const EdgeInsets.symmetric(
+//                             horizontal: 16,
+//                             vertical: 12,
+//                           ),
+//                           decoration: BoxDecoration(
+//                             color: AppColors.commonWhite,
+//                             border: Border.all(
+//                               color: AppColors.containerColor1,
+//                               width: 1,
+//                             ),
+//                             borderRadius: BorderRadius.circular(10),
+//                             boxShadow: [
+//                               BoxShadow(
+//                                 color: Colors.grey.withOpacity(0.1),
+//                                 blurRadius: 4,
+//                                 offset: const Offset(0, 2),
+//                               ),
+//                             ],
+//                           ),
+//                           child: Column(
+//                             crossAxisAlignment: CrossAxisAlignment.start,
+//                             children: [
+//                               // Payment Type
+//                               RichText(
+//                                 text: TextSpan(
+//                                   text: "Payment Type: ",
+//                                   style: const TextStyle(
+//                                     fontSize: 14,
+//                                     color: Colors.black87,
+//                                     fontWeight: FontWeight.w500,
+//                                   ),
+//                                   children: [
+//                                     TextSpan(
+//                                       text:
+//                                           driverStatusController
+//                                               .paymentType
+//                                               .value,
+//                                       style: const TextStyle(
+//                                         color:
+//                                             Colors
+//                                                 .blue, // ✅ Different color for value
+//                                         fontWeight: FontWeight.w600,
+//                                       ),
+//                                     ),
+//                                   ],
+//                                 ),
+//                               ),
+//                               const SizedBox(height: 6),
+//
+//                               // Payment Status
+//                               RichText(
+//                                 text: TextSpan(
+//                                   text: "Payment Status: ",
+//                                   style: const TextStyle(
+//                                     fontSize: 14,
+//                                     color: Colors.black87,
+//                                     fontWeight: FontWeight.w500,
+//                                   ),
+//                                   children: [
+//                                     TextSpan(
+//                                       text:
+//                                           driverStatusController
+//                                               .paymentStatus
+//                                               .value,
+//                                       style: TextStyle(
+//                                         color:
+//                                             driverStatusController
+//                                                         .paymentStatus
+//                                                         .value
+//                                                         .toUpperCase() ==
+//                                                     "PAID"
+//                                                 ? Colors.green
+//                                                 : Colors.redAccent,
+//                                         fontWeight: FontWeight.w600,
+//                                       ),
+//                                     ),
+//                                   ],
+//                                 ),
+//                               ),
+//                             ],
+//                           ),
+//                         ),
 //                       ),
 //                     ],
 //                   );
 //                 }),
 //
 //                 const Spacer(),
+//
+//                 // ✅ Info Box
 //                 Container(
-//                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+//                   padding: const EdgeInsets.symmetric(
+//                     horizontal: 8,
+//                     vertical: 8,
+//                   ),
 //                   decoration: BoxDecoration(
 //                     color: AppColors.directionColor.withOpacity(0.1),
+//                     borderRadius: BorderRadius.circular(8),
 //                   ),
 //                   child: Row(
 //                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -652,31 +778,49 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
 //                         width: 20,
 //                         height: 20,
 //                       ),
-//                       SizedBox(width: 8),
+//                       const SizedBox(width: 8),
 //                       Expanded(
-//                         child: Column(
-//                           crossAxisAlignment: CrossAxisAlignment.start,
-//                           children: [
-//                             CustomTextfield.textWithStylesSmall(
-//                               fontWeight: FontWeight.w400,
-//                               colors: AppColors.commonBlack,
-//                               'If rider don’t have change, ask them to pay in wholesums, extra amount paid will be credited to riders account',
-//                             ),
-//                           ],
+//                         child: CustomTextfield.textWithStylesSmall(
+//                           fontWeight: FontWeight.w400,
+//                           colors: AppColors.commonBlack,
+//                           'If rider doesn’t have change, ask them to pay in wholesums. Extra amount paid will be credited to rider’s account.',
 //                         ),
 //                       ),
 //                     ],
 //                   ),
 //                 ),
-//                 SizedBox(height: 30),
+//                 const SizedBox(height: 30),
+//
+//                 // ✅ Manual trigger (optional)
 //                 SafeArea(
-//                   child: Buttons.button(
-//                     borderRadius: 7,
-//                     buttonColor: AppColors.commonBlack,
-//                     onTap: () {
-//                       _showRatingBottomSheet(context);
-//                     },
-//                     text: Text('Cash Collected'),
+//                   child: Obx(
+//                     () => Buttons.button(
+//                       borderRadius: 7,
+//                       buttonColor: AppColors.commonBlack,
+//                       onTap:
+//                           driverStatusController.isLoading.value
+//                               ? null
+//                               : () {
+//                                 driverStatusController.amountCollectedStatus(
+//                                   booking: widget.bookingId.toString(),
+//                                   onSuccess: () {
+//                                     // ✅ Pop up the rating sheet automatically
+//                                     _showRatingBottomSheet(context);
+//                                   },
+//                                 );
+//                               },
+//                       text:
+//                           driverStatusController.isLoading.value
+//                               ? const SizedBox(
+//                                 height: 20,
+//                                 width: 20,
+//                                 child: CircularProgressIndicator(
+//                                   color: Colors.white,
+//                                   strokeWidth: 2,
+//                                 ),
+//                               )
+//                               : const Text('Cash Collected'),
+//                     ),
 //                   ),
 //                 ),
 //               ],
@@ -687,283 +831,193 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
 //     );
 //   }
 //
+//   // ✅ Bottom Sheet for Rating
 //   void _showRatingBottomSheet(BuildContext context) {
 //     int selectedRating = 0;
 //
 //     showModalBottomSheet(
 //       context: context,
 //       isScrollControlled: true,
+//       isDismissible: false,
+//       enableDrag: false,
 //       backgroundColor: Colors.white,
-//       // shape: const RoundedRectangleBorder(
-//       //   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-//       // ),
 //       builder: (context) {
 //         return StatefulBuilder(
 //           builder: (context, setState) {
+//             final profilePic = getDetails.userProfile.value?.profilePic ?? '';
+//             final firstName =
+//                 getDetails.userProfile.value?.firstName ?? 'Customer';
+//
 //             return SingleChildScrollView(
+//               padding: const EdgeInsets.symmetric(vertical: 50),
 //               child: Column(
 //                 children: [
-//                   const SizedBox(height: 20),
 //                   Center(
-//                     child: Container(
-//                       width: 60,
-//                       height: 5,
-//
-//                       decoration: BoxDecoration(
-//                         color: Colors.grey[400],
-//                         borderRadius: BorderRadius.circular(10),
-//                       ),
+//                     child:
+//                         profilePic.isNotEmpty
+//                             ? CachedNetworkImage(
+//                               imageUrl: profilePic,
+//                               height: 65,
+//                               width: 65,
+//                               imageBuilder:
+//                                   (context, imageProvider) => Container(
+//                                     height: 65,
+//                                     width: 65,
+//                                     decoration: BoxDecoration(
+//                                       shape: BoxShape.circle,
+//                                       image: DecorationImage(
+//                                         image: imageProvider,
+//                                         fit: BoxFit.cover,
+//                                       ),
+//                                     ),
+//                                   ),
+//                               placeholder:
+//                                   (context, url) =>
+//                                       const CircularProgressIndicator(),
+//                               errorWidget:
+//                                   (context, url, error) => const Icon(
+//                                     Icons.person,
+//                                     size: 65,
+//                                     color: Colors.grey,
+//                                   ),
+//                             )
+//                             : const Icon(
+//                               Icons.person,
+//                               size: 65,
+//                               color: Colors.grey,
+//                             ),
+//                   ),
+//                   const SizedBox(height: 20),
+//                   CustomTextfield.textWithStyles600(
+//                     textAlign: TextAlign.center,
+//                     fontSize: 20,
+//                     'Rate your Experience with $firstName?',
+//                   ),
+//                   const SizedBox(height: 20),
+//                   Padding(
+//                     padding: const EdgeInsets.symmetric(horizontal: 40),
+//                     child: Row(
+//                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+//                       children: List.generate(5, (index) {
+//                         return GestureDetector(
+//                           onTap:
+//                               () => setState(() => selectedRating = index + 1),
+//                           child: Image.asset(
+//                             index < selectedRating
+//                                 ? AppImages.starFill
+//                                 : AppImages.star,
+//                             height: 48,
+//                             width: 48,
+//                             color:
+//                                 index < selectedRating
+//                                     ? AppColors.commonBlack
+//                                     : AppColors.buttonBorder,
+//                           ),
+//                         );
+//                       }),
 //                     ),
 //                   ),
-//                   /*Padding(
-//                     padding: const EdgeInsets.symmetric(vertical: 50),
-//                     child: Column(
+//                   const SizedBox(height: 20),
+//                   Padding(
+//                     padding: const EdgeInsets.symmetric(horizontal: 10),
+//                     child: Row(
 //                       children: [
-//                         Image.asset(AppImages.dummyImg, height: 65, width: 65),
-//                         CachedNetworkImage(
-//                           imageUrl:
-//                               getDetails.userProfile.value?.profilePic ?? '',
-//                           height: 65,
-//                           width: 65,
-//                           placeholder:
-//                               (context, url) =>
-//                                   const CircularProgressIndicator(),
-//                           errorWidget:
-//                               (context, url, error) => const Icon(
-//                                 Icons.person, // Default person icon
-//                                 size: 65,
-//                                 color: Colors.grey,
-//                               ),
-//                           fit: BoxFit.cover,
+//                         Expanded(
+//                           child: Buttons.button(
+//                             borderRadius: 8,
+//                             textColor: AppColors.commonBlack,
+//                             borderColor: AppColors.buttonBorder,
+//                             buttonColor: AppColors.commonWhite,
+//                             onTap: () => Navigator.pop(context),
+//                             text: const Text('Close'),
+//                           ),
+//                         ),
+//                         const SizedBox(width: 10),
+//                         /*   Expanded(
+//                           child: Obx(
+//                             () => Buttons.button(
+//                               borderRadius: 8,
+//                               buttonColor: AppColors.commonBlack,
+//                               onTap:
+//                                   driverStatusController.isLoading.value
+//                                       ? null
+//                                       : () {
+//                                     _timer?.cancel();
+//                                         driverStatusController
+//                                             .driverRatingToCustomer(
+//                                               context: context,
+//                                               rating: selectedRating,
+//                                               bookingId:
+//                                                   widget.bookingId.toString(),
+//                                             );
+//                                         CommonLogger.log.i(
+//                                           "Selected Rating: $selectedRating",
+//                                         );
+//                                       },
+//                               text:
+//                                   driverStatusController.isLoading.value
+//                                       ? SizedBox(
+//                                         height: 20,
+//                                         width: 20,
+//                                         child: CircularProgressIndicator(
+//                                           color: AppColors.commonBlack,
+//                                           strokeWidth: 2,
+//                                         ),
+//                                       )
+//                                       : const Text('Rate Ride'),
+//                             ),
+//                           ),
+//                         ),*/
+//                         Expanded(
+//                           child: Obx(
+//                                 () => Buttons.button(
+//                               borderRadius: 8,
+//                               buttonColor: AppColors.commonBlack,
+//                               onTap: driverStatusController.isLoading.value
+//                                   ? null
+//                                   : () async {
+//                                 _timer?.cancel();
+//
+//                                 await driverStatusController.driverRatingToCustomer(
+//                                   context: context,
+//                                   rating: selectedRating,
+//                                   bookingId: widget.bookingId.toString(),
+//                                   goToMainOnSuccess: !widget.isSharedRide,
+//                                   // 👉 single ride = true (go to main)
+//                                   // 👉 shared ride = false (stay in pool)
+//                                 );
+//
+//                                 CommonLogger.log.i("Selected Rating: $selectedRating");
+//
+//                                 // 1) close bottom sheet
+//                                 Navigator.pop(context);
+//
+//                                 if (widget.isSharedRide) {
+//                                   // 2) shared ride → close cash screen and
+//                                   //    tell ShareRideStartScreen: "this rider done"
+//                                   Get.back<bool>(result: true);
+//                                 }
+//                                 // single ride: do nothing more here,
+//                                 // driverRatingToCustomer will push DriverMainScreen
+//                               },
+//                               text: driverStatusController.isLoading.value
+//                                   ? SizedBox(
+//                                 height: 20,
+//                                 width: 20,
+//                                 child: CircularProgressIndicator(
+//                                   color: AppColors.commonBlack,
+//                                   strokeWidth: 2,
+//                                 ),
+//                               )
+//                                   : const Text('Rate Ride'),
+//                             ),
+//                           ),
 //                         ),
 //
-//                         const SizedBox(height: 20),
-//                         CustomTextfield.textWithStyles600(
-//                           textAlign: TextAlign.center,
-//                           fontSize: 20,
-//                           'Rate your Experience with ${getDetails.userProfile.value?.firstName ?? ''}?',
-//                         ),
-//                         const SizedBox(height: 25),
-//                         Padding(
-//                           padding: const EdgeInsets.symmetric(horizontal: 40),
-//                           child: Row(
-//                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-//                             children: List.generate(5, (index) {
-//                               return GestureDetector(
-//                                 onTap: () {
-//                                   setState(() {
-//                                     selectedRating = index + 1;
-//                                   });
-//                                   CommonLogger.log.i(selectedRating);
-//                                 },
-//                                 child: Image.asset(
-//                                   index < selectedRating
-//                                       ? AppImages.starFill
-//                                       : AppImages.star,
-//                                   height: 48,
-//                                   width: 48,
-//                                   color:
-//                                       index < selectedRating
-//                                           ? AppColors.commonBlack
-//                                           : AppColors.buttonBorder,
-//                                 ),
-//                               );
-//                               return IconButton(
-//                                 icon: Icon(
-//                                   Icons.star,
-//                                   size: 45,
-//                                   color:
-//                                       index < selectedRating
-//                                           ? AppColors.commonBlack
-//                                           : AppColors.containerColor,
-//                                 ),
-//                                 onPressed: () {
-//                                   setState(() {
-//                                     selectedRating = index + 1;
-//                                   });
-//                                 },
-//                               );
-//                             }),
-//                           ),
-//                         ),
-//                         const SizedBox(height: 20),
-//                         Padding(
-//                           padding: const EdgeInsets.symmetric(horizontal: 10),
-//                           child: Row(
-//                             children: [
-//                               Expanded(
-//                                 child: Buttons.button(
-//                                   borderRadius: 8,
-//                                   textColor: AppColors.commonBlack,
-//                                   borderColor: AppColors.buttonBorder,
-//                                   buttonColor: AppColors.commonWhite,
-//                                   onTap: () {
-//                                     Navigator.pop(context);
-//                                   },
-//                                   text: Text('Close'),
-//                                 ),
-//                               ),
-//                               SizedBox(width: 10),
-//                               Expanded(
-//                                 child: Buttons.button(
-//                                   borderRadius: 8,
-//                                   buttonColor: AppColors.commonBlack,
-//                                   onTap: () {
-//                                     selectedRating;
-//                                     CommonLogger.log.i(selectedRating);
-//                                     Navigator.pushReplacement(
-//                                       context,
-//                                       MaterialPageRoute(
-//                                         builder:
-//                                             (context) => DriverMainScreen(),
-//                                       ),
-//                                     );
-//                                   },
-//                                   text: Text('Rate Ride'),
-//                                 ),
-//                               ),
-//                             ],
-//                           ),
-//                         ),
-//                         const SizedBox(height: 20),
 //                       ],
 //                     ),
-//                   ),*/
-//                   Padding(
-//                     padding: const EdgeInsets.symmetric(vertical: 50),
-//                     child: Obx(() {
-//                       final profilePic =
-//                           getDetails.userProfile.value?.profilePic ?? '';
-//                       final firstName =
-//                           getDetails.userProfile.value?.firstName ?? 'Customer';
-//
-//                       return Column(
-//                         children: [
-//                           profilePic.isNotEmpty
-//                               ? CachedNetworkImage(
-//                                 imageUrl: profilePic,
-//                                 height: 65,
-//                                 width: 65,
-//                                 imageBuilder:
-//                                     (context, imageProvider) => Container(
-//                                       height: 65,
-//                                       width: 65,
-//                                       decoration: BoxDecoration(
-//                                         shape: BoxShape.circle,
-//                                         image: DecorationImage(
-//                                           image: imageProvider,
-//                                           fit: BoxFit.cover,
-//                                         ),
-//                                       ),
-//                                     ),
-//                                 placeholder:
-//                                     (context, url) =>
-//                                         const CircularProgressIndicator(),
-//                                 errorWidget:
-//                                     (context, url, error) => const Icon(
-//                                       Icons.person,
-//                                       size: 65,
-//                                       color: Colors.grey,
-//                                     ),
-//                               )
-//                               : const Icon(
-//                                 Icons.person,
-//                                 size: 65,
-//                                 color: Colors.grey,
-//                               ),
-//                           const SizedBox(height: 20),
-//                           CustomTextfield.textWithStyles600(
-//                             textAlign: TextAlign.center,
-//                             fontSize: 20,
-//                             'Rate your Experience with $firstName?',
-//                           ),
-//                           SizedBox(height: 20),
-//                           Padding(
-//                             padding: const EdgeInsets.symmetric(horizontal: 40),
-//                             child: Row(
-//                               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-//                               children: List.generate(5, (index) {
-//                                 return GestureDetector(
-//                                   onTap: () {
-//                                     setState(() {
-//                                       selectedRating = index + 1;
-//                                     });
-//                                     CommonLogger.log.i(selectedRating);
-//                                   },
-//                                   child: Image.asset(
-//                                     index < selectedRating
-//                                         ? AppImages.starFill
-//                                         : AppImages.star,
-//                                     height: 48,
-//                                     width: 48,
-//                                     color:
-//                                         index < selectedRating
-//                                             ? AppColors.commonBlack
-//                                             : AppColors.buttonBorder,
-//                                   ),
-//                                 );
-//                                 return IconButton(
-//                                   icon: Icon(
-//                                     Icons.star,
-//                                     size: 45,
-//                                     color:
-//                                         index < selectedRating
-//                                             ? AppColors.commonBlack
-//                                             : AppColors.containerColor,
-//                                   ),
-//                                   onPressed: () {
-//                                     setState(() {
-//                                       selectedRating = index + 1;
-//                                     });
-//                                   },
-//                                 );
-//                               }),
-//                             ),
-//                           ),
-//                           SizedBox(height: 20),
-//                           Padding(
-//                             padding: const EdgeInsets.symmetric(horizontal: 10),
-//                             child: Row(
-//                               children: [
-//                                 Expanded(
-//                                   child: Buttons.button(
-//                                     borderRadius: 8,
-//                                     textColor: AppColors.commonBlack,
-//                                     borderColor: AppColors.buttonBorder,
-//                                     buttonColor: AppColors.commonWhite,
-//                                     onTap: () {
-//                                       Navigator.pop(context);
-//                                     },
-//                                     text: Text('Close'),
-//                                   ),
-//                                 ),
-//                                 SizedBox(width: 10),
-//                                 Expanded(
-//                                   child: Buttons.button(
-//                                     borderRadius: 8,
-//                                     buttonColor: AppColors.commonBlack,
-//                                     onTap: () {
-//                                       selectedRating;
-//                                       CommonLogger.log.i(selectedRating);
-//                                       Navigator.pushReplacement(
-//                                         context,
-//                                         MaterialPageRoute(
-//                                           builder:
-//                                               (context) => DriverMainScreen(),
-//                                         ),
-//                                       );
-//                                     },
-//                                     text: Text('Rate Ride'),
-//                                   ),
-//                                 ),
-//                               ],
-//                             ),
-//                           ),
-//                           SizedBox(height: 10),
-//                         ],
-//                       );
-//                     }),
 //                   ),
+//                   const SizedBox(height: 10),
 //                 ],
 //               ),
 //             );

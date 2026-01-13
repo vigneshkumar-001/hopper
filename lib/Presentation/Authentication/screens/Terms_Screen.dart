@@ -29,10 +29,10 @@ class _TermsScreenState extends State<TermsScreen> {
     controller.getUserDetails();
   }
 
-  Future<void> loadAndNavigate() async {
-    await controller.getUserDetails();
-    controller.handleLandingPageNavigation(Get.context!);
-  }
+  // Future<void> loadAndNavigate() async {
+  //   await controller.getUserDetails();
+  //   controller.handleLandingPageNavigation(Get.context!);
+  // }
 
   @override
   void initState() {

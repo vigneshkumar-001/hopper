@@ -51,16 +51,18 @@ class OtpController extends GetxController {
           return failure.message;
         },
         (response) async {
+          final prefs = await SharedPreferences.getInstance();
           WidgetsBinding.instance.addPostFrameCallback((_) async {
             if (response.data.formStatus == 3) {
               await controller.getDriverStatus();
               Get.offAll(() => DriverMainScreen());
+              await prefs.setBool("isVerified", true);
             } else if (response.data.formStatus == 1 &&
                 response.data.userStatus == 'new') {
               Get.offAll(() => TermsScreen());
             } else if (response.data.formStatus == 1 &&
                 response.data.userStatus == 'exist') {
-              await loadAndNavigate(context);
+              await loadAndNavigate();
             } else {
               CommonLogger.log.i('Basic Info');
             }
@@ -71,11 +73,11 @@ class OtpController extends GetxController {
           accessToken = response.data.token;
           driverId = response.data.driverId;
 
-          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('token', response.data.token);
           await prefs.setString('token', response.data.token);
           await prefs.setString('driverId', response.data.driverId);
           final _fcmToken = prefs.getString('fcmToken');
-          sendFcmToken(fcmToken: _fcmToken!);
+          sendFcmToken(fcmToken: _fcmToken?? '');
 
           return response.message;
         },
@@ -214,10 +216,10 @@ class OtpController extends GetxController {
     }
   }
 
-  Future<void> loadAndNavigate(BuildContext context) async {
-    final ChooseServiceController controller = Get.find();
-
-    controller.handleLandingPageNavigation(Get.context!);
+  Future<void> loadAndNavigate() async {
+    final ChooseServiceController chooseCtrl = Get.put(ChooseServiceController(), permanent: true);
+    await chooseCtrl.getUserDetails();
+    chooseCtrl.handleLandingPageNavigation();
   }
 
   Future<String?> resendOtp(

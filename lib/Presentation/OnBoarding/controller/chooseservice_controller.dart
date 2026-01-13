@@ -95,15 +95,15 @@ class ChooseServiceController extends GetxController {
     }
   }
 
-  void handleLandingPageNavigation(BuildContext context) {
+  void handleLandingPageNavigation() {
     final landingPage = userProfile.value?.landingPage;
     final formStatus = userProfile.value?.formStatus;
 
-    // Highest priority: formStatus = 3 → DriverMainScreen
     if (formStatus == 3) {
       Get.offAll(() => DriverMainScreen());
       return;
     }
+
     switch (landingPage) {
       case 0:
         Get.offAll(() => BasicInfo());
@@ -144,11 +144,67 @@ class ChooseServiceController extends GetxController {
       case 13:
         Get.offAll(() => CompletedScreens());
         break;
-
       default:
         Get.offAll(() => GetStartedScreens());
     }
   }
+
+  // void handleLandingPageNavigation( ) {
+  //   CommonLogger.log.i('iam in handleLandingPageNavigation');
+  //   final landingPage = userProfile.value?.landingPage;
+  //   final formStatus = userProfile.value?.formStatus;
+  //   CommonLogger.log.i('${landingPage}  ${formStatus}');
+  //
+  //   // Highest priority: formStatus = 3 → DriverMainScreen
+  //   if (formStatus == 3) {
+  //     Get.offAll(() => DriverMainScreen());
+  //     return;
+  //   }
+  //   switch (landingPage) {
+  //     case 0:
+  //       Get.offAll(() => BasicInfo());
+  //       break;
+  //     case 2:
+  //       Get.offAll(() => DriverAddress());
+  //       break;
+  //     case 3:
+  //       Get.offAll(() => ProfilePicAccess());
+  //       break;
+  //     case 4:
+  //       Get.offAll(() => NinScreens());
+  //       break;
+  //     case 5:
+  //       Get.offAll(() => NinScreens());
+  //       break;
+  //     case 6:
+  //       Get.offAll(() => DriverLicense());
+  //       break;
+  //     case 7:
+  //       Get.offAll(() => ChooseService());
+  //       break;
+  //     case 8:
+  //       Get.offAll(() => CarOwnership());
+  //       break;
+  //     case 9:
+  //       Get.offAll(() => VehicleDetails());
+  //       break;
+  //     case 10:
+  //       Get.offAll(() => UploadExteriorPhotos());
+  //       break;
+  //     case 11:
+  //       Get.offAll(() => InteriorUploadPhotos());
+  //       break;
+  //     case 12:
+  //       Get.offAll(() => ConsentForms());
+  //       break;
+  //     case 13:
+  //       Get.offAll(() => CompletedScreens());
+  //       break;
+  //
+  //     default:
+  //       Get.offAll(() => GetStartedScreens());
+  //   }
+  // }
 
   void clearState() {}
 }

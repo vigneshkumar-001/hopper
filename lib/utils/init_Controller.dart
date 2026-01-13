@@ -18,6 +18,7 @@ import '../Presentation/OnBoarding/controller/nin_controller.dart';
 import '../Presentation/OnBoarding/controller/stateList_Controller.dart';
 import '../Presentation/OnBoarding/controller/userprofile_controller.dart';
 import '../Presentation/OnBoarding/controller/vehicledetails_controller.dart';
+import '../api/repository/api_config_controller.dart';
 
 Future<void> initController() async {
   Get.lazyPut(() => NetworkController());
@@ -30,6 +31,7 @@ Future<void> initController() async {
     () => DriverAddressController(),
     fenix: true,
   );
+
   Get.lazyPut(() => ChooseServiceController());
   Get.lazyPut(() => UserProfileController());
   Get.lazyPut(() => CarOwnerShipController());
@@ -44,5 +46,5 @@ Future<void> initController() async {
   Get.lazyPut(() => RideHistoryController());
   Get.lazyPut(() => NotificationController());
   Get.lazyPut(() => BookingRequestController(), fenix: true);
-
+  Get.put(ApiConfigController(), permanent: true);
 }

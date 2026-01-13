@@ -27,9 +27,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollController.addListener(_scrollListener);
 
-      if (notificationController.notificationData.isEmpty) {
-        notificationController.getNotification();
-      }
+        notificationController.getNotification(isRefresh: true);
+
     });
   }
 

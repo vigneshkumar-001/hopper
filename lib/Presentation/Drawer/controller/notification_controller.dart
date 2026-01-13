@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
+import '../../../api/repository/api_config_controller.dart';
 import '../../../utils/sharedprefsHelper/sharedprefs_handler.dart';
 import '../model/notification_response.dart';
 
@@ -12,7 +13,7 @@ class NotificationController extends GetxController {
   final RxBool isMoreLoading = false.obs;
   final RxBool hasMore = true.obs;
   RxBool isSharedEnabled = false.obs;
-
+  final cfg = Get.find<ApiConfigController>();
   RxList<NotificationData> notificationData = <NotificationData>[].obs;
 
   int page = 1;
@@ -36,10 +37,11 @@ class NotificationController extends GetxController {
 
   Future<void> setSharedEnabled(bool value) async {
     isSharedEnabled.value = value;
-    await SharedPrefHelper.instance.setSharedBookingEnabled(value);
-    CommonLogger.log.i(
-      'Shared booking is now: ${value ? 'ENABLED' : 'DISABLED'}',
-    );
+    await cfg.setSharedEnabled(value);
+    // await SharedPrefHelper.instance.setSharedBookingEnabled(value);
+    // CommonLogger.log.i(
+    //   'Shared booking is now: ${value ? 'ENABLED' : 'DISABLED'}',
+    // );
   }
 
   Future<void> getNotification({bool isRefresh = false}) async {

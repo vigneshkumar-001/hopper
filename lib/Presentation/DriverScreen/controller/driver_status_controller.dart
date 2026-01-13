@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Constants/log.dart';
@@ -23,21 +22,22 @@ class DriverStatusController extends GetxController {
   var isOnline = false.obs;
   RxBool isLoading = false.obs;
   var serviceType = ''.obs;
-  final RxBool isStopNewRequests = false.obs; // 👈 NEW
-  // RxBool arrivedIsLoading = false.obs;
+  final RxBool isStopNewRequests = false.obs;
   final RxString arrivedLoadingBookingId = ''.obs;
   final socketService = SocketService();
   Rxn<TodayActivityData> todayStatusData = Rxn<TodayActivityData>();
   Rxn<WeeklyActivityData> weeklyStatusData = Rxn<WeeklyActivityData>();
   Rxn<ParcelBookingData> parcelBookingData = Rxn<ParcelBookingData>();
   ApiDataSource apiDataSource = ApiDataSource();
+
   final tripDistanceInMeters = 0.0.obs;
   final tripDurationInMin = 0.obs;
+
   final RxString paymentType = ''.obs;
   final RxString paymentStatus = ''.obs;
+
   final pickupDurationInMin = 0.0.obs;
   final pickupDistanceInMeters = 0.0.obs;
-
   var dropDurationInMin = 0.0.obs;
   var dropDistanceInMeters = 0.0.obs;
 
@@ -53,6 +53,7 @@ class DriverStatusController extends GetxController {
     isOnline.value = !isOnline.value;
   }
 
+  // 🔹 booking accept
   Future<String?> bookingAccept(
     BuildContext context, {
     required String bookingId,
@@ -61,6 +62,7 @@ class DriverStatusController extends GetxController {
     required String dropLocationAddress,
     required LatLng pickupLocation,
     required LatLng driverLocation,
+    bool navigateToPickup = true,
   }) async {
     isLoading.value = true;
     try {
@@ -68,22 +70,20 @@ class DriverStatusController extends GetxController {
         bookingId: bookingId,
         status: status,
       );
-      results.fold(
+
+      return results.fold(
         (failure) {
           CustomSnackBar.showError(failure.message);
           isLoading.value = false;
-
           return '';
         },
         (response) {
-          // CustomSnackBar.showSuccess(response.message.toString());
           final bookingData = {
             'bookingId': response.data?.bookingId,
             'userId': response.data?.driverId,
             'userType': 'driver',
           };
 
-          // Log the data
           CommonLogger.log.i("📤 Join booking data: $bookingData");
 
           if (socketService.connected) {
@@ -100,28 +100,23 @@ class DriverStatusController extends GetxController {
 
           CommonLogger.log.i(response.data);
 
-          // Get.to(
-          //   PickingCustomerScreen(
-          //     bookingId: bookingId,
-          //     pickupLocationAddress: pickupLocationAddress,
-          //     dropLocationAddress: dropLocationAddress,
-          //     pickupLocation: pickupLocation,
-          //     driverLocation: driverLocation,
-          //   ),
-          // );
-
-          Get.to(
-            () => PickingCustomerSharedScreen(
-              pickupLocation: pickupLocation,
-              driverLocation: driverLocation,
-              bookingId: bookingId,
-              pickupLocationAddress: pickupLocationAddress,
-              dropLocationAddress: dropLocationAddress,
-            ),
-          );
+          if (navigateToPickup) {
+            Get.to(
+              () => PickingCustomerSharedScreen(
+                pickupLocation: pickupLocation,
+                driverLocation: driverLocation,
+                bookingId: bookingId,
+                pickupLocationAddress: pickupLocationAddress,
+                dropLocationAddress: dropLocationAddress,
+              ),
+            );
+          } else {
+            CommonLogger.log.i(
+              "🚗 [SHARED] bookingAccept called with navigateToPickup = false → staying on current screen",
+            );
+          }
 
           isLoading.value = false;
-
           return ' ';
         },
       );
@@ -129,8 +124,6 @@ class DriverStatusController extends GetxController {
       isLoading.value = false;
       return ' ';
     }
-    isLoading.value = false;
-    return '';
   }
 
   Future<String?> otpRequest(
@@ -154,7 +147,7 @@ class DriverStatusController extends GetxController {
           isLoading.value = false;
           CustomSnackBar.showSuccess(response.message);
           CommonLogger.log.i(response.message);
-          return response.message; // ✅ just return
+          return response.message;
         },
       );
     } catch (e) {
@@ -163,44 +156,48 @@ class DriverStatusController extends GetxController {
     }
   }
 
-  /* Future<String?> otpRequest(
-    BuildContext context, {
-    required String bookingId,
-    required String custName,
-    required String pickupAddress,
-    required String dropAddress,
-  }) async {
+  // 🔹 complete ride – used for single ride & shared
+  /*
+  Future<String?> completeRideRequest(
+      BuildContext context, {
+        required String bookingId,
+        required dynamic Amount,
+        bool navigateToCashScreen = true,
+        bool isSharedRide = false,
+      }) async
+  {
     isLoading.value = true;
     try {
-      final results = await apiDataSource.otpRequest(bookingId: bookingId);
+      final results = await apiDataSource.completeRideRequest(
+        bookingId: bookingId,
+      );
 
       String? resultMessage;
 
       results.fold(
-        (failure) {
+            (failure) {
           isLoading.value = false;
           CustomSnackBar.showError(failure.message);
           resultMessage = null;
         },
-        (response) {
+            (response) {
           isLoading.value = false;
-          CustomSnackBar.showSuccess(response.message);
           CommonLogger.log.i(response.message);
 
-          resultMessage = response.message;
+          if (navigateToCashScreen) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CashCollectedScreen(
+                  Amount: Amount,
+                  bookingId: bookingId,
+                  isSharedRide: isSharedRide,
+                ),
+              ),
+            );
+          }
 
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder:
-                  (context) => VerifyRiderScreen(
-                    pickupAddress: pickupAddress,
-                    dropAddress: dropAddress,
-                    bookingId: bookingId,
-                    custName: custName,
-                  ),
-            ),
-          );
+          resultMessage = response.message;
         },
       );
 
@@ -211,48 +208,6 @@ class DriverStatusController extends GetxController {
     }
   }
 */
-  Future<String?> completeRideRequest(
-    BuildContext context, {
-    required String bookingId,
-    required dynamic Amount,
-  }) async {
-    isLoading.value = true;
-    try {
-      final results = await apiDataSource.completeRideRequest(
-        bookingId: bookingId,
-      );
-
-      String? resultMessage;
-
-      results.fold(
-        (failure) {
-          isLoading.value = false;
-          CustomSnackBar.showError(failure.message);
-          resultMessage = null;
-        },
-        (response) {
-          isLoading.value = false;
-          // CustomSnackBar.showSuccess(response.data?. status  ??"" );
-          CommonLogger.log.i(response.message);
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder:
-                  (context) =>
-                      CashCollectedScreen(Amount: Amount, bookingId: bookingId),
-            ),
-          );
-
-          resultMessage = response.message;
-        },
-      );
-
-      return resultMessage;
-    } catch (e) {
-      isLoading.value = false;
-      return 'Something went wrong';
-    }
-  }
 
   Future<String?> otpInsert(
     BuildContext context, {
@@ -274,9 +229,8 @@ class DriverStatusController extends GetxController {
           return null;
         },
         (response) {
-          // isLoading.value = false;
           CommonLogger.log.i(response.message);
-          return response.message; // ✅ just return message
+          return response.message;
         },
       );
     } catch (e) {
@@ -289,78 +243,29 @@ class DriverStatusController extends GetxController {
     BuildContext context, {
     required String bookingId,
   }) async {
-    arrivedLoadingBookingId.value = bookingId; // 🔹 mark this one as loading
+    arrivedLoadingBookingId.value = bookingId;
 
     try {
       final results = await apiDataSource.driverArrived(bookingId: bookingId);
 
       return results.fold(
         (failure) {
-          arrivedLoadingBookingId.value = ''; // 🔹 clear
+          arrivedLoadingBookingId.value = '';
           return null;
         },
         (response) {
-          arrivedLoadingBookingId.value = ''; // 🔹 clear
+          arrivedLoadingBookingId.value = '';
           return response;
         },
       );
     } catch (e) {
-      arrivedLoadingBookingId.value = ''; // 🔹 clear
+      arrivedLoadingBookingId.value = '';
       return null;
     }
   }
 
-  // Future<String?> otpInsert(
-  //   BuildContext context, {
-  //   required String bookingId,
-  //   required String otp,
-  // }) async
-  // {
-  //   isLoading.value = true;
-  //   try {
-  //     final results = await apiDataSource.otpInsert(
-  //       bookingId: bookingId,
-  //       enteredOtp: otp,
-  //     );
-  //
-  //     String? resultMessage;
-  //
-  //     results.fold(
-  //       (failure) {
-  //         isLoading.value = false;
-  //         CustomSnackBar.showError(failure.message);
-  //         resultMessage = null;
-  //       },
-  //       (response) async {
-  //         isLoading.value = false;
-  //
-  //
-  //
-  //
-  //
-  //         // Step 2: Wait until frame is fully settled
-  //         SchedulerBinding.instance.addPostFrameCallback((_) {
-  //           Navigator.pushReplacement(
-  //             context,
-  //             MaterialPageRoute(builder: (context) => RideStatsScreen()),
-  //           );
-  //         });
-  //
-  //         CustomSnackBar.showSuccess(response.message);
-  //         return response.message;
-  //       },
-  //     );
-  //
-  //     return resultMessage;
-  //   } catch (e) {
-  //     isLoading.value = false;
-  //     return 'Something went wrong';
-  //   }
-  // }
-
   Future<String?> onlineAcceptStatus(
     BuildContext context, {
-
     required bool status,
     required double latitude,
     required double longitude,
@@ -374,18 +279,12 @@ class DriverStatusController extends GetxController {
       );
       results.fold(
         (failure) {
-          //  CustomSnackBar.showError(failure.message);
           isLoading.value = false;
-
           return '';
         },
         (response) {
-          // CustomSnackBar.showSuccess(response.message.toString());
           CommonLogger.log.i(response.data);
-          // Get.to(PickingCustomerScreen());
-
           isLoading.value = false;
-
           return ' ';
         },
       );
@@ -393,8 +292,6 @@ class DriverStatusController extends GetxController {
       isLoading.value = false;
       return ' ';
     }
-    isLoading.value = false;
-    return '';
   }
 
   Future<String?> todayActivity() async {
@@ -404,8 +301,6 @@ class DriverStatusController extends GetxController {
 
       results.fold(
         (failure) {
-          // CustomSnackBar.showError(failure.message);
-
           return null;
         },
         (response) {
@@ -433,8 +328,6 @@ class DriverStatusController extends GetxController {
       results.fold(
         (failure) {
           CommonLogger.log.e(" weekly Data : ${failure.message}");
-          // CustomSnackBar.showError(failure.message);
-
           return null;
         },
         (response) {
@@ -449,8 +342,6 @@ class DriverStatusController extends GetxController {
     } catch (e) {
       return;
     }
-
-    return;
   }
 
   Future<String?> todayPackageActivity() async {
@@ -461,8 +352,6 @@ class DriverStatusController extends GetxController {
       results.fold(
         (failure) {
           CommonLogger.log.e(" weekly Data : ${failure.message}");
-          // CustomSnackBar.showError(failure.message);
-
           return null;
         },
         (response) {
@@ -485,38 +374,62 @@ class DriverStatusController extends GetxController {
     BuildContext context, {
     required String reason,
     required String bookingId,
+    bool silent = true, // ✅ default true (avoid ticker crash)
+    bool navigate = true, // ✅ default true
   }) async {
     try {
       isLoading.value = true;
+
       final results = await apiDataSource.cancelBooking(
         reason: reason,
         bookingId: bookingId,
       );
 
+      String? msg;
+
       results.fold(
         (failure) {
-          Get.offAll(DriverMainScreen());
-          isLoading.value = false;
-          // CustomSnackBar.showError(failure.message);
+          msg = failure.message;
           CommonLogger.log.e("failure: ${failure.message}");
-          return '';
         },
         (response) {
-          Get.offAll(DriverMainScreen());
+          msg = response.message;
           CommonLogger.log.i("Response: ${response.message}");
-          CustomSnackBar.showSuccess(response.message);
-          CommonLogger.log.i("Assigned to todayStatusData:");
-          isLoading.value = false;
-          return '';
         },
       );
+
+      isLoading.value = false;
+
+      // ✅ show snackbar only if NOT navigating away
+      if (!silent && !navigate && (msg ?? '').isNotEmpty) {
+        CustomSnackBar.showSuccess(msg!);
+      }
+
+      if (navigate) {
+        // ✅ close overlays safely
+        try {
+          Get.closeAllSnackbars();
+        } catch (_) {}
+        try {
+          if (Get.isBottomSheetOpen == true) Get.back();
+        } catch (_) {}
+        try {
+          if (Get.isDialogOpen == true) Get.back();
+        } catch (_) {}
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (Get.currentRoute == '/DriverMainScreen') return;
+          Get.offAll(() => const DriverMainScreen());
+        });
+      }
+
+      return msg;
     } catch (e) {
       isLoading.value = false;
       return '';
     }
-    isLoading.value = false;
-    return '';
   }
+
   Future<String?> stopNewRideRequest({
     required bool stop,
     required BuildContext context,
@@ -527,18 +440,16 @@ class DriverStatusController extends GetxController {
       final results = await apiDataSource.stopNewRideRequest(stop: stop);
 
       return results.fold(
-            (failure) {
+        (failure) {
           isLoading.value = false;
           CustomSnackBar.showError(failure.message);
           CommonLogger.log.e("failure: ${failure.message}");
           return '';
         },
-            (StopRequestResponse response) {
-          // 🔹 Use the typed model here
+        (StopRequestResponse response) {
           CommonLogger.log.i("Response: ${response.message}");
           CustomSnackBar.showSuccess(response.message);
 
-          // 👇 This is the important part
           if (response.stop == true) {
             isStopNewRequests.value = true;
           }
@@ -554,16 +465,13 @@ class DriverStatusController extends GetxController {
     }
   }
 
-
   Future<void> getDriverStatus() async {
     try {
       final results = await apiDataSource.getDriverStatus();
 
       results.fold(
         (failure) {
-          // CustomSnackBar.showError(failure.message);
           CommonLogger.log.e("failure: ${failure.message}");
-
           return '';
         },
         (response) {
@@ -600,7 +508,7 @@ class DriverStatusController extends GetxController {
 
   Future<void> amountCollectedStatus({
     required String booking,
-    VoidCallback? onSuccess, // callback for UI
+    VoidCallback? onSuccess,
   }) async {
     isLoading.value = true;
     try {
@@ -610,6 +518,7 @@ class DriverStatusController extends GetxController {
 
       results.fold(
         (failure) {
+          CustomSnackBar.showError(failure.message);
           isLoading.value = false;
           CommonLogger.log.e("failure: ${failure.message}");
         },
@@ -617,7 +526,6 @@ class DriverStatusController extends GetxController {
           isLoading.value = false;
           CommonLogger.log.i(response.toJson());
 
-          // ✅ Trigger callback if success
           if (response.status == 200) {
             if (onSuccess != null) onSuccess();
           }
@@ -629,11 +537,63 @@ class DriverStatusController extends GetxController {
     }
   }
 
+  Future<String?> completeRideRequest(
+    BuildContext context, {
+    required String bookingId,
+    required dynamic Amount,
+    bool navigateToCashScreen = true,
+    bool isSharedRide = false,
+  }) async {
+    isLoading.value = true;
+    try {
+      final results = await apiDataSource.completeRideRequest(
+        bookingId: bookingId,
+      );
+
+      String? resultMessage;
+
+      results.fold(
+        (failure) {
+          isLoading.value = false;
+          CustomSnackBar.showError(failure.message);
+          resultMessage = null;
+        },
+        (response) {
+          isLoading.value = false;
+          resultMessage = response.message;
+
+          // ✅ Shared ride -> DON'T navigate from controller
+          if (isSharedRide) return;
+
+          // ✅ Single ride -> go to cash screen if needed
+          if (navigateToCashScreen) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder:
+                    (_) => CashCollectedScreen(
+                      Amount: Amount,
+                      bookingId: bookingId,
+                      isSharedRide: false,
+                    ),
+              ),
+            );
+          }
+        },
+      );
+
+      return resultMessage;
+    } catch (e) {
+      isLoading.value = false;
+      return 'Something went wrong';
+    }
+  }
+
   Future<void> driverRatingToCustomer({
     required String bookingId,
     required int rating,
     required BuildContext context,
-    bool goToMainOnSuccess = true, // 👈 NEW FLAG
+    bool goToMainOnSuccess = true,
   }) async {
     isLoading.value = true;
     try {
@@ -650,7 +610,6 @@ class DriverStatusController extends GetxController {
         (response) {
           isLoading.value = false;
 
-          // ✅ Only go to main screen if caller wants it
           if (goToMainOnSuccess) {
             Navigator.pushReplacement(
               context,

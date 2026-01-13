@@ -47,7 +47,7 @@ class SocketService {
     _socket.connect();
 
     _socket.onConnect((_) {
-      CommonLogger.log.i("✅ Connected: $_socketUrl / socket id: ${_socket.id}");
+      CommonLogger.log.i("✅ Connected: $_socketUrl \n socket id: ${_socket.id}");
 
       _restoreRegistration();
       _restoreJoinedRooms();

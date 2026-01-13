@@ -22,7 +22,7 @@ class _SplashScreenState extends State<SplashScreen> {
     // Use mounted check to avoid calling context after dispose
     // if (!mounted) return;
     //
-    // controller.handleLandingPageNavigation(context);
+    controller.handleLandingPageNavigation( );
   }
 
   @override
@@ -31,12 +31,12 @@ class _SplashScreenState extends State<SplashScreen> {
     print('Iam Calling');
     //getUserDetail();
     loadAndNavigate();
-    Future.delayed(const Duration(seconds: 4), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const GetStartedScreens()),
-      );
-    });
+    // Future.delayed(const Duration(seconds: 4), () {
+    //   Navigator.pushReplacement(
+    //     context,
+    //     MaterialPageRoute(builder: (context) => const GetStartedScreens()),
+    //   );
+    // });
   }
 
   @override

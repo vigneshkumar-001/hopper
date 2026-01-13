@@ -107,9 +107,9 @@ class ApiDataSource extends BaseApiDataSource {
       } else {
         return Left(ServerFailure("Unknown error occurred"));
       }
-    } catch (e) {
-      CommonLogger.log.e(e);
-      return Left(ServerFailure('Something went wrong'));
+    } catch (e, st) {
+      CommonLogger.log.e("ERROR: $e\n$st");
+      return Left(ServerFailure("$e"));
     }
   }
 
@@ -1401,8 +1401,9 @@ class ApiDataSource extends BaseApiDataSource {
       } else {
         return Left(ServerFailure("Unexpected error"));
       }
-    } catch (e) {
+    } catch (e, st) {
       CommonLogger.log.e(e);
+      CommonLogger.log.e(st);
       return Left(ServerFailure('Something went wrong'));
     }
   }
@@ -1550,7 +1551,6 @@ class ApiDataSource extends BaseApiDataSource {
 
       if (response is Response && response.statusCode == 200) {
         if (response.data != null && response.data is Map<String, dynamic>) {
-          CustomSnackBar.showError(response.data['message']);
           CommonLogger.log.i("Parsing response data: ${response.data}");
           final result = CashCollectedResponse.fromJson(response.data);
           return Right(result);
@@ -1692,7 +1692,6 @@ class ApiDataSource extends BaseApiDataSource {
     required bool stop,
   }) async {
     try {
-
       String url = ApiConstents.stopNewRequests;
 
       final response = await Request.sendRequest(
