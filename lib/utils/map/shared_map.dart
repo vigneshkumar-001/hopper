@@ -105,6 +105,31 @@ class SharedMapState extends State<SharedMap> {
       );
     }
   }
+  Future<void> fitPolylineBounds(List<LatLng> pts, {double padding = 80}) async {
+    if (_mapController == null) return;
+    if (pts.length < 2) return;
+
+    double minLat = pts.first.latitude;
+    double maxLat = pts.first.latitude;
+    double minLng = pts.first.longitude;
+    double maxLng = pts.first.longitude;
+
+    for (final p in pts) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+
+    final bounds = LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
+
+    await _mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(bounds, padding),
+    );
+  }
 
   // ------------------ circles ------------------
   Set<Circle> _buildPickupCircles() {

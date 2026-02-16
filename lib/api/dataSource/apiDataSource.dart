@@ -19,6 +19,7 @@ import 'package:hopper/Presentation/OnBoarding/models/stateList_Models.dart';
 import 'package:hopper/Presentation/OnBoarding/models/userImage_models.dart';
 import 'package:hopper/Presentation/OnBoarding/models/yearandcolor_Models.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
+import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/api/repository/api_constents.dart';
 import 'package:hopper/api/repository/request.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
@@ -27,6 +28,7 @@ import '../../Presentation/Authentication/controller/authController.dart';
 import '../../Presentation/Authentication/models/fcm_response.dart';
 import '../../Presentation/Drawer/model/notification_response.dart';
 import '../../Presentation/Drawer/model/ride_history_response.dart';
+import '../../Presentation/Drawer/model/shared_booking_response.dart';
 import '../../Presentation/Drawer/model/wallet_history_response.dart';
 import '../../Presentation/DriverScreen/models/booking_accept_model.dart';
 import '../../Presentation/DriverScreen/models/cash_collected_response.dart';
@@ -1715,6 +1717,41 @@ class ApiDataSource extends BaseApiDataSource {
         return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
       } else {
         return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, SharedBookingEnabledResponse>> setStatusEnabled({
+    required bool enabled,
+  }) async {
+    try {
+      final url = "${ApiConfigController.sharedBase}/shared/customer/shared-booking/status";
+      CommonLogger.log.i(url);
+
+      dynamic response = await Request.sendRequest(
+        url,
+        {"isEnabled": enabled},
+        'Get',
+        false,
+      );
+
+      if (response.statusCode == 200) {
+        if (response.data['success'] == true) {
+          return Right(SharedBookingEnabledResponse.fromJson(response.data));
+        } else {
+          return Left(
+            ServerFailure(response.data['message'] ?? "Login failed"),
+          );
+        }
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(response.data['message'] ?? "Unexpected error"),
+        );
+      } else {
+        return Left(ServerFailure("Unknown error occurred"));
       }
     } catch (e) {
       CommonLogger.log.e(e);

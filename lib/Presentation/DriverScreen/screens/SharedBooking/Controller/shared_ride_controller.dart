@@ -1,4 +1,5 @@
 import 'package:action_slider/action_slider.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
@@ -15,8 +16,10 @@ class SharedRiderItem {
   String name;
   String phone;
   String profilePic;
+
   String pickupAddress;
   String dropoffAddress;
+
   num amount;
 
   final LatLng pickupLatLng;
@@ -55,24 +58,81 @@ class SharedRideController extends GetxController {
   /// Latest driver location
   final Rxn<LatLng> driverLocation = Rxn<LatLng>();
 
-  // ---------- CRUD / UPDATE FROM SOCKET ----------
+  // -------------------- helpers --------------------
 
-  void upsertFromSocket(Map<String, dynamic> data) {
+  double _safeToDouble(dynamic v) {
+    if (v is double) return v;
+    if (v is int) return v.toDouble();
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? 0.0;
+  }
+
+  String _safeString(dynamic v) => (v ?? '').toString();
+
+  Future<String> _addressFromLatLng(double lat, double lng) async {
+    try {
+      final placemarks = await placemarkFromCoordinates(lat, lng);
+      if (placemarks.isEmpty) return "Location not available";
+      final p = placemarks.first;
+      final name = (p.name ?? '').trim();
+      final locality = (p.locality ?? '').trim();
+      final admin = (p.administrativeArea ?? '').trim();
+
+      final parts = <String>[
+        if (name.isNotEmpty) name,
+        if (locality.isNotEmpty) locality,
+        if (admin.isNotEmpty) admin,
+      ];
+
+      return parts.isEmpty ? "Location not available" : parts.join(', ');
+    } catch (_) {
+      return "Location not available";
+    }
+  }
+
+  // -------------------- CRUD / UPDATE FROM SOCKET --------------------
+  /// ✅ IMPORTANT:
+  /// Your socket payload does NOT contain pickupAddress/dropoffAddress.
+  /// So we:
+  /// - use keys if present (pickupLocationAddress/dropLocationAddress)
+  /// - else reverse-geocode fromLatLng and dropLatLng
+  Future<void> upsertFromSocket(Map<String, dynamic> data) async {
+    final bookingIdStr = _safeString(data['bookingId']).trim();
+    if (bookingIdStr.isEmpty) return;
+
     final customerLoc = data['customerLocation'];
-    final String customerName = (data['customerName'] ?? '').toString();
-    final String customerPhone = (data['customerPhone'] ?? '').toString();
-    final num amount = (data['amount'] as num?) ?? 0;
-    final String customerProfilePic =
-        (data['customerProfilePic'] ?? '').toString();
-    final String bookingIdStr = data['bookingId'].toString();
+    if (customerLoc == null || customerLoc is! Map) return;
 
-    final double fromLat = (customerLoc['fromLatitude'] as num).toDouble();
-    final double fromLng = (customerLoc['fromLongitude'] as num).toDouble();
-    final double toLat = (customerLoc['toLatitude'] as num).toDouble();
-    final double toLng = (customerLoc['toLongitude'] as num).toDouble();
+    final fromLat = _safeToDouble(customerLoc['fromLatitude']);
+    final fromLng = _safeToDouble(customerLoc['fromLongitude']);
+    final toLat = _safeToDouble(customerLoc['toLatitude']);
+    final toLng = _safeToDouble(customerLoc['toLongitude']);
 
-    final String pickupAddrs = (data['pickupAddress'] ?? '').toString();
-    final String dropoffAddrs = (data['dropoffAddress'] ?? '').toString();
+    if (fromLat == 0 || fromLng == 0 || toLat == 0 || toLng == 0) {
+      // invalid coordinates
+      return;
+    }
+
+    final customerName = _safeString(data['customerName']);
+    final customerPhone = _safeString(data['customerPhone']);
+    final customerProfilePic = _safeString(data['customerProfilePic']);
+    final amount = (data['amount'] is num) ? (data['amount'] as num) : 0;
+
+    // ✅ Support both formats (if backend sends later)
+    String pickupAddrs = _safeString(
+      data['pickupLocationAddress'] ?? data['pickupAddress'],
+    );
+    String dropoffAddrs = _safeString(
+      data['dropLocationAddress'] ?? data['dropoffAddress'],
+    );
+
+    // ✅ fallback: reverse geocode if empty
+    if (pickupAddrs.trim().isEmpty) {
+      pickupAddrs = await _addressFromLatLng(fromLat, fromLng);
+    }
+    if (dropoffAddrs.trim().isEmpty) {
+      dropoffAddrs = await _addressFromLatLng(toLat, toLng);
+    }
 
     final idx = riders.indexWhere((r) => r.bookingId == bookingIdStr);
 
@@ -85,6 +145,7 @@ class SharedRideController extends GetxController {
         ..pickupAddress = pickupAddrs
         ..dropoffAddress = dropoffAddrs
         ..amount = amount;
+
       riders.refresh();
     } else {
       final newRider = SharedRiderItem(
@@ -98,11 +159,15 @@ class SharedRideController extends GetxController {
         pickupLatLng: LatLng(fromLat, fromLng),
         dropLatLng: LatLng(toLat, toLng),
       );
+
       riders.add(newRider);
 
-      // if nothing active yet, make first rider active pickup
+      // ✅ if nothing active yet, make first rider active pickup
       activeTarget.value ??= newRider;
     }
+
+    // ✅ recompute after insert/update
+    recomputeNextTarget();
   }
 
   void markArrived(String bookingId) {
@@ -115,8 +180,10 @@ class SharedRideController extends GetxController {
   void markOnboard(String bookingId) {
     final idx = riders.indexWhere((r) => r.bookingId == bookingId);
     if (idx == -1) return;
+
     riders[idx].stage = SharedRiderStage.onboardDrop;
     riders[idx].secondsLeft = 0;
+
     activeTarget.value = riders[idx];
     riders.refresh();
   }
@@ -128,17 +195,18 @@ class SharedRideController extends GetxController {
     riders[idx].stage = SharedRiderStage.dropped;
     riders[idx].secondsLeft = 0;
 
-    // if active got dropped, clear it (will be recomputed)
     if (activeTarget.value?.bookingId == bookingId) {
       activeTarget.value = null;
     }
 
     riders.refresh();
+    recomputeNextTarget();
   }
 
   void setActiveTarget(String bookingId, SharedRiderStage stage) {
     final idx = riders.indexWhere((r) => r.bookingId == bookingId);
     if (idx == -1) return;
+
     riders[idx].stage = stage;
     activeTarget.value = riders[idx];
     riders.refresh();
@@ -148,17 +216,15 @@ class SharedRideController extends GetxController {
     driverLocation.value = loc;
   }
 
-  // ---------- HELPERS ----------
+  // -------------------- HELPERS --------------------
 
   bool hasPendingOrOnboard() {
     return riders.any(
-      (r) =>
-          r.stage == SharedRiderStage.waitingPickup ||
+          (r) =>
+      r.stage == SharedRiderStage.waitingPickup ||
           r.stage == SharedRiderStage.onboardDrop,
     );
   }
-
-  // ---------- NEXT STOP / NEAREST ----------
 
   SharedRiderItem? getNearestPickup() {
     final loc = driverLocation.value;
@@ -190,36 +256,33 @@ class SharedRideController extends GetxController {
   /// 2) Else nearest waitingPickup
   /// 3) Else null (no pending)
   SharedRiderItem? recomputeNextTarget() {
-    // 0) if none pending/onboard -> trip finished
     if (!hasPendingOrOnboard()) {
       activeTarget.value = null;
       return null;
     }
 
-    // 1) onboardDrop priority
     final onboard = riders.firstWhereOrNull(
-      (r) => r.stage == SharedRiderStage.onboardDrop,
+          (r) => r.stage == SharedRiderStage.onboardDrop,
     );
     if (onboard != null) {
       activeTarget.value = onboard;
       return onboard;
     }
 
-    // 2) nearest waitingPickup
     final nearestPickup = getNearestPickup();
     if (nearestPickup != null) {
       activeTarget.value = nearestPickup;
       return nearestPickup;
     }
 
-    // 3) fallback: any non-dropped
     final any = riders.firstWhereOrNull(
-      (r) => r.stage != SharedRiderStage.dropped,
+          (r) => r.stage != SharedRiderStage.dropped,
     );
     activeTarget.value = any;
     return any;
   }
 }
+
 
 // // lib/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart
 //

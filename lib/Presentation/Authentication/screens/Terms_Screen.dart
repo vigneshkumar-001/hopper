@@ -22,11 +22,15 @@ class TermsScreen extends StatefulWidget {
 }
 
 class _TermsScreenState extends State<TermsScreen> {
-  final ChooseServiceController controller = Get.find();
+  late final ChooseServiceController controller =
+  Get.isRegistered<ChooseServiceController>()
+      ? Get.find<ChooseServiceController>()
+      : Get.put(ChooseServiceController(), permanent: true);
+  // final ChooseServiceController controller = Get.find();
 
   Future<void> getUserDetail() async {
     await controller.getUserDetails();
-    controller.getUserDetails();
+    // controller.getUserDetails();
   }
 
   // Future<void> loadAndNavigate() async {

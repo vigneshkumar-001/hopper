@@ -35,14 +35,64 @@ class NotificationController extends GetxController {
     );
   }
 
-  Future<void> setSharedEnabled(bool value) async {
-    isSharedEnabled.value = value;
-    await cfg.setSharedEnabled(value);
-    // await SharedPrefHelper.instance.setSharedBookingEnabled(value);
-    // CommonLogger.log.i(
-    //   'Shared booking is now: ${value ? 'ENABLED' : 'DISABLED'}',
-    // );
+  Future<void> setSharedEnabled(bool enabled) async {
+    if (isLoading.value) return;
+
+    final prev = isSharedEnabled.value;
+
+    // ✅ Optimistic UI
+    isSharedEnabled.value = enabled;
+    isLoading.value = true;
+
+    try {
+      // 1) Call server
+      final result = await apiDataSource.setStatusEnabled(enabled: enabled);
+
+      result.fold(
+            (failure) {
+          // ❌ revert on failure
+          isSharedEnabled.value = prev;
+          CommonLogger.log.e("Shared booking update failed: $failure");
+          Get.snackbar("Failed", "Shared booking update failed");
+        },
+            (response) async {
+          // ✅ server is source of truth
+          final serverEnabled = response.status.isEnabled;
+          isSharedEnabled.value = serverEnabled;
+
+          // 2) Save local for next app open
+          await SharedPrefHelper.instance.setSharedBookingEnabled(serverEnabled);
+
+          // 3) If you want to store in cfg too (optional)
+          // (Only if cfg has RxBool / getter)
+           await cfg.setSharedEnabled(serverEnabled);
+
+          CommonLogger.log.i(
+            '✅ Shared booking saved: ${serverEnabled ? 'ENABLED' : 'DISABLED'}',
+          );
+
+          Get.snackbar("Success", response.message);
+        },
+      );
+    } catch (e) {
+      // ❌ revert on crash
+      isSharedEnabled.value = prev;
+      CommonLogger.log.e("❌ Error in setSharedEnabled: $e");
+      Get.snackbar("Error", "Something went wrong");
+    } finally {
+      isLoading.value = false;
+    }
   }
+  //
+  // Future<void> setSharedEnabled(bool value) async {
+  //   isSharedEnabled.value = value;
+  //   await cfg.setSharedEnabled(value);
+  //   // await SharedPrefHelper.instance.setSharedBookingEnabled(value);
+  //   // CommonLogger.log.i(
+  //   //   'Shared booking is now: ${value ? 'ENABLED' : 'DISABLED'}',
+  //   // );
+  // }
+  //
 
   Future<void> getNotification({bool isRefresh = false}) async {
     if (isRefresh) {

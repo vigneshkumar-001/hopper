@@ -33,7 +33,8 @@ class OtpController extends GetxController {
     BuildContext context,
     String otp, {
     String? type,
-  }) async {
+  }) async
+  {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       isLoading.value = true;
     });

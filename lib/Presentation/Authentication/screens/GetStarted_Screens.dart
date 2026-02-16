@@ -38,7 +38,11 @@ class GetStartedScreens extends StatefulWidget {
 class _GetStartedScreensState extends State<GetStartedScreens> {
   final AuthController controller = Get.put(AuthController());
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final ChooseServiceController chooseServiceController = Get.find();
+  late final ChooseServiceController chooseServiceController =
+  Get.isRegistered<ChooseServiceController>()
+      ? Get.find<ChooseServiceController>()
+      : Get.put(ChooseServiceController(), permanent: true);
+  // final ChooseServiceController chooseServiceController = Get.find();
   String flag = '';
 
   void showCountrySelector(BuildContext context) {

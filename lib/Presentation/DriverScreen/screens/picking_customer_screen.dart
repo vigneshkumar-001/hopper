@@ -1,3 +1,645 @@
+// lib/Presentation/DriverScreen/screens/picking_customer_screen.dart
+// ✅ Update: Top row = Call (left) + Duration (center) + Chat (right)
+// ✅ Under that = Customer profile + name (tap name -> enable Arrived button for testing)
+
+import 'package:action_slider/action_slider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'package:hopper/Core/Constants/Colors.dart';
+import 'package:hopper/Core/Utility/Buttons.dart';
+import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
+import 'package:hopper/utils/map/google_map.dart';
+import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
+
+import '../controller/driver_status_controller.dart';
+import '../controller/pickup_customer_controller.dart';
+
+class PickingCustomerScreen extends StatelessWidget {
+  final LatLng pickupLocation;
+  final String? pickupLocationAddress;
+  final String? dropLocationAddress;
+  final LatLng driverLocation;
+  final String bookingId;
+
+  const PickingCustomerScreen({
+    super.key,
+    required this.pickupLocation,
+    required this.driverLocation,
+    required this.bookingId,
+    this.pickupLocationAddress,
+    this.dropLocationAddress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Get.put(
+      PickingCustomerController(
+        pickupLocation: pickupLocation,
+        driverLocation: driverLocation,
+        bookingId: bookingId,
+        pickupLocationAddress: pickupLocationAddress,
+        dropLocationAddress: dropLocationAddress,
+      ),
+      tag: bookingId,
+    );
+
+    final DriverStatusController driverStatusController =
+    Get.find<DriverStatusController>();
+
+    final sliderController = ActionSliderController();
+
+    return NoInternetOverlay(
+      child: WillPopScope(
+        onWillPop: () async => false,
+        child: Scaffold(
+          body: Obx(() {
+            final ui = c.ui.value;
+
+            final markers = <Marker>{
+              Marker(
+                markerId: const MarkerId('driver'),
+                position: ui.driverLocation,
+                icon: c.carIcon.value ?? BitmapDescriptor.defaultMarker,
+                rotation: ui.bearing,
+                anchor: const Offset(0.5, 0.5),
+                flat: true,
+              ),
+              Marker(
+                markerId: const MarkerId('pickup'),
+                position: pickupLocation,
+                infoWindow: const InfoWindow(title: 'Pickup Location'),
+              ),
+            };
+
+            return Stack(
+              children: [
+                SizedBox(
+                  height: 650,
+                  child: CommonGoogleMap(
+                    myLocationEnabled: false,
+                    initialPosition: pickupLocation,
+                    markers: markers,
+                    polylines: {
+                      if (ui.polyline.length >= 2)
+                        Polyline(
+                          polylineId: const PolylineId("route"),
+                          color: AppColors.commonBlack,
+                          width: 5,
+                          points: ui.polyline,
+                        ),
+                    },
+                    onMapCreated: (gm) => c.onMapCreated(gm, context),
+                  ),
+                ),
+
+                // My location
+                Positioned(
+                  top: c.arrivedAtPickup.value ? 350 : 500,
+                  right: 10,
+                  child: FloatingActionButton(
+                    mini: true,
+                    backgroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    onPressed: c.goToCurrentLocation,
+                    child: const Icon(Icons.my_location, color: Colors.black),
+                  ),
+                ),
+
+                // Direction header
+                Positioned(
+                  top: 45,
+                  left: 10,
+                  right: 10,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 1,
+                          child: Container(
+                            height: 92,
+                            color: AppColors.directionColor,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 14,
+                                horizontal: 10,
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Image.asset(
+                                    c.getManeuverIcon(ui.maneuver),
+                                    height: 30,
+                                    width: 30,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  CustomTextfield.textWithStyles600(
+                                    ui.distanceText.isEmpty ? '--' : ui.distanceText,
+                                    color: AppColors.commonWhite,
+                                    fontSize: 14,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 3,
+                          child: Container(
+                            height: 92,
+                            color: AppColors.directionColor1,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 14,
+                                horizontal: 12,
+                              ),
+                              child: Center(
+                                child: CustomTextfield.textWithStyles600(
+                                  ui.directionText.isEmpty
+                                      ? 'Searching best route…'
+                                      : ui.directionText,
+                                  fontSize: 13,
+                                  color: AppColors.commonWhite,
+                                  maxLine: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Bottom sheet + timer badge
+                Stack(
+                  children: [
+                    DraggableScrollableSheet(
+                      key: ValueKey(c.arrivedAtPickup.value),
+                      initialChildSize: c.arrivedAtPickup.value ? 0.50 : 0.30,
+                      minChildSize: c.arrivedAtPickup.value ? 0.40 : 0.30,
+                      maxChildSize: c.arrivedAtPickup.value ? 0.65 : 0.30,
+                      builder: (context, scrollController) {
+                        return Container(
+                          decoration: const BoxDecoration(color: Colors.white),
+                          child: ListView(
+                            controller: scrollController,
+                            physics: const BouncingScrollPhysics(),
+                            children: [
+                              Center(
+                                child: Container(
+                                  width: 60,
+                                  height: 5,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[400],
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+
+                              // ✅ TOP ROW: Call (left) + Duration (center) + Chat (right)
+                              // ✅ SUBTITLE: Customer name (below duration)
+                              if (c.arrivedAtPickup.value && !c.driverReached.value) ...[
+                                _topActionRow(
+                                  c: c,
+                                  context: context,
+                                  bookingId: bookingId,
+                                  driverStatusController: driverStatusController,
+                                ),
+                                const SizedBox(height: 10),
+
+                                // ✅ SECOND ROW: Customer photo + name (tap name -> enable Arrived button for testing)
+                                _customerRow(
+                                  c,
+                                  onTapName: () {
+                                    // TESTING: Tap customer name -> show Arrived button
+                                    c.driverReached.value = true;
+                                  },
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+
+                              // ===== BEFORE ARRIVED (picking up) =====
+                              if (c.arrivedAtPickup.value) ...[
+                                if (c.driverReached.value) ...[
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    child: Buttons.button(
+                                      buttonColor: AppColors.resendBlue,
+                                      borderRadius: 8,
+                                      onTap: () => c.onArrivedAtPickupPressed(context),
+                                      text: const Text('Arrived at Pickup Point'),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                ],
+
+                                const SizedBox(height: 12),
+
+                                _rideDetailsBlock(
+                                  pickupAddress: pickupLocationAddress ?? c.pickupAddressText.value,
+                                  dropAddress: dropLocationAddress ?? c.dropAddressText.value,
+                                ),
+
+                                const SizedBox(height: 10),
+
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                                  child: Column(
+                                    children: [
+                                      Buttons.button(
+                                        borderColor: AppColors.buttonBorder,
+                                        buttonColor: AppColors.commonWhite,
+                                        borderRadius: 8,
+                                        textColor: AppColors.commonBlack,
+                                        onTap: () => Buttons.showDialogBox(
+                                          context: context,
+                                          onConfirmStop: () async {},
+                                        ),
+                                        text: const Text('Stop New Ride Request'),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Buttons.button(
+                                        borderRadius: 8,
+                                        buttonColor: AppColors.red,
+                                        onTap: () {
+                                          Buttons.showCancelRideBottomSheet(
+                                            context,
+                                            onConfirmCancel: (reason) async {
+                                              await driverStatusController.cancelBooking(
+                                                bookingId: bookingId,
+                                                context,
+                                                reason: reason,
+                                              );
+                                            },
+                                          );
+                                        },
+                                        text: const Text('Cancel this Ride'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ]
+
+                              // ===== AFTER ARRIVED (wait rider + swipe) =====
+                              else ...[
+                                if (c.showRedTimer.value)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    child: Container(
+                                      color: AppColors.red.withOpacity(0.1),
+                                      child: ListTile(
+                                        onTap: () {
+                                          Buttons.showCancelRideBottomSheet(
+                                            context,
+                                            onConfirmCancel: (reason) async {
+                                              await driverStatusController.cancelBooking(
+                                                bookingId: bookingId,
+                                                context,
+                                                reason: reason,
+                                              );
+                                            },
+                                          );
+                                        },
+                                        trailing: Image.asset(AppImages.redArrow, height: 20, width: 20),
+                                        leading: Image.asset(AppImages.close, height: 20, width: 20),
+                                        title: CustomTextfield.textWithStyles600(
+                                          'Tap to cancel the ride, If rider don’t show up',
+                                          fontSize: 14,
+                                          color: AppColors.red,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                ListTile(
+                                  trailing: GestureDetector(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ChatScreen(bookingId: bookingId),
+                                        ),
+                                      );
+                                    },
+                                    child: _roundIconBox(AppImages.msg),
+                                  ),
+                                  leading: GestureDetector(
+                                    onTap: () async {
+                                      final ph = c.customerPhone.value;
+                                      if (ph.isEmpty) return;
+                                      final url = Uri.parse('tel:$ph');
+                                      if (await canLaunchUrl(url)) await launchUrl(url);
+                                    },
+                                    child: _roundIconBox(AppImages.call),
+                                  ),
+                                  title: Center(
+                                    child: CustomTextfield.textWithStyles600(
+                                      'Waiting for the Rider',
+                                      fontSize: 20,
+                                    ),
+                                  ),
+                                  subtitle: Center(
+                                    child: Obx(
+                                          () => CustomTextfield.textWithStylesSmall(
+                                        c.customerName.value.trim().isEmpty
+                                            ? 'Rider'
+                                            : c.customerName.value,
+                                        fontSize: 14,
+                                        colors: AppColors.textColorGrey,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                  child: ActionSlider.standard(
+                                    controller: sliderController,
+                                    height: 50,
+                                    backgroundColor: const Color(0xFF1C1C1C),
+                                    toggleColor: Colors.white,
+                                    icon: const Icon(
+                                      Icons.double_arrow,
+                                      color: Colors.black,
+                                      size: 28,
+                                    ),
+                                    child: Text(
+                                      'Swipe to Start Ride',
+                                      style: TextStyle(
+                                        color: AppColors.commonWhite,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    action: (slider) async {
+                                      slider.loading();
+                                      await c.onSwipeStartRide(context);
+                                      slider.success();
+                                      slider.reset();
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+
+                    // Timer badge
+                    if (!c.arrivedAtPickup.value && c.secondsLeft.value > 0)
+                      Positioned(
+                        bottom: c.showRedTimer.value ? 285 : 240,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(30),
+                              border: Border.all(
+                                color: c.showRedTimer.value
+                                    ? AppColors.timerBorderColor
+                                    : AppColors.commonBlack.withOpacity(0.2),
+                                width: 6,
+                              ),
+                            ),
+                            child: Text(
+                              c.formatTimer(c.secondsLeft.value),
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.5,
+                                color: c.showRedTimer.value
+                                    ? AppColors.timerBorderColor
+                                    : AppColors.commonBlack,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  // ---------------- UI BLOCKS ----------------
+
+  static Widget _topActionRow({
+    required PickingCustomerController c,
+    required BuildContext context,
+    required String bookingId,
+    required DriverStatusController driverStatusController,
+  }) {
+    return ListTile(
+      // Left: Call
+      leading: GestureDetector(
+        onTap: () async {
+          final ph = c.customerPhone.value;
+          if (ph.trim().isEmpty) return;
+          final url = Uri.parse('tel:$ph');
+          if (await canLaunchUrl(url)) {
+            await launchUrl(url);
+          }
+        },
+        child: _roundIconBox(AppImages.call),
+      ),
+
+      // Right: Chat
+      trailing: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatScreen(bookingId: bookingId),
+            ),
+          );
+        },
+        child: _roundIconBox(AppImages.msg),
+      ),
+
+      // Center: Duration + Customer name below
+      title: Center(
+        child: Obx(
+              () => CustomTextfield.textWithStyles600(
+            _formatDuration(driverStatusController.pickupDurationInMin.value),
+            fontSize: 20,
+          ),
+        ),
+      ),
+      subtitle: Center(
+        child: Obx(
+              () => CustomTextfield.textWithStylesSmall(
+            c.customerName.value.trim().isEmpty
+                ? 'Picking up Rider'
+                : 'Picking up ${c.customerName.value.trim()}',
+            fontSize: 14,
+            colors: AppColors.textColorGrey,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Second row: left photo + name (tap name -> enable Arrived button for testing)
+  static Widget _customerRow(
+      PickingCustomerController c, {
+        required VoidCallback onTapName,
+      }) {
+    return Obx(() {
+      final name = c.customerName.value.trim().isEmpty
+          ? "Rider"
+          : c.customerName.value.trim();
+      final img = c.customerProfilePic.value.trim();
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 15),
+        child: Row(
+          children: [
+            ClipOval(
+              child: CachedNetworkImage(
+                imageUrl: img,
+                height: 42,
+                width: 42,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => const SizedBox(
+                  height: 42,
+                  width: 42,
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                errorWidget: (_, __, ___) => const Icon(
+                  Icons.person,
+                  size: 36,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: InkWell(
+                onTap: onTapName,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: CustomTextfield.textWithStyles600(
+                    name,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  static Widget _roundIconBox(String asset) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.commonBlack.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(30),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Image.asset(asset, height: 25, width: 25),
+    );
+  }
+
+  static String _formatDuration(double minutes) {
+    if (minutes <= 0) return '0 min';
+    final total = minutes.round();
+    final h = total ~/ 60;
+    final m = total % 60;
+    return h > 0 ? '$h hr $m min' : '$m min';
+  }
+
+  static Widget _rideDetailsBlock({
+    required String pickupAddress,
+    required String dropAddress,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CustomTextfield.textWithStyles600('Ride Details', fontSize: 16),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _dot(Colors.black),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CustomTextfield.textWithStyles600('Pickup', fontSize: 16),
+                    CustomTextfield.textWithStylesSmall(
+                      pickupAddress,
+                      colors: AppColors.textColorGrey,
+                      maxLine: 2,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _dot(AppColors.grey),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CustomTextfield.textWithStyles600('Drop off', fontSize: 16),
+                    CustomTextfield.textWithStylesSmall(
+                      dropAddress,
+                      colors: AppColors.textColorGrey,
+                      maxLine: 2,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _dot(Color c) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(40),
+        color: AppColors.commonBlack.withOpacity(0.1),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Icon(Icons.circle, size: 10, color: c),
+    );
+  }
+}
+
+
+
+/*
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -1626,6 +2268,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     );
   }
 }
+*/
 
 // import 'dart:async';
 // import 'dart:math';

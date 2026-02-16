@@ -563,7 +563,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     }
   }
 
-  // -------------------- ICONS --------------------
+
   Future<BitmapDescriptor> _bitmapFromAsset(
       String path, {
         int width = 48,
@@ -1422,7 +1422,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                 },
               ),
 
-              const BookingOverlayRequest(isSharedFlow: true),
+              const BookingOverlayRequest(  allowNavigate : true),
             ],
           ),
         ),

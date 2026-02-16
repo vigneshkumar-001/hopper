@@ -3,15 +3,16 @@ import 'package:get/get.dart';
 import 'api_config_controller.dart';
 
 class ApiConstents {
-  static String baseUrl2 =
-      'https://hoppr-backend-3d2b7f783917.herokuapp.com/api';
-  // static String singleRideSocket = 'https://q29l3cr9-4000.inc1.devtunnels.ms';
-  static String singleRideSocket =
-      'https://hoppr-backend-3d2b7f783917.herokuapp.com/api';
-  static String sharedRideSocket = 'https://q29l3cr9-3000.inc1.devtunnels.ms';
+  // static String baseUrl2 =
+  //     'https://hoppr-backend-3d2b7f783917.herokuapp.com/api';
+  // // static String singleRideSocket = 'https://q29l3cr9-4000.inc1.devtunnels.ms';
+  // static String singleRideSocket =
+  //     'https://hoppr-backend-3d2b7f783917.herokuapp.com/api';
+
+  static String sharedRideSocket = 'https://q29l3cr9-6000.inc1.devtunnels.ms';
   static String googleMapApiKey = 'AIzaSyCvU6g43_aujUMDTTHpCtg1wkHszDhdC28';
-  static String baseUrl12 =
-      'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api';
+  // static String baseUrl12 =
+  //     'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api';
 
   /// ✅ dynamic base url from GetX
   static String get baseUrl {
@@ -25,6 +26,8 @@ class ApiConstents {
   // ✅ Now keep same variable names but convert to getters
   static String get chatHistory => _u('/customer/chat-history');
   static String get notification => _u('/users/notifications');
+  static String get sharedBookingStatus =>
+      _u('/shared/customer/shared-booking/status');
   static String get loginApi => _u('/users/signUp');
   static String get driverWalletHistory => _u('/users/driver-wallet-history');
   static String get verifyOtp => _u('/users/verify-otp');

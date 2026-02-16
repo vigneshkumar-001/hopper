@@ -65,13 +65,21 @@ class _DrawerScreenState extends State<DrawerScreen> {
                           children: [
                             InkWell(
                               onTap: () {
-                                Navigator.pushAndRemoveUntil(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => DriverMainScreen(),
-                                  ),
-                                  (route) => false,
-                                );
+                                if (Navigator.canPop(context)) {
+                                  Navigator.pop(context);
+                                } else {
+                                  Get.offAll(
+                                    () => const DriverMainScreen(),
+                                  ); // fallback
+                                }
+
+                                // Navigator.pushAndRemoveUntil(
+                                //   context,
+                                //   MaterialPageRoute(
+                                //     builder: (context) => DriverMainScreen(),
+                                //   ),
+                                //   (route) => false,
+                                // );
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
@@ -136,35 +144,24 @@ class _DrawerScreenState extends State<DrawerScreen> {
                         const SizedBox(height: 30),
 
                         // 🔴 NEW: Shared Booking toggle
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            CustomTextfield.textWithStyles700('Shared Booking'),
-                            Obx(
-                              () => Switch(
-                                value: sharedCtrl.cfg.isSharedEnabled.value,
-                                onChanged: sharedCtrl.setSharedEnabled,
-                                activeColor: AppColors.drkGreen,
-                              ),
-                            ),
-
-                            // Obx(
-                            //   () => Switch(
-                            //     value: sharedCtrl.isSharedEnabled.value,
-                            //     onChanged: (val) {
-                            //       sharedCtrl.setSharedEnabled(val);
-                            //     },
-                            //     activeColor: AppColors.drkGreen,
-                            //   ),
-                            // ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        Divider(
-                          color: AppColors.dividerColor.withOpacity(0.1),
-                          thickness: 1.5,
-                        ),
-                        const SizedBox(height: 20),
+                        // Row(
+                        //   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        //   children: [
+                        //     CustomTextfield.textWithStyles700('Shared Booking'),
+                        //     Obx(() => Switch(
+                        //       value: sharedCtrl.isSharedEnabled.value,
+                        //       onChanged: sharedCtrl.isLoading.value ? null : sharedCtrl.setSharedEnabled,
+                        //       activeColor: AppColors.drkGreen,
+                        //     )),
+                        //   ],
+                        // ),
+                        //
+                        // const SizedBox(height: 20),
+                        // Divider(
+                        //   color: AppColors.dividerColor.withOpacity(0.1),
+                        //   thickness: 1.5,
+                        // ),
+                        // const SizedBox(height: 20),
 
                         // 🔴 NEW: Shared Booking toggle
                         InkWell(

@@ -12,7 +12,7 @@ import '../../../Core/Utility/snackbar.dart';
 import '../models/booking_accept_model.dart';
 import '../models/get_todays_activity_models.dart';
 import '../models/stop_request_response.dart';
-import '../screens/SharedBooking/Screens/shared_screens.dart';
+import '../screens/SharedBooking/Screens/picking_shared_screens.dart';
 import '../screens/driver_main_screen.dart';
 import '../screens/picking_customer_screen.dart';
 import '../screens/ride_stats_screen.dart';
@@ -101,6 +101,91 @@ class DriverStatusController extends GetxController {
           CommonLogger.log.i(response.data);
 
           if (navigateToPickup) {
+            Get.to(
+              () => PickingCustomerScreen(
+                pickupLocation: pickupLocation,
+                driverLocation: driverLocation,
+                bookingId: bookingId,
+                pickupLocationAddress: pickupLocationAddress,
+                dropLocationAddress: dropLocationAddress,
+              ),
+            );
+            // Get.to(
+            //   () => PickingCustomerSharedScreen(
+            //     pickupLocation: pickupLocation,
+            //     driverLocation: driverLocation,
+            //     bookingId: bookingId,
+            //     pickupLocationAddress: pickupLocationAddress,
+            //     dropLocationAddress: dropLocationAddress,
+            //   ),
+            // );
+          } else {
+            CommonLogger.log.i(
+              "🚗 [SHARED] bookingAccept called with navigateToPickup = false → staying on current screen",
+            );
+          }
+
+          isLoading.value = false;
+          return ' ';
+        },
+      );
+    } catch (e) {
+      isLoading.value = false;
+      return ' ';
+    }
+  }
+
+
+
+  // 🔹 booking accept
+  Future<String?> bookingAcceptForSharedRide(
+      BuildContext context, {
+        required String bookingId,
+        required String status,
+        required String pickupLocationAddress,
+        required String dropLocationAddress,
+        required LatLng pickupLocation,
+        required LatLng driverLocation,
+        bool navigateToPickup = true,
+      }) async {
+    isLoading.value = true;
+    try {
+      final results = await apiDataSource.bookingAccept(
+        bookingId: bookingId,
+        status: status,
+      );
+
+      return results.fold(
+            (failure) {
+          CustomSnackBar.showError(failure.message);
+          isLoading.value = false;
+          return '';
+        },
+            (response) {
+          final bookingData = {
+            'bookingId': response.data?.bookingId,
+            'userId': response.data?.driverId,
+            'userType': 'driver',
+          };
+
+          CommonLogger.log.i("📤 Join booking data: $bookingData");
+
+          if (socketService.connected) {
+            socketService.emit('join-booking', bookingData);
+            CommonLogger.log.i(
+              "✅ Socket already connected, emitted join-booking",
+            );
+          } else {
+            socketService.onConnect(() {
+              CommonLogger.log.i("✅ Socket connected, emitting join-booking");
+              socketService.emit('join-booking', bookingData);
+            });
+          }
+
+          CommonLogger.log.i(response.data);
+
+          if (navigateToPickup) {
+
             Get.to(
               () => PickingCustomerSharedScreen(
                 pickupLocation: pickupLocation,
@@ -369,14 +454,70 @@ class DriverStatusController extends GetxController {
 
     return '';
   }
+  Future<String?> cancelBooking(
+      BuildContext context, {
+        required String reason,
+        required String bookingId,
+        bool silent = true,
+        bool navigate = true,
+      }) async {
+    String? msg;
 
+    try {
+      isLoading.value = true;
+
+      final results = await apiDataSource.cancelBooking(
+        reason: reason,
+        bookingId: bookingId,
+      );
+
+      results.fold(
+            (failure) {
+          msg = failure.message;
+          CommonLogger.log.e("cancelBooking failure: ${failure.message}");
+        },
+            (response) {
+          msg = response.message;
+          CommonLogger.log.i("cancelBooking success: ${response.message}");
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.e("cancelBooking exception: $e");
+      msg = "Something went wrong";
+    } finally {
+      isLoading.value = false;
+    }
+
+    // show snackbar only if needed
+    if (!silent && (msg ?? '').isNotEmpty) {
+      CustomSnackBar.showSuccess(msg!);
+    }
+
+    if (navigate) {
+      try {
+        // ✅ closes dialog + bottomsheet + snackbar safely (does NOT pop the page)
+        Get.back(closeOverlays: true);
+      } catch (_) {}
+
+      // ✅ small delay to avoid race conditions with overlay closing
+      Future.delayed(const Duration(milliseconds: 80), () {
+        // ✅ always go main screen after cancel
+        Get.offAll(() => const DriverMainScreen());
+      });
+    }
+
+    return msg;
+  }
+
+/*
   Future<String?> cancelBooking(
     BuildContext context, {
     required String reason,
     required String bookingId,
     bool silent = true, // ✅ default true (avoid ticker crash)
     bool navigate = true, // ✅ default true
-  }) async {
+  }) async
+  {
     try {
       isLoading.value = true;
 
@@ -409,13 +550,17 @@ class DriverStatusController extends GetxController {
         // ✅ close overlays safely
         try {
           Get.closeAllSnackbars();
-        } catch (_) {}
+        } catch (e) {
+          CommonLogger.log.w(e);
+        }
         try {
           if (Get.isBottomSheetOpen == true) Get.back();
-        } catch (_) {}
+        } catch (e) {CommonLogger.log.w(e);}
         try {
           if (Get.isDialogOpen == true) Get.back();
-        } catch (_) {}
+        } catch (e) {
+          CommonLogger.log.w(e);
+        }
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (Get.currentRoute == '/DriverMainScreen') return;
@@ -429,6 +574,7 @@ class DriverStatusController extends GetxController {
       return '';
     }
   }
+*/
 
   Future<String?> stopNewRideRequest({
     required bool stop,

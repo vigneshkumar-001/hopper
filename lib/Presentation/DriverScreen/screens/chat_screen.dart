@@ -20,6 +20,7 @@ import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 
 import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
 
+import '../../../api/repository/api_config_controller.dart';
 import '../Controller/upload_image_controller.dart';
 import '../controller/chat_controller.dart';
 import '../models/chat_history_response.dart';
@@ -232,13 +233,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ========= sockets =========
   late final Function(dynamic) _bookingMessageHandler;
-
+  // Config
+  final ApiConfigController cfg = Get.find<ApiConfigController>();
   Future<void> _initializeSocketAndData() async {
     await _loadIdsAndAvatars();
 
-    socketService.initSocket(
-      'https://hoppr-face-two-dbe557472d7f.herokuapp.com',
-    );
+    socketService.initSocket(cfg.socketUrl);
 
     socketService.onConnect(() {
       socketService.registerUser(driverId ?? '');

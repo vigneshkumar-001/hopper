@@ -6,12 +6,18 @@ import '../../utils/sharedprefsHelper/sharedprefs_handler.dart';
 class ApiConfigController extends GetxController {
   // Shared ON -> 3000, Shared OFF -> 4000
   static const String sharedBase =
-      'https://q29l3cr9-3000.inc1.devtunnels.ms/api';
+      'https://q29l3cr9-6000.inc1.devtunnels.ms/api';
+  // 'https://q29l3cr9-3000.inc1.devtunnels.ms/api';
   static const String singleBase =
+      //'https://q29l3cr9-5000.inc1.devtunnels.ms/api';
       'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api';
   // 'https://q29l3cr9-4000.inc1.devtunnels.ms/api';
-  static const String sharedSocket = 'https://q29l3cr9-3000.inc1.devtunnels.ms';
-  static const String singleSocket = 'https://hoppr-face-two-dbe557472d7f.herokuapp.com';
+
+  static const String sharedSocket = 'https://q29l3cr9-6000.inc1.devtunnels.ms';
+  // static const String singleSocket = 'https://q29l3cr9-5000.inc1.devtunnels.ms';
+  // static const String sharedSocket = 'https://q29l3cr9-3000.inc1.devtunnels.ms';
+  static const String singleSocket =
+      'https://hoppr-face-two-dbe557472d7f.herokuapp.com';
   final RxBool isSharedEnabled = false.obs;
 
   String get baseUrl => isSharedEnabled.value ? sharedBase : singleBase;

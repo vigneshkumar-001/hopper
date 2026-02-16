@@ -1,3 +1,588 @@
+import 'dart:math' as math;
+
+import 'package:action_slider/action_slider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
+import 'package:hopper/Core/Constants/Colors.dart';
+import 'package:hopper/Core/Utility/Buttons.dart';
+import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/utils/map/google_map.dart';
+import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
+
+import '../controller/ride_starts_controller.dart';
+import 'cash_collected_screen.dart';
+
+import 'driver_main_screen.dart';
+
+class RideStatsScreen extends StatelessWidget {
+  final String bookingId;
+  final String? pickupAddress;
+  final String? dropAddress;
+
+  const RideStatsScreen({
+    super.key,
+    required this.bookingId,
+    this.pickupAddress,
+    this.dropAddress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Get.put(
+      RideStatsController(
+        bookingId: bookingId,
+        pickupAddress: pickupAddress,
+        dropAddress: dropAddress,
+      ),
+      tag: bookingId,
+    );
+
+    final DriverStatusController driverStatusController =
+    Get.find<DriverStatusController>();
+
+    return NoInternetOverlay(
+      child: WillPopScope(
+        onWillPop: () async => false,
+        child: Scaffold(
+          body: Stack(
+            children: [
+              SizedBox(
+                height: 650,
+                child: Obx(() {
+                  final from = c.bookingFromLocation.value;
+                  final to = c.bookingToLocation.value;
+
+                  final markers = <Marker>{
+                    if (c.movingMarker.value != null)
+                      c.movingMarker.value!
+                    else if (from != null)
+                      Marker(
+                        markerId: const MarkerId('start'),
+                        position: from,
+                        icon: c.carIcon.value ?? BitmapDescriptor.defaultMarker,
+                        anchor: const Offset(0.5, 0.5),
+                        flat: true,
+                        rotation: c.currentBearing.value,
+                      ),
+                    if (to != null)
+                      Marker(markerId: const MarkerId('end'), position: to),
+                  };
+
+                  final initialPos = from ?? const LatLng(0, 0);
+
+                  return CommonGoogleMap(
+                    myLocationEnabled: false,
+                    onCameraMove: (pos) => c.currentBearing.value = pos.bearing,
+                    onCameraMoveStarted: c.onUserMapMoveStarted,
+                    onMapCreated: (controller) async {
+                      c.mapController = controller;
+
+                      final style = await DefaultAssetBundle.of(context)
+                          .loadString('assets/map_style/map_style1.json');
+                      c.mapController?.setMapStyle(style);
+
+                      await Future.delayed(const Duration(milliseconds: 400));
+
+                      if (from != null && to != null) {
+                        final sw = LatLng(
+                          math.min(from.latitude, to.latitude),
+                          math.min(from.longitude, to.longitude),
+                        );
+                        final ne = LatLng(
+                          math.max(from.latitude, to.latitude),
+                          math.max(from.longitude, to.longitude),
+                        );
+
+                        await c.mapController!.animateCamera(
+                          CameraUpdate.newLatLngBounds(
+                            LatLngBounds(southwest: sw, northeast: ne),
+                            100,
+                          ),
+                        );
+
+                        final z = await c.mapController!.getZoomLevel();
+                        c.mapController!.animateCamera(
+                          CameraUpdate.zoomTo(z.clamp(12.0, 17.0)),
+                        );
+                      }
+                    },
+                    initialPosition: initialPos,
+                    markers: markers,
+                    polylines: {
+                      Polyline(
+                        polylineId: const PolylineId("route"),
+                        color: AppColors.commonBlack,
+                        width: 4,
+                        points: c.polylinePoints,
+                      ),
+                    },
+                  );
+                }),
+              ),
+
+              // my location
+              Obx(() => Positioned(
+                top: c.driverCompletedRide.value ? 550.0 : 450.0,
+                right: 10,
+                child: FloatingActionButton(
+                  mini: true,
+                  backgroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  onPressed: c.goToCurrentLocation,
+                  child: const Icon(Icons.my_location, color: Colors.black),
+                ),
+              )),
+
+              // direction bar
+              Positioned(
+                top: 45,
+                left: 10,
+                right: 10,
+                child: Obx(() {
+                  return Row(
+                    children: [
+                      Expanded(
+                        flex: 1,
+                        child: Container(
+                          height: 100,
+                          color: AppColors.directionColor,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 20,
+                              horizontal: 10,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Image.asset(
+                                  c.maneuverAsset(c.maneuver.value),
+                                  height: 32,
+                                  width: 32,
+                                ),
+                                const SizedBox(height: 5),
+                                CustomTextfield.textWithStyles600(
+                                  c.distanceText.value,
+                                  color: AppColors.commonWhite,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: Container(
+                          height: 100,
+                          color: AppColors.directionColor1,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 20,
+                              horizontal: 10,
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                CustomTextfield.textWithStyles600(
+                                  maxLine: 2,
+                                  c.parseHtmlString(c.directionText.value),
+                                  fontSize: 13,
+                                  color: AppColors.commonWhite,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+              ),
+
+              // bottom sheet
+              Obx(() {
+                final completed = c.driverCompletedRide.value;
+
+                return DraggableScrollableSheet(
+                  initialChildSize: completed ? 0.28 : 0.75,
+                  minChildSize: completed ? 0.25 : 0.40,
+                  maxChildSize: completed ? 0.30 : 0.75,
+                  builder: (context, scrollController) {
+                    return Container(
+                      color: Colors.white,
+                      child: ListView(
+                        controller: scrollController,
+                        physics: const BouncingScrollPhysics(),
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 60,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[400],
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+
+                          if (!completed) ...[
+                            GestureDetector(
+                              onTap: () => Get.to(const CashCollectedScreen()),
+                              child: Container(
+                                color:
+                                AppColors.rideInProgress.withOpacity(0.1),
+                                padding: const EdgeInsets.all(15),
+                                child: Center(
+                                  child: CustomTextfield.textWithStyles600(
+                                    fontSize: 14,
+                                    color: AppColors.rideInProgress,
+                                    'Ride in Progress',
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Obx(
+                                      () => CustomTextfield.textWithStyles600(
+                                    c.formatDuration(driverStatusController
+                                        .dropDurationInMin.value),
+                                    fontSize: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Icon(
+                                  Icons.circle,
+                                  color: AppColors.drkGreen,
+                                  size: 10,
+                                ),
+                                const SizedBox(width: 10),
+                                Obx(
+                                      () => CustomTextfield.textWithStyles600(
+                                    c.formatDistance(driverStatusController
+                                        .dropDistanceInMeters.value),
+                                    fontSize: 20,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Center(
+                              child: CustomTextfield.textWithStylesSmall(
+                                'Dropping off ${c.custName.value}',
+                              ),
+                            ),
+
+                            Padding(
+                              padding:
+                              const EdgeInsets.symmetric(horizontal: 20),
+                              child: _rideDetails(
+                                context: context,
+                                c: c,
+                                driverStatusController: driverStatusController,
+                              ),
+                            ),
+                          ] else ...[
+                            Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.circle,
+                                      color: AppColors.drkGreen,
+                                      size: 13,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    const Text(
+                                      '1 min away',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                CustomTextfield.textWithStylesSmall(
+                                  fontWeight: FontWeight.w500,
+                                  'Dropping off ${c.custName.value}',
+                                ),
+                                const SizedBox(height: 5),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 10,
+                                  ),
+                                  child: ActionSlider.standard(
+                                    height: 50,
+                                    backgroundColor: AppColors.drkGreen,
+                                    toggleColor: Colors.white,
+                                    icon: Icon(
+                                      Icons.double_arrow,
+                                      color: AppColors.drkGreen,
+                                      size: 28,
+                                    ),
+                                    child: const Text(
+                                      'Complete Ride',
+                                      style: TextStyle(
+                                        color: AppColors.commonWhite,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    action: (controller) async {
+                                      controller.loading();
+                                      await Future.delayed(
+                                        const Duration(milliseconds: 700),
+                                      );
+
+                                      final msg =
+                                      await driverStatusController
+                                          .completeRideRequest(
+                                        context,
+                                        Amount: c.amount.value,
+                                        bookingId: bookingId,
+                                      );
+
+                                      if (msg != null) {
+                                        controller.success();
+                                      } else {
+                                        controller.failure();
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Failed to complete ride',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _rideDetails({
+    required BuildContext context,
+    required RideStatsController c,
+    required DriverStatusController driverStatusController,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 15),
+          child: Text(
+            'Ride Details',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        Row(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(40),
+                color: AppColors.commonBlack.withOpacity(0.1),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.circle, color: AppColors.grey, size: 10),
+              ),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CustomTextfield.textWithStyles600(
+                    color: AppColors.commonBlack.withOpacity(0.5),
+                    fontSize: 16,
+                    'Pickup',
+                  ),
+                  CustomTextfield.textWithStylesSmall(
+                    colors: AppColors.textColorGrey,
+                    c.pickupAddress ?? '',
+                    maxLine: 2,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 20),
+
+        Row(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(40),
+                color: AppColors.commonBlack.withOpacity(0.1),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(
+                  Icons.circle,
+                  color: AppColors.commonBlack,
+                  size: 10,
+                ),
+              ),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CustomTextfield.textWithStyles600(
+                    'Drop off - Constitution Ave',
+                    fontSize: 16,
+                  ),
+                  CustomTextfield.textWithStylesSmall(
+                    colors: AppColors.textColorGrey,
+                    c.dropAddress ?? '',
+                    maxLine: 2,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 20),
+
+        GestureDetector(
+          onTap: () => c.driverCompletedRide.value = !c.driverCompletedRide.value,
+          child: Row(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(5),
+                child: ClipOval(
+                  child: Obx(
+                        () => CachedNetworkImage(
+                      imageUrl: c.profilePic.value,
+                      height: 45,
+                      width: 45,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => const SizedBox(
+                        height: 40,
+                        width: 40,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      errorWidget: (_, __, ___) => const Icon(
+                        Icons.person,
+                        size: 30,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 15),
+              Obx(
+                    () => CustomTextfield.textWithStyles600(
+                  c.custName.value,
+                  fontSize: 20,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 15),
+
+        Container(
+          color: AppColors.containerColor1,
+          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              CustomTextfield.textWithImage(
+                colors: AppColors.commonBlack,
+                fontWeight: FontWeight.w500,
+                fontSize: 12,
+                text: 'Get Help',
+                imagePath: AppImages.getHelp,
+              ),
+              const SizedBox(height: 20, child: VerticalDivider()),
+              CustomTextfield.textWithImage(
+                colors: AppColors.commonBlack,
+                fontWeight: FontWeight.w500,
+                fontSize: 12,
+                text: 'Share Trip Status',
+                imagePath: AppImages.share,
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        Buttons.button(
+          borderColor: AppColors.buttonBorder,
+          buttonColor: AppColors.commonWhite,
+          borderRadius: 8,
+          textColor: AppColors.commonBlack,
+          onTap: () => Buttons.showDialogBox(
+            context: context,
+            onConfirmStop: () async {},
+          ),
+          text: const Text('Stop New Ride Request'),
+        ),
+
+        const SizedBox(height: 10),
+
+        Buttons.button(
+          borderRadius: 8,
+          buttonColor: AppColors.red,
+          onTap: () {
+            Buttons.showCancelRideBottomSheet(
+              context,
+              onConfirmCancel: (reason) async {
+                driverStatusController.cancelBooking(
+                  bookingId: c.bookingId,
+                  context,
+                  reason: reason,
+                );
+              },
+            );
+          },
+          text: const Text('Cancel this Ride'),
+        ),
+      ],
+    );
+  }
+}
+
+
+
+/*
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -514,7 +1099,8 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     }
   }
 
-  /*  Future<void> _animateMarkerTo(LatLng newPos) async {
+  */
+/*  Future<void> _animateMarkerTo(LatLng newPos) async {
     if (_lastDriverPosition == null) return;
 
     final start = _lastDriverPosition!;
@@ -542,7 +1128,8 @@ class _RideStatsScreenState extends State<RideStatsScreen>
         _currentMapBearing = endRot;
       }
     });
-  }*/
+  }*//*
+
 
   double _bearingBetween(LatLng a, LatLng b) {
     final lat1 = a.latitude * math.pi / 180;
@@ -1165,6 +1752,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     return h > 0 ? '$h hr $m min' : '$m min';
   }
 }
+*/
 
 // import 'dart:async';
 // import 'package:cached_network_image/cached_network_image.dart';

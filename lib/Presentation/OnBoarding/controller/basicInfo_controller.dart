@@ -99,7 +99,7 @@ class BasicInfoController extends GetxController {
     //   emailController.clear();
     //   mobileNumber.clear();
     // }
-    update();
+    Future.microtask(update);
   }
 
   void clearState() {

@@ -10,7 +10,7 @@ import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/DriverScreen/models/booking_accept_model.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
-import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/shared_screens.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/picking_shared_screens.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/cash_collected_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
@@ -561,7 +561,7 @@ class SharedController extends GetxController {
 // import 'package:hopper/Core/Utility/snackbar.dart';
 // import 'package:hopper/Presentation/DriverScreen/models/booking_accept_model.dart';
 // import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
-// import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/shared_screens.dart';
+// import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/picking_shared_screens.dart';
 // import 'package:hopper/Presentation/DriverScreen/screens/cash_collected_screen.dart';
 // import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 // import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
