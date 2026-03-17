@@ -50,12 +50,14 @@ Future<Map<String, dynamic>> getRouteInfo({
   final directionText = first?['html_instructions']?.toString() ?? '';
   final distanceText = first?['distance']?['text']?.toString() ?? '';
   final maneuver = first?['maneuver']?.toString() ?? 'straight';
+  final laneGuidance = _extractLaneGuidance(first, maneuver, directionText);
 
   return {
     "direction": directionText,
     "distance": distanceText,
     "polyline": polyline,
     "maneuver": maneuver,
+    "laneGuidance": laneGuidance,
     "routeIndex": idx,
     "raw": data,
   };
@@ -101,6 +103,7 @@ class DirectionsHelper {
     final directionText = first?['html_instructions']?.toString() ?? '';
     final distanceText = first?['distance']?['text']?.toString() ?? '';
     final maneuver = first?['maneuver']?.toString() ?? 'straight';
+    final laneGuidance = _extractLaneGuidance(first, maneuver, directionText);
 
     return RouteInfo(
       polyline: polyline,
@@ -108,6 +111,7 @@ class DirectionsHelper {
       directionHtml: directionText,
       distanceText: distanceText,
       maneuver: maneuver,
+      laneGuidance: laneGuidance,
       routeIndex: idx,
       raw: data,
     );
@@ -213,6 +217,7 @@ class RouteInfo {
   final String directionHtml;
   final String distanceText;
   final String maneuver;
+  final String laneGuidance;
 
   final int routeIndex;
   final Map<String, dynamic> raw;
@@ -223,7 +228,55 @@ class RouteInfo {
     required this.directionHtml,
     required this.distanceText,
     required this.maneuver,
+    required this.laneGuidance,
     required this.routeIndex,
     required this.raw,
   });
+}
+
+String _extractLaneGuidance(
+  dynamic firstStep,
+  String maneuver,
+  String directionHtml,
+) {
+  String indication = '';
+  try {
+    final intersections = firstStep?['intersections'];
+    if (intersections is List) {
+      for (final inter in intersections) {
+        final lanes = inter['lanes'];
+        if (lanes is! List || lanes.isEmpty) continue;
+        final validLanes = lanes
+            .where((l) => l is Map && (l['valid'] == true))
+            .cast<Map>()
+            .toList();
+        if (validLanes.isEmpty) continue;
+
+        final firstValid = validLanes.first;
+        final indications = firstValid['indications'];
+        if (indications is List && indications.isNotEmpty) {
+          indication = indications.first.toString().toLowerCase();
+          break;
+        }
+      }
+    }
+  } catch (_) {}
+
+  if (indication.isEmpty) {
+    final text = directionHtml.toLowerCase();
+    if (text.contains('keep left') || text.contains('slight left')) {
+      indication = 'left';
+    } else if (text.contains('keep right') || text.contains('slight right')) {
+      indication = 'right';
+    } else if (maneuver.toLowerCase().contains('left')) {
+      indication = 'left';
+    } else if (maneuver.toLowerCase().contains('right')) {
+      indication = 'right';
+    }
+  }
+
+  if (indication.contains('left')) return 'Keep left lane';
+  if (indication.contains('right')) return 'Keep right lane';
+  if (indication.contains('straight')) return 'Use straight lane';
+  return '';
 }

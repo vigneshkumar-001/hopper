@@ -69,7 +69,6 @@ class GetUserProfileModel {
   final String? postalCode;
   final int? landingPage;
   final int? formStatus;
-
   final StatusModel? basicInfoStatus;
   final StatusModel? profilePhotoStatus;
   final StatusModel? ninVerificationStatus;
@@ -84,7 +83,6 @@ class GetUserProfileModel {
   final StatusModel? carOwnershipStatus;
   final StatusModel? bikePhotosStatus;
   final String? DriverStarRating;
-
 
   GetUserProfileModel({
     this.id,
@@ -114,7 +112,6 @@ class GetUserProfileModel {
     this.carOwnership,
     this.carOwnerName,
     this.bikeRoadWorthinessCertificate,
-
     this.bikeRegistrationNumber,
     this.carPlateNumber,
     this.carBrand,
@@ -174,13 +171,13 @@ class GetUserProfileModel {
       completed: json['completed'],
       bankVerificationNumber: json['bankVerificationNumber'],
       nationalIdNumber: json['nationalIdNumber'],
-      frontIdCardBvn: json['frontIdCardBvn'],
-      backIdCardBvn: json['backIdCardBvn'],
-      profilePic: json['profilePic'],
-      frontIdCardNin: json['frontIdCardNin'],
-      frontIdCardDln: json['frontIdCardDln'],
-      backIdCardDln: json['backIdCardDln'],
-      backIdCardNin: json['backIdCardNin'],
+      frontIdCardBvn: _cleanMediaUrl(json['frontIdCardBvn']),
+      backIdCardBvn: _cleanMediaUrl(json['backIdCardBvn']),
+      profilePic: _cleanMediaUrl(json['profilePic']),
+      frontIdCardNin: _cleanMediaUrl(json['frontIdCardNin']),
+      frontIdCardDln: _cleanMediaUrl(json['frontIdCardDln']),
+      backIdCardDln: _cleanMediaUrl(json['backIdCardDln']),
+      backIdCardNin: _cleanMediaUrl(json['backIdCardNin']),
       driverLicenseNumber: json['driverLicenseNumber'],
       carOwnership: json['carOwnership'] ?? '',
       carOwnerName: json['carOwnerName'],
@@ -191,79 +188,82 @@ class GetUserProfileModel {
       carColor: json['carColor'],
       bikeRegistrationNumber: json['bikeRegistrationNumber'],
       carRegistrationNumber: json['carRegistrationNumber'],
-      carRoadWorthinessCertificate: json['carRoadWorthinessCertificate'],
-      carInsuranceDocument: json['carInsuranceDocument'],
-      carDocuments: (json['carDocuments'] as List?)?.cast<String>(),
-      carExteriorPhotos: (json['carExteriorPhotos'] as List?)?.cast<String>(),
-      carInteriorPhotos: (json['carInteriorPhotos'] as List?)?.cast<String>(),
-      bikeRoadWorthinessCertificate: json['bikeRoadWorthinessCertificate'],
-      bikeInsuranceDocument: json['bikeInsuranceDocument'],
+      carRoadWorthinessCertificate: _cleanMediaUrl(json['carRoadWorthinessCertificate']),
+      carInsuranceDocument: _cleanMediaUrl(json['carInsuranceDocument']),
+      carDocuments: _cleanMediaList(json['carDocuments']),
+      carExteriorPhotos: _cleanMediaList(json['carExteriorPhotos']),
+      carInteriorPhotos: _cleanMediaList(json['carInteriorPhotos']),
+      bikeRoadWorthinessCertificate: _cleanMediaUrl(json['bikeRoadWorthinessCertificate']),
+      bikeInsuranceDocument: _cleanMediaUrl(json['bikeInsuranceDocument']),
       bikeOwnership: json['bikeOwnership'],
       bikeOwnerName: json['bikeOwnerName'],
       bikePlateNumber: json['bikePlateNumber'],
       bikeBrand: json['bikeBrand'],
       bikeModel: json['bikeModel'],
       bikeYear: json['bikeYear'],
-      bikeDocuments: (json['bikeDocuments'] as List?)?.cast<String>(),
-      bikePhotos: (json['bikePhotos'] as List?)?.cast<String>(),
+      bikeDocuments: _cleanMediaList(json['bikeDocuments']),
+      bikePhotos: _cleanMediaList(json['bikePhotos']),
       mobileNumberVerified: json['MobileNumberverified'],
       emailVerified: json['EmailVerified'],
       postalCode: json['postalCode'],
       landingPage: json['landingPage'],
       formStatus: json['formStatus'],
       DriverStarRating: json['DriverStarRating'],
-      basicInfoStatus:
-          json['basicInfoStatus'] != null
-              ? StatusModel.fromJson(json['basicInfoStatus'])
-              : null,
-      profilePhotoStatus:
-          json['profilePhotoStatus'] != null
-              ? StatusModel.fromJson(json['profilePhotoStatus'])
-              : null,
-      ninVerificationStatus:
-          json['ninVerificationStatus'] != null
-              ? StatusModel.fromJson(json['ninVerificationStatus'])
-              : null,
-      bankVerificationStatus:
-          json['bankVerificationStatus'] != null
-              ? StatusModel.fromJson(json['bankVerificationStatus'])
-              : null,
-      bikeDetailsStatus:
-          json['bikeDetailsStatus'] != null
-              ? StatusModel.fromJson(json['bikeDetailsStatus'])
-              : null,
-      carDetailsStatus:
-          json['carDetailsStatus'] != null
-              ? StatusModel.fromJson(json['carDetailsStatus'])
-              : null,
-      carExteriorPhotosStatus:
-          json['carExteriorPhotosStatus'] != null
-              ? StatusModel.fromJson(json['carExteriorPhotosStatus'])
-              : null,
-      carInteriorPhotosStatus:
-          json['carInteriorPhotosStatus'] != null
-              ? StatusModel.fromJson(json['carInteriorPhotosStatus'])
-              : null,
-      driverAddressStatus:
-          json['driverAddressStatus'] != null
-              ? StatusModel.fromJson(json['driverAddressStatus'])
-              : null,
-      driversLicenseStatus:
-          json['driversLicenseStatus'] != null
-              ? StatusModel.fromJson(json['driversLicenseStatus'])
-              : null,
-      bikeOwnershipStatus:
-          json['bikeOwnershipStatus'] != null
-              ? StatusModel.fromJson(json['bikeOwnershipStatus'])
-              : null,
-      carOwnershipStatus:
-          json['carOwnershipStatus'] != null
-              ? StatusModel.fromJson(json['carOwnershipStatus'])
-              : null,
-      bikePhotosStatus:
-          json['bikePhotosStatus'] != null
-              ? StatusModel.fromJson(json['bikePhotosStatus'])
-              : null,
+      basicInfoStatus: json['basicInfoStatus'] != null
+          ? StatusModel.fromJson(json['basicInfoStatus'])
+          : null,
+      profilePhotoStatus: json['profilePhotoStatus'] != null
+          ? StatusModel.fromJson(json['profilePhotoStatus'])
+          : null,
+      ninVerificationStatus: json['ninVerificationStatus'] != null
+          ? StatusModel.fromJson(json['ninVerificationStatus'])
+          : null,
+      bankVerificationStatus: json['bankVerificationStatus'] != null
+          ? StatusModel.fromJson(json['bankVerificationStatus'])
+          : null,
+      bikeDetailsStatus: json['bikeDetailsStatus'] != null
+          ? StatusModel.fromJson(json['bikeDetailsStatus'])
+          : null,
+      carDetailsStatus: json['carDetailsStatus'] != null
+          ? StatusModel.fromJson(json['carDetailsStatus'])
+          : null,
+      carExteriorPhotosStatus: json['carExteriorPhotosStatus'] != null
+          ? StatusModel.fromJson(json['carExteriorPhotosStatus'])
+          : null,
+      carInteriorPhotosStatus: json['carInteriorPhotosStatus'] != null
+          ? StatusModel.fromJson(json['carInteriorPhotosStatus'])
+          : null,
+      driverAddressStatus: json['driverAddressStatus'] != null
+          ? StatusModel.fromJson(json['driverAddressStatus'])
+          : null,
+      driversLicenseStatus: json['driversLicenseStatus'] != null
+          ? StatusModel.fromJson(json['driversLicenseStatus'])
+          : null,
+      bikeOwnershipStatus: json['bikeOwnershipStatus'] != null
+          ? StatusModel.fromJson(json['bikeOwnershipStatus'])
+          : null,
+      carOwnershipStatus: json['carOwnershipStatus'] != null
+          ? StatusModel.fromJson(json['carOwnershipStatus'])
+          : null,
+      bikePhotosStatus: json['bikePhotosStatus'] != null
+          ? StatusModel.fromJson(json['bikePhotosStatus'])
+          : null,
     );
+  }
+
+  static String? _cleanMediaUrl(dynamic value) {
+    if (value == null) return null;
+    final text = value.toString().trim();
+    if (text.isEmpty) return null;
+    return text.replaceAll('%22', '').replaceAll('"', '').trim();
+  }
+
+  static List<String>? _cleanMediaList(dynamic value) {
+    if (value is! List) return null;
+    return value
+        .map(_cleanMediaUrl)
+        .whereType<String>()
+        .where((e) => e.isNotEmpty)
+        .toList();
   }
 }

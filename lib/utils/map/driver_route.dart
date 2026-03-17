@@ -16,6 +16,7 @@ class DriverRouteUpdate {
   final String directionText;
   final String distanceText;
   final String maneuver;
+  final String laneGuidance;
 
   DriverRouteUpdate({
     required this.driverLocation,
@@ -25,6 +26,7 @@ class DriverRouteUpdate {
     required this.directionText,
     required this.distanceText,
     required this.maneuver,
+    required this.laneGuidance,
   });
 }
 
@@ -64,6 +66,7 @@ class DriverRouteController {
   String _directionText = '';
   String _distanceText = '';
   String _maneuver = '';
+  String _laneGuidance = '';
 
   StreamSubscription<Position>? _positionSub;
 
@@ -73,6 +76,7 @@ class DriverRouteController {
   // ---------------- tuning ----------------
   static const double _MAX_ACCURACY_M = 25.0;
   static const double _MIN_MOVE_METERS = 2.0;
+  static const double _STATIONARY_DRIFT_M = 8.0;
 
   static const double _MIN_SPEED_MS = 1.0;
   static const double _HEADING_TRUST_SPEED_MS = 2.0;
@@ -81,6 +85,9 @@ class DriverRouteController {
   // Route refresh throttles
   static const int _ROUTE_REFRESH_MIN_SEC = 10;
   static const double _OFFROUTE_THRESHOLD_M = 25.0;
+  static const double _POLYLINE_TRIM_TOLERANCE_M = 30.0;
+  static const int _POLYLINE_TRIM_LOOKAHEAD_POINTS = 40;
+  static const int _OFF_ROUTE_LOOKAHEAD_POINTS = 80;
   DateTime? _lastRouteFetchAt;
 
   // Bearing smoothing (raw)
@@ -181,9 +188,20 @@ class DriverRouteController {
     final speed = position.speed.isFinite ? position.speed : 0.0;
     final heading = position.heading.isFinite ? position.heading : -1.0;
 
+    // Keep orientation stable when almost stationary (GPS drift only).
+    if (speed < _MIN_SPEED_MS && moved < _STATIONARY_DRIFT_M) {
+      _currentRaw = newLoc;
+      _lastRaw = newLoc;
+      _displayLoc = newLoc;
+      _emitUpdate();
+      return;
+    }
+
     // ---------- target bearing (raw) ----------
     double targetBearing;
-    if (speed >= _HEADING_TRUST_SPEED_MS && heading >= 0) {
+    if (speed < _MIN_SPEED_MS) {
+      targetBearing = _displayBearing;
+    } else if (speed >= _HEADING_TRUST_SPEED_MS && heading >= 0) {
       targetBearing = heading;
     } else {
       targetBearing = _getBearing(_lastRaw!, newLoc);
@@ -330,6 +348,7 @@ class DriverRouteController {
     _directionText = _parseHtmlString(result['direction']);
     _distanceText = result['distance'];
     _maneuver = result['maneuver'] ?? '';
+    _laneGuidance = (result['laneGuidance'] ?? '').toString();
     _polyline = decodePolyline(result['polyline']);
 
     if (_polyline.length >= 2) {
@@ -354,6 +373,7 @@ class DriverRouteController {
         directionText: _directionText,
         distanceText: _distanceText,
         maneuver: _maneuver,
+        laneGuidance: _laneGuidance,
       ),
     );
 
@@ -373,8 +393,15 @@ class DriverRouteController {
   void _trimPolylineToCurrent(LatLng currentLocation) {
     if (_polyline.isEmpty) return;
 
-    final closestIndex = _getClosestPolylinePointIndex(currentLocation);
+    final closestIndex = _getClosestPolylinePointIndex(
+      currentLocation,
+      limit: _POLYLINE_TRIM_LOOKAHEAD_POINTS,
+    );
     if (closestIndex <= 0) return;
+    if (_distanceToPoint(currentLocation, _polyline[closestIndex]) >
+        _POLYLINE_TRIM_TOLERANCE_M) {
+      return;
+    }
 
     final startIndex = math.max(0, closestIndex - 1);
     if (startIndex >= _polyline.length) return;
@@ -390,19 +417,15 @@ class DriverRouteController {
     }
   }
 
-  int _getClosestPolylinePointIndex(LatLng position) {
+  int _getClosestPolylinePointIndex(LatLng position, {int? limit}) {
     double minDistance = double.infinity;
     int closestIndex = -1;
 
-    final limit = math.min(_polyline.length, 120);
+    final searchLimit =
+        limit == null ? _polyline.length : math.min(_polyline.length, limit);
 
-    for (int i = 0; i < limit; i++) {
-      final distance = Geolocator.distanceBetween(
-        position.latitude,
-        position.longitude,
-        _polyline[i].latitude,
-        _polyline[i].longitude,
-      );
+    for (int i = 0; i < searchLimit; i++) {
+      final distance = _distanceToPoint(position, _polyline[i]);
       if (distance < minDistance) {
         minDistance = distance;
         closestIndex = i;
@@ -414,19 +437,23 @@ class DriverRouteController {
   bool _isOffRoute(LatLng currentLocation) {
     if (_polyline.isEmpty) return true;
 
-    final limit = math.min(_polyline.length, 80);
+    final limit = math.min(_polyline.length, _OFF_ROUTE_LOOKAHEAD_POINTS);
 
     for (int i = 0; i < limit; i++) {
       final point = _polyline[i];
-      final d = Geolocator.distanceBetween(
-        currentLocation.latitude,
-        currentLocation.longitude,
-        point.latitude,
-        point.longitude,
-      );
+      final d = _distanceToPoint(currentLocation, point);
       if (d < _OFFROUTE_THRESHOLD_M) return false;
     }
     return true;
+  }
+
+  double _distanceToPoint(LatLng from, LatLng to) {
+    return Geolocator.distanceBetween(
+      from.latitude,
+      from.longitude,
+      to.latitude,
+      to.longitude,
+    );
   }
 
   // ---------------- bearing helpers ----------------
@@ -477,10 +504,17 @@ class DriverRouteController {
   }
 
   String _parseHtmlString(String htmlText) {
-    return htmlText
-        .replaceAll(RegExp(r'<[^>]*>'), '')
+    var text = htmlText
+        .replaceAll(RegExp(r'<[^>]*>'), ' ')
         .replaceAll('&nbsp;', ' ')
         .replaceAll('&amp;', '&');
+
+    text = text.replaceAll(
+      RegExp(r'\(\s*on the (left|right)\s*\)', caseSensitive: false),
+      '',
+    );
+
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   void dispose() {

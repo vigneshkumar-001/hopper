@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -9,23 +10,9 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
+
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
-import '../../../utils/sharedprefsHelper/booking_local_data.dart';
-import '../../OnBoarding/controller/chooseservice_controller.dart';
-import 'dart:async';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/material.dart';
-import 'package:get/get.dart';
-import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/log.dart';
-import 'package:hopper/Core/Utility/Buttons.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
-import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
-import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
-import '../../../utils/netWorkHandling/network_handling_screen.dart';
-import '../../../utils/sharedprefsHelper/booking_local_data.dart';
-import '../../OnBoarding/controller/chooseservice_controller.dart';
 
 class CashCollectedScreen extends StatefulWidget {
   final dynamic Amount;
@@ -48,22 +35,30 @@ class CashCollectedScreen extends StatefulWidget {
 }
 
 class _CashCollectedScreenState extends State<CashCollectedScreen> {
-  final ChooseServiceController getDetails = Get.put(ChooseServiceController());
-  final DriverStatusController driverStatusController = Get.put(
-    DriverStatusController(),
-  );
+  late final ChooseServiceController getDetails;
+  late final DriverStatusController driverStatusController;
   Timer? _timer;
+  bool _isSubmittingCash = false;
 
   @override
   void initState() {
     super.initState();
+    getDetails =
+        Get.isRegistered<ChooseServiceController>()
+            ? Get.find<ChooseServiceController>()
+            : Get.put(ChooseServiceController());
+    driverStatusController =
+        Get.isRegistered<DriverStatusController>()
+            ? Get.find<DriverStatusController>()
+            : Get.put(DriverStatusController());
 
-    _timer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      final bookingId = widget.bookingId?.toString() ?? '';
-      if (bookingId.isNotEmpty) {
+    final bookingId = widget.bookingId?.toString() ?? '';
+    if (bookingId.isNotEmpty) {
+      driverStatusController.getAmountStatus(bookingId: bookingId);
+      _timer = Timer.periodic(const Duration(seconds: 3), (_) {
         driverStatusController.getAmountStatus(bookingId: bookingId);
-      }
-    });
+      });
+    }
   }
 
   @override
@@ -72,7 +67,6 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
     super.dispose();
   }
 
-  /// ✅ Shared flow complete → go back to ShareRideStartScreen (Navigator result)
   Future<void> _finishSharedAndPop({required bool success}) async {
     _timer?.cancel();
     try {
@@ -81,251 +75,340 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
 
     if (!mounted) return;
 
-    // ✅ ONLY Navigator pop with result
     if (Navigator.of(context).canPop()) {
       Navigator.pop<bool>(context, success);
     }
   }
 
+  Future<void> _submitCashCollected() async {
+    if (_isSubmittingCash) return;
+
+    final bookingId = widget.bookingId?.toString() ?? '';
+    if (bookingId.isEmpty) {
+      Get.snackbar(
+        'Missing booking',
+        'Booking id not found for cash collection.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+
+    setState(() => _isSubmittingCash = true);
+
+    var success = false;
+    await driverStatusController.amountCollectedStatus(
+      booking: bookingId,
+      onSuccess: () {
+        success = true;
+      },
+    );
+
+    if (!mounted) return;
+    setState(() => _isSubmittingCash = false);
+
+    if (success) {
+      _showRatingBottomSheet(context);
+    }
+  }
+
+  String _displayName() {
+    final firstName = getDetails.userProfile.value?.firstName ?? 'Customer';
+    final customName = widget.name?.toString().trim() ?? '';
+    return customName.isNotEmpty ? customName : firstName;
+  }
+
+  String _displayAmount() {
+    final amount = widget.Amount?.toString().trim() ?? '';
+    return amount.isEmpty ? '0' : amount;
+  }
+
+  Color _paymentStatusColor(String value) {
+    return value.toUpperCase() == 'PAID' ? const Color(0xFF1E8E5A) : const Color(0xFFD93025);
+  }
+
+  Widget _buildAvatar(String imageUrl) {
+    if (imageUrl.isEmpty) {
+      return Container(
+        height: 96,
+        width: 96,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0xFFF2F4F7),
+          border: Border.all(color: const Color(0xFFE4E7EC)),
+        ),
+        child: const Icon(Icons.person_rounded, size: 44, color: Color(0xFF667085)),
+      );
+    }
+
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      imageBuilder:
+          (context, imageProvider) => Container(
+            height: 96,
+            width: 96,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFE4E7EC), width: 3),
+              image: DecorationImage(image: imageProvider, fit: BoxFit.cover),
+            ),
+          ),
+      placeholder:
+          (context, url) => Container(
+            height: 96,
+            width: 96,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0xFFF2F4F7),
+            ),
+            child: const Center(
+              child: SizedBox(
+                height: 24,
+                width: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+      errorWidget:
+          (context, url, error) => Container(
+            height: 96,
+            width: 96,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFF2F4F7),
+              border: Border.all(color: const Color(0xFFE4E7EC)),
+            ),
+            child: const Icon(Icons.person_rounded, size: 44, color: Color(0xFF667085)),
+          ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bookingData = BookingDataService().getBookingData();
-
     return NoInternetOverlay(
       child: Scaffold(
+        backgroundColor: const Color(0xFFF8F9FB),
         body: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                /// 🔙 TOP BACK
                 GestureDetector(
                   onTap: () async {
                     if (widget.isSharedRide) {
                       await _finishSharedAndPop(success: false);
-                    } else {
-                      if (Navigator.of(context).canPop()) {
-                        Navigator.pop(context);
-                      }
+                    } else if (Navigator.of(context).canPop()) {
+                      Navigator.pop(context);
                     }
                   },
-                  child: Image.asset(
-                    AppImages.backButton,
-                    height: 25,
-                    width: 25,
-                  ),
-                ),
-
-                const Spacer(),
-
-                /// 👤 USER PROFILE + AMOUNT + PAYMENT STATUS
-                Obx(() {
-                  final profilePic =
-                      getDetails.userProfile.value?.profilePic ?? '';
-                  final firstName =
-                      getDetails.userProfile.value?.firstName ?? 'Customer';
-
-                  return Column(
-                    children: [
-                      Center(
-                        child:
-                            profilePic.isNotEmpty
-                                ? CachedNetworkImage(
-                                  imageUrl:
-                                      widget.imageUrl == null
-                                          ? profilePic
-                                          : widget.imageUrl.toString() ?? '',
-                                  height: 80,
-                                  width: 80,
-                                  imageBuilder:
-                                      (context, imageProvider) => Container(
-                                        height: 80,
-                                        width: 80,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          image: DecorationImage(
-                                            image: imageProvider,
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      ),
-                                  placeholder:
-                                      (context, url) =>
-                                          const CircularProgressIndicator(),
-                                  errorWidget:
-                                      (context, url, error) => const Icon(
-                                        Icons.person,
-                                        size: 80,
-                                        color: Colors.grey,
-                                      ),
-                                )
-                                : const Icon(
-                                  Icons.person,
-                                  size: 80,
-                                  color: Colors.grey,
-                                ),
-                      ),
-                      const SizedBox(height: 10),
-                      CustomTextfield.textWithStylesSmall(
-                        'Collect cash from ${widget.name == null ? firstName : widget.name.toString() ?? ''}',
-                        colors: AppColors.grey,
-                        fontSize: 14,
-                      ),
-                      const SizedBox(height: 10),
-                      CustomTextfield.textWithStyles600(
-                        widget.Amount.toString(),
-                      ),
-                      const SizedBox(height: 15),
-
-                      /// 💳 PAYMENT INFO BOX
-                      Obx(
-                        () => Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.commonWhite,
-                            border: Border.all(
-                              color: AppColors.containerColor1,
-                              width: 1,
-                            ),
-                            borderRadius: BorderRadius.circular(10),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.grey.withOpacity(0.1),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              RichText(
-                                text: TextSpan(
-                                  text: "Payment Type: ",
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.black87,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  children: [
-                                    TextSpan(
-                                      text:
-                                          driverStatusController
-                                              .paymentType
-                                              .value,
-                                      style: const TextStyle(
-                                        color: Colors.blue,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              RichText(
-                                text: TextSpan(
-                                  text: "Payment Status: ",
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.black87,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  children: [
-                                    TextSpan(
-                                      text:
-                                          driverStatusController
-                                              .paymentStatus
-                                              .value,
-                                      style: TextStyle(
-                                        color:
-                                            driverStatusController
-                                                        .paymentStatus
-                                                        .value
-                                                        .toUpperCase() ==
-                                                    "PAID"
-                                                ? Colors.green
-                                                : Colors.redAccent,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+                  child: Container(
+                    height: 42,
+                    width: 42,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x12000000),
+                          blurRadius: 16,
+                          offset: Offset(0, 8),
                         ),
-                      ),
-                    ],
-                  );
-                }),
-
-                const Spacer(),
-
-                /// ℹ️ INFO BOX
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.directionColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Image.asset(
-                        color: AppColors.directionColor,
-                        AppImages.exclamationCircle,
-                        width: 20,
-                        height: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: CustomTextfield.textWithStylesSmall(
-                          fontWeight: FontWeight.w400,
-                          colors: AppColors.commonBlack,
-                          'If rider doesn’t have change, ask them to pay in wholesums. Extra amount paid will be credited to rider’s account.',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 30),
-
-                /// 🤑 CASH COLLECTED BUTTON
-                SafeArea(
-                  child: Obx(
-                    () => Buttons.button(
-                      borderRadius: 7,
-                      buttonColor: AppColors.commonBlack,
-                      onTap:
-                          driverStatusController.isLoading.value
-                              ? null
-                              : () {
-                                driverStatusController.amountCollectedStatus(
-                                  booking: widget.bookingId.toString(),
-                                  onSuccess: () {
-                                    _showRatingBottomSheet(context);
-                                  },
-                                );
-                              },
-                      text:
-                          driverStatusController.isLoading.value
-                              ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                              : const Text('Cash Collected'),
+                      ],
                     ),
+                    child: Center(
+                      child: Image.asset(
+                        AppImages.backButton,
+                        height: 18,
+                        width: 18,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Obx(() {
+                      final liveProfile = getDetails.userProfile.value?.profilePic ?? '';
+                      final imageUrl = (widget.imageUrl?.toString().trim().isNotEmpty ?? false)
+                          ? widget.imageUrl!.toString().trim()
+                          : liveProfile;
+                      final paymentType = driverStatusController.paymentType.value;
+                      final paymentStatus = driverStatusController.paymentStatus.value;
+                      final riderName = _displayName();
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(0xFF101828), Color(0xFF1D2939)],
+                              ),
+                              borderRadius: BorderRadius.circular(28),
+                            ),
+                            child: Column(
+                              children: [
+                                _buildAvatar(imageUrl),
+                                const SizedBox(height: 16),
+                                CustomTextfield.textWithStylesSmall(
+                                  'Collect cash from $riderName',
+                                  colors: const Color(0xFFD0D5DD),
+                                  fontSize: 14,
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  _displayAmount(),
+                                  style: const TextStyle(
+                                    fontSize: 34,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.payments_outlined, color: Colors.white, size: 18),
+                                          const SizedBox(width: 10),
+                                          const Expanded(
+                                            child: Text(
+                                              'Payment type',
+                                              style: TextStyle(
+                                                color: Color(0xFFD0D5DD),
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            paymentType.isEmpty ? 'Cash' : paymentType,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 14),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.verified_outlined, color: Colors.white, size: 18),
+                                          const SizedBox(width: 10),
+                                          const Expanded(
+                                            child: Text(
+                                              'Payment status',
+                                              style: TextStyle(
+                                                color: Color(0xFFD0D5DD),
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: _paymentStatusColor(paymentStatus).withValues(alpha: 0.18),
+                                              borderRadius: BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              paymentStatus.isEmpty ? 'Pending' : paymentStatus,
+                                              style: TextStyle(
+                                                color: _paymentStatusColor(paymentStatus),
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF7ED),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: const Color(0xFFFED7AA)),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  height: 36,
+                                  width: 36,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFEDD5),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Center(
+                                    child: Image.asset(
+                                      AppImages.exclamationCircle,
+                                      width: 18,
+                                      height: 18,
+                                      color: const Color(0xFFEA580C),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: CustomTextfield.textWithStylesSmall(
+                                    'If the rider does not have change, ask for a whole amount. Any extra collected amount will be credited to the rider account.',
+                                    colors: const Color(0xFF9A3412),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    }),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SafeArea(
+                  top: false,
+                  child: Buttons.button(
+                    borderRadius: 18,
+                    buttonColor: AppColors.commonBlack,
+                    onTap: _isSubmittingCash ? null : _submitCashCollected,
+                    text: _isSubmittingCash
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.check_circle_outline_rounded, size: 18, color: Colors.white),
+                              SizedBox(width: 8),
+                              Text('Cash Collected'),
+                            ],
+                          ),
                   ),
                 ),
               ],
@@ -336,694 +419,172 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
     );
   }
 
-  /// ⭐ RATING BOTTOM SHEET
   void _showRatingBottomSheet(BuildContext pageContext) {
-    int selectedRating = 0;
+    var selectedRating = 0;
+    var isSubmittingRating = false;
 
     showModalBottomSheet(
       context: pageContext,
       isScrollControlled: true,
       isDismissible: false,
       enableDrag: false,
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         final profilePic = getDetails.userProfile.value?.profilePic ?? '';
-        final firstName = getDetails.userProfile.value?.firstName ?? 'Customer';
+        final riderName = _displayName();
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 50),
-          child: Column(
-            children: [
-              Center(
-                child:
-                    profilePic.isNotEmpty
-                        ? CachedNetworkImage(
-                          imageUrl: profilePic,
-                          height: 65,
-                          width: 65,
-                          imageBuilder:
-                              (context, imageProvider) => Container(
-                                height: 65,
-                                width: 65,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  image: DecorationImage(
-                                    image: imageProvider,
-                                    fit: BoxFit.cover,
-                                  ),
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD0D5DD),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      _buildAvatar(profilePic),
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Trip Completed',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF101828),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Rate your experience with $riderName',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: Color(0xFF667085),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: List.generate(5, (index) {
+                          final active = index < selectedRating;
+                          return GestureDetector(
+                            onTap: () => setModalState(() => selectedRating = index + 1),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              height: 54,
+                              width: 54,
+                              decoration: BoxDecoration(
+                                color: active ? const Color(0xFFFFF4E5) : const Color(0xFFF5F6F8),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: active ? const Color(0xFFF59E0B) : const Color(0xFFE4E7EC),
                                 ),
                               ),
-                          placeholder:
-                              (context, url) =>
-                                  const CircularProgressIndicator(),
-                          errorWidget:
-                              (context, url, error) => const Icon(
-                                Icons.person,
-                                size: 65,
-                                color: Colors.grey,
+                              child: Icon(
+                                active ? Icons.star_rounded : Icons.star_border_rounded,
+                                color: active ? const Color(0xFFF59E0B) : const Color(0xFF98A2B3),
+                                size: 30,
                               ),
-                        )
-                        : const Icon(
-                          Icons.person,
-                          size: 65,
-                          color: Colors.grey,
-                        ),
-              ),
-              const SizedBox(height: 20),
-              CustomTextfield.textWithStyles600(
-                textAlign: TextAlign.center,
-                fontSize: 20,
-                'Rate your Experience with $firstName?',
-              ),
-              const SizedBox(height: 20),
-
-              /// ⭐ STARS
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
-                child: StatefulBuilder(
-                  builder: (ctx, setState) {
-                    return Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: List.generate(5, (index) {
-                        return GestureDetector(
-                          onTap:
-                              () => setState(() => selectedRating = index + 1),
-                          child: Image.asset(
-                            index < selectedRating
-                                ? AppImages.starFill
-                                : AppImages.star,
-                            height: 48,
-                            width: 48,
-                            color:
-                                index < selectedRating
-                                    ? AppColors.commonBlack
-                                    : AppColors.buttonBorder,
-                          ),
-                        );
-                      }),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              /// BUTTONS
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Row(
-                  children: [
-                    /// ❌ CLOSE
-                    Expanded(
-                      child: Buttons.button(
-                        borderRadius: 8,
-                        textColor: AppColors.commonBlack,
-                        borderColor: AppColors.buttonBorder,
-                        buttonColor: AppColors.commonWhite,
-                        onTap: () async {
-                          // close sheet first
-                          Navigator.pop(sheetContext);
-
-                          if (widget.isSharedRide) {
-                            // ✅ pop cash screen with success
-                            await _finishSharedAndPop(success: true);
-                          } else {
-                            Navigator.pushReplacement(
-                              pageContext,
-                              MaterialPageRoute(
-                                builder: (_) => DriverMainScreen(),
-                              ),
-                            );
-                          }
-                        },
-                        text: const Text('Close'),
+                            ),
+                          );
+                        }),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-
-                    /// ⭐ RATE RIDE
-                    Expanded(
-                      child: Obx(
-                        () => Buttons.button(
-                          borderRadius: 8,
-                          buttonColor: AppColors.commonBlack,
-                          onTap:
-                              driverStatusController.isLoading.value
+                      const SizedBox(height: 24),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Buttons.button(
+                              borderRadius: 16,
+                              textColor: AppColors.commonBlack,
+                              borderColor: const Color(0xFFD0D5DD),
+                              buttonColor: Colors.white,
+                              onTap: () async {
+                                Navigator.pop(sheetContext);
+                                if (widget.isSharedRide) {
+                                  await _finishSharedAndPop(success: true);
+                                } else {
+                                  Navigator.pushReplacement(
+                                    pageContext,
+                                    MaterialPageRoute(builder: (_) => DriverMainScreen()),
+                                  );
+                                }
+                              },
+                              text: const Text('Skip'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Buttons.button(
+                              borderRadius: 16,
+                              buttonColor: AppColors.commonBlack,
+                              onTap: isSubmittingRating
                                   ? null
                                   : () async {
-                                    _timer?.cancel();
+                                      _timer?.cancel();
+                                      final sheetNavigator = Navigator.of(sheetContext);
+                                      setModalState(() => isSubmittingRating = true);
 
-                                    await driverStatusController
-                                        .driverRatingToCustomer(
-                                          context: pageContext,
-                                          rating: selectedRating,
-                                          bookingId:
-                                              widget.bookingId.toString(),
-                                          goToMainOnSuccess:
-                                              !widget.isSharedRide,
-                                        );
+                                      await driverStatusController.driverRatingToCustomer(
+                                        context: pageContext,
+                                        rating: selectedRating,
+                                        bookingId: widget.bookingId.toString(),
+                                        goToMainOnSuccess: !widget.isSharedRide,
+                                      );
 
-                                    CommonLogger.log.i(
-                                      "Selected Rating: $selectedRating",
-                                    );
+                                      CommonLogger.log.i('Selected Rating: ');
 
-                                    if (widget.isSharedRide) {
-                                      // close sheet
-                                      Navigator.pop(sheetContext);
-                                      // ✅ pop cash screen
-                                      await _finishSharedAndPop(success: true);
-                                    }
-                                  },
-                          text:
-                              driverStatusController.isLoading.value
+                                      if (widget.isSharedRide && mounted) {
+                                        sheetNavigator.pop();
+                                        await _finishSharedAndPop(success: true);
+                                        return;
+                                      }
+
+                                      if (sheetNavigator.canPop()) {
+                                        setModalState(() => isSubmittingRating = false);
+                                      }
+                                    },
+                              text: isSubmittingRating
                                   ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                  : const Text('Rate Ride'),
-                        ),
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text('Submit Rating'),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 10),
-            ],
-          ),
+            );
+          },
         );
       },
     );
   }
 }
 
-// import 'dart:async';
-// import 'package:cached_network_image/cached_network_image.dart';
-// import 'package:flutter/material.dart';
-// import 'package:get/get.dart';
-// import 'package:hopper/Core/Constants/Colors.dart';
-// import 'package:hopper/Core/Constants/log.dart';
-// import 'package:hopper/Core/Utility/Buttons.dart';
-// import 'package:hopper/Core/Utility/images.dart';
-// import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
-// import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
-// import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
-// import '../../../utils/netWorkHandling/network_handling_screen.dart';
-// import '../../../utils/sharedprefsHelper/booking_local_data.dart';
-// import '../../OnBoarding/controller/chooseservice_controller.dart';
-//
-// class CashCollectedScreen extends StatefulWidget {
-//   final dynamic Amount;
-//   final String? bookingId;
-//   final bool isSharedRide;
-//
-//   const CashCollectedScreen({super.key, this.Amount, this.bookingId,  this.isSharedRide = false,  });
-//
-//   @override
-//   State<CashCollectedScreen> createState() => _CashCollectedScreenState();
-// }
-//
-// class _CashCollectedScreenState extends State<CashCollectedScreen> {
-//   final ChooseServiceController getDetails = Get.put(ChooseServiceController());
-//   final DriverStatusController driverStatusController = Get.put(
-//     DriverStatusController(),
-//   );
-//   Timer? _timer;
-//
-//   @override
-//   void initState() {
-//     super.initState();
-//
-//     _timer = Timer.periodic(const Duration(seconds: 3), (timer) {
-//       final bookingId = widget.bookingId?.toString() ?? '';
-//       if (bookingId.isNotEmpty) {
-//         driverStatusController.getAmountStatus(
-//           bookingId: bookingId,
-//         ); // ✅ named argument
-//       }
-//     });
-//   }
-//
-//   @override
-//   void dispose() {
-//     _timer?.cancel();
-//     super.dispose();
-//   }
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     final bookingData = BookingDataService().getBookingData();
-//
-//     return NoInternetOverlay(
-//       child: Scaffold(
-//         body: SafeArea(
-//           child: Padding(
-//             padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20),
-//             child: Column(
-//               crossAxisAlignment: CrossAxisAlignment.start,
-//               children: [
-//                 GestureDetector(
-//                   onTap: () {
-//                     if (widget.isSharedRide) {
-//                       // shared flow: tell parent "not collected"
-//                       Get.back<bool>(result: false);
-//                     } else {
-//                       // single ride: normal back
-//                       Navigator.pop(context);
-//                     }
-//                   },
-//                   child: Image.asset(
-//                     AppImages.backButton,
-//                     height: 25,
-//                     width: 25,
-//                   ),
-//                 ),
-//
-//
-//                 // GestureDetector(
-//                 //   onTap: () => Navigator.pop(context),
-//                 //   child: Image.asset(
-//                 //     AppImages.backButton,
-//                 //     height: 25,
-//                 //     width: 25,
-//                 //   ),
-//                 // ),
-//                 const Spacer(),
-//
-//                 // ✅ User Profile
-//                 Obx(() {
-//                   final profilePic =
-//                       getDetails.userProfile.value?.profilePic ?? '';
-//                   final firstName =
-//                       getDetails.userProfile.value?.firstName ?? 'Customer';
-//
-//                   return Column(
-//                     children: [
-//                       Center(
-//                         child:
-//                             profilePic.isNotEmpty
-//                                 ? CachedNetworkImage(
-//                                   imageUrl: profilePic,
-//                                   height: 80,
-//                                   width: 80,
-//                                   imageBuilder:
-//                                       (context, imageProvider) => Container(
-//                                         height: 80,
-//                                         width: 80,
-//                                         decoration: BoxDecoration(
-//                                           shape: BoxShape.circle,
-//                                           image: DecorationImage(
-//                                             image: imageProvider,
-//                                             fit: BoxFit.cover,
-//                                           ),
-//                                         ),
-//                                       ),
-//                                   placeholder:
-//                                       (context, url) =>
-//                                           const CircularProgressIndicator(),
-//                                   errorWidget:
-//                                       (context, url, error) => const Icon(
-//                                         Icons.person,
-//                                         size: 80,
-//                                         color: Colors.grey,
-//                                       ),
-//                                 )
-//                                 : const Icon(
-//                                   Icons.person,
-//                                   size: 80,
-//                                   color: Colors.grey,
-//                                 ),
-//                       ),
-//                       const SizedBox(height: 10),
-//                       CustomTextfield.textWithStylesSmall(
-//                         'Collect cash from $firstName',
-//                         colors: AppColors.grey,
-//                         fontSize: 14,
-//                       ),
-//                       const SizedBox(height: 10),
-//                       CustomTextfield.textWithStyles600(
-//                         widget.Amount.toString(),
-//                       ),
-//                       const SizedBox(height: 15),
-//
-//                       Obx(
-//                         () => Container(
-//                           padding: const EdgeInsets.symmetric(
-//                             horizontal: 16,
-//                             vertical: 12,
-//                           ),
-//                           decoration: BoxDecoration(
-//                             color: AppColors.commonWhite,
-//                             border: Border.all(
-//                               color: AppColors.containerColor1,
-//                               width: 1,
-//                             ),
-//                             borderRadius: BorderRadius.circular(10),
-//                             boxShadow: [
-//                               BoxShadow(
-//                                 color: Colors.grey.withOpacity(0.1),
-//                                 blurRadius: 4,
-//                                 offset: const Offset(0, 2),
-//                               ),
-//                             ],
-//                           ),
-//                           child: Column(
-//                             crossAxisAlignment: CrossAxisAlignment.start,
-//                             children: [
-//                               // Payment Type
-//                               RichText(
-//                                 text: TextSpan(
-//                                   text: "Payment Type: ",
-//                                   style: const TextStyle(
-//                                     fontSize: 14,
-//                                     color: Colors.black87,
-//                                     fontWeight: FontWeight.w500,
-//                                   ),
-//                                   children: [
-//                                     TextSpan(
-//                                       text:
-//                                           driverStatusController
-//                                               .paymentType
-//                                               .value,
-//                                       style: const TextStyle(
-//                                         color:
-//                                             Colors
-//                                                 .blue, // ✅ Different color for value
-//                                         fontWeight: FontWeight.w600,
-//                                       ),
-//                                     ),
-//                                   ],
-//                                 ),
-//                               ),
-//                               const SizedBox(height: 6),
-//
-//                               // Payment Status
-//                               RichText(
-//                                 text: TextSpan(
-//                                   text: "Payment Status: ",
-//                                   style: const TextStyle(
-//                                     fontSize: 14,
-//                                     color: Colors.black87,
-//                                     fontWeight: FontWeight.w500,
-//                                   ),
-//                                   children: [
-//                                     TextSpan(
-//                                       text:
-//                                           driverStatusController
-//                                               .paymentStatus
-//                                               .value,
-//                                       style: TextStyle(
-//                                         color:
-//                                             driverStatusController
-//                                                         .paymentStatus
-//                                                         .value
-//                                                         .toUpperCase() ==
-//                                                     "PAID"
-//                                                 ? Colors.green
-//                                                 : Colors.redAccent,
-//                                         fontWeight: FontWeight.w600,
-//                                       ),
-//                                     ),
-//                                   ],
-//                                 ),
-//                               ),
-//                             ],
-//                           ),
-//                         ),
-//                       ),
-//                     ],
-//                   );
-//                 }),
-//
-//                 const Spacer(),
-//
-//                 // ✅ Info Box
-//                 Container(
-//                   padding: const EdgeInsets.symmetric(
-//                     horizontal: 8,
-//                     vertical: 8,
-//                   ),
-//                   decoration: BoxDecoration(
-//                     color: AppColors.directionColor.withOpacity(0.1),
-//                     borderRadius: BorderRadius.circular(8),
-//                   ),
-//                   child: Row(
-//                     crossAxisAlignment: CrossAxisAlignment.start,
-//                     children: [
-//                       Image.asset(
-//                         color: AppColors.directionColor,
-//                         AppImages.exclamationCircle,
-//                         width: 20,
-//                         height: 20,
-//                       ),
-//                       const SizedBox(width: 8),
-//                       Expanded(
-//                         child: CustomTextfield.textWithStylesSmall(
-//                           fontWeight: FontWeight.w400,
-//                           colors: AppColors.commonBlack,
-//                           'If rider doesn’t have change, ask them to pay in wholesums. Extra amount paid will be credited to rider’s account.',
-//                         ),
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-//                 const SizedBox(height: 30),
-//
-//                 // ✅ Manual trigger (optional)
-//                 SafeArea(
-//                   child: Obx(
-//                     () => Buttons.button(
-//                       borderRadius: 7,
-//                       buttonColor: AppColors.commonBlack,
-//                       onTap:
-//                           driverStatusController.isLoading.value
-//                               ? null
-//                               : () {
-//                                 driverStatusController.amountCollectedStatus(
-//                                   booking: widget.bookingId.toString(),
-//                                   onSuccess: () {
-//                                     // ✅ Pop up the rating sheet automatically
-//                                     _showRatingBottomSheet(context);
-//                                   },
-//                                 );
-//                               },
-//                       text:
-//                           driverStatusController.isLoading.value
-//                               ? const SizedBox(
-//                                 height: 20,
-//                                 width: 20,
-//                                 child: CircularProgressIndicator(
-//                                   color: Colors.white,
-//                                   strokeWidth: 2,
-//                                 ),
-//                               )
-//                               : const Text('Cash Collected'),
-//                     ),
-//                   ),
-//                 ),
-//               ],
-//             ),
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-//
-//   // ✅ Bottom Sheet for Rating
-//   void _showRatingBottomSheet(BuildContext context) {
-//     int selectedRating = 0;
-//
-//     showModalBottomSheet(
-//       context: context,
-//       isScrollControlled: true,
-//       isDismissible: false,
-//       enableDrag: false,
-//       backgroundColor: Colors.white,
-//       builder: (context) {
-//         return StatefulBuilder(
-//           builder: (context, setState) {
-//             final profilePic = getDetails.userProfile.value?.profilePic ?? '';
-//             final firstName =
-//                 getDetails.userProfile.value?.firstName ?? 'Customer';
-//
-//             return SingleChildScrollView(
-//               padding: const EdgeInsets.symmetric(vertical: 50),
-//               child: Column(
-//                 children: [
-//                   Center(
-//                     child:
-//                         profilePic.isNotEmpty
-//                             ? CachedNetworkImage(
-//                               imageUrl: profilePic,
-//                               height: 65,
-//                               width: 65,
-//                               imageBuilder:
-//                                   (context, imageProvider) => Container(
-//                                     height: 65,
-//                                     width: 65,
-//                                     decoration: BoxDecoration(
-//                                       shape: BoxShape.circle,
-//                                       image: DecorationImage(
-//                                         image: imageProvider,
-//                                         fit: BoxFit.cover,
-//                                       ),
-//                                     ),
-//                                   ),
-//                               placeholder:
-//                                   (context, url) =>
-//                                       const CircularProgressIndicator(),
-//                               errorWidget:
-//                                   (context, url, error) => const Icon(
-//                                     Icons.person,
-//                                     size: 65,
-//                                     color: Colors.grey,
-//                                   ),
-//                             )
-//                             : const Icon(
-//                               Icons.person,
-//                               size: 65,
-//                               color: Colors.grey,
-//                             ),
-//                   ),
-//                   const SizedBox(height: 20),
-//                   CustomTextfield.textWithStyles600(
-//                     textAlign: TextAlign.center,
-//                     fontSize: 20,
-//                     'Rate your Experience with $firstName?',
-//                   ),
-//                   const SizedBox(height: 20),
-//                   Padding(
-//                     padding: const EdgeInsets.symmetric(horizontal: 40),
-//                     child: Row(
-//                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-//                       children: List.generate(5, (index) {
-//                         return GestureDetector(
-//                           onTap:
-//                               () => setState(() => selectedRating = index + 1),
-//                           child: Image.asset(
-//                             index < selectedRating
-//                                 ? AppImages.starFill
-//                                 : AppImages.star,
-//                             height: 48,
-//                             width: 48,
-//                             color:
-//                                 index < selectedRating
-//                                     ? AppColors.commonBlack
-//                                     : AppColors.buttonBorder,
-//                           ),
-//                         );
-//                       }),
-//                     ),
-//                   ),
-//                   const SizedBox(height: 20),
-//                   Padding(
-//                     padding: const EdgeInsets.symmetric(horizontal: 10),
-//                     child: Row(
-//                       children: [
-//                         Expanded(
-//                           child: Buttons.button(
-//                             borderRadius: 8,
-//                             textColor: AppColors.commonBlack,
-//                             borderColor: AppColors.buttonBorder,
-//                             buttonColor: AppColors.commonWhite,
-//                             onTap: () => Navigator.pop(context),
-//                             text: const Text('Close'),
-//                           ),
-//                         ),
-//                         const SizedBox(width: 10),
-//                         /*   Expanded(
-//                           child: Obx(
-//                             () => Buttons.button(
-//                               borderRadius: 8,
-//                               buttonColor: AppColors.commonBlack,
-//                               onTap:
-//                                   driverStatusController.isLoading.value
-//                                       ? null
-//                                       : () {
-//                                     _timer?.cancel();
-//                                         driverStatusController
-//                                             .driverRatingToCustomer(
-//                                               context: context,
-//                                               rating: selectedRating,
-//                                               bookingId:
-//                                                   widget.bookingId.toString(),
-//                                             );
-//                                         CommonLogger.log.i(
-//                                           "Selected Rating: $selectedRating",
-//                                         );
-//                                       },
-//                               text:
-//                                   driverStatusController.isLoading.value
-//                                       ? SizedBox(
-//                                         height: 20,
-//                                         width: 20,
-//                                         child: CircularProgressIndicator(
-//                                           color: AppColors.commonBlack,
-//                                           strokeWidth: 2,
-//                                         ),
-//                                       )
-//                                       : const Text('Rate Ride'),
-//                             ),
-//                           ),
-//                         ),*/
-//                         Expanded(
-//                           child: Obx(
-//                                 () => Buttons.button(
-//                               borderRadius: 8,
-//                               buttonColor: AppColors.commonBlack,
-//                               onTap: driverStatusController.isLoading.value
-//                                   ? null
-//                                   : () async {
-//                                 _timer?.cancel();
-//
-//                                 await driverStatusController.driverRatingToCustomer(
-//                                   context: context,
-//                                   rating: selectedRating,
-//                                   bookingId: widget.bookingId.toString(),
-//                                   goToMainOnSuccess: !widget.isSharedRide,
-//                                   // 👉 single ride = true (go to main)
-//                                   // 👉 shared ride = false (stay in pool)
-//                                 );
-//
-//                                 CommonLogger.log.i("Selected Rating: $selectedRating");
-//
-//                                 // 1) close bottom sheet
-//                                 Navigator.pop(context);
-//
-//                                 if (widget.isSharedRide) {
-//                                   // 2) shared ride → close cash screen and
-//                                   //    tell ShareRideStartScreen: "this rider done"
-//                                   Get.back<bool>(result: true);
-//                                 }
-//                                 // single ride: do nothing more here,
-//                                 // driverRatingToCustomer will push DriverMainScreen
-//                               },
-//                               text: driverStatusController.isLoading.value
-//                                   ? SizedBox(
-//                                 height: 20,
-//                                 width: 20,
-//                                 child: CircularProgressIndicator(
-//                                   color: AppColors.commonBlack,
-//                                   strokeWidth: 2,
-//                                 ),
-//                               )
-//                                   : const Text('Rate Ride'),
-//                             ),
-//                           ),
-//                         ),
-//
-//                       ],
-//                     ),
-//                   ),
-//                   const SizedBox(height: 10),
-//                 ],
-//               ),
-//             );
-//           },
-//         );
-//       },
-//     );
-//   }
-// }
+
+
+
+

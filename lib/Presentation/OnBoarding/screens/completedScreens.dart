@@ -46,7 +46,7 @@ class _CompletedScreensState extends State<CompletedScreens> {
 
     controller.getUserDetails();
 
-    _timer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+    _timer = Timer.periodic(const Duration(seconds: 15), (timer) async {
       final details = await controller.getUserDetails();
 
       if (details != null && details.formStatus == 3) {

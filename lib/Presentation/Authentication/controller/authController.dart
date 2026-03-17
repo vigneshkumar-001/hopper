@@ -10,6 +10,7 @@ import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 import 'package:hopper/api/repository/failure.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hopper/utils/map/navigation_assist.dart';
 
 var getMobileNumber = '';
 var countryCodes = '';
@@ -142,7 +143,9 @@ class AuthController extends GetxController {
     final prefs = await SharedPreferences.getInstance();
 
     await prefs.clear();
-    await prefs.remove('token');
+    if (Get.isRegistered<DriverAnalyticsController>()) {
+      await Get.find<DriverAnalyticsController>().reset(clearPersisted: false);
+    }
     accessToken = '';
 
     CustomSnackBar.showSuccess("Logged out successfully");

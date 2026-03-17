@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
@@ -15,6 +16,9 @@ import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/sharedprefsHelper/booking_local_data.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 import '../../../api/repository/api_config_controller.dart';
+import 'package:hopper/utils/map/navigation_assist.dart';
+import 'package:hopper/utils/map/map_motion_profile.dart';
+import 'package:hopper/utils/map/app_map_style.dart';
 
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import '../screens/SharedBooking/Controller/booking_request_controller.dart';
@@ -65,6 +69,7 @@ class DriverMainController extends GetxController
   // Follow mode
   final RxBool followDriver = true.obs;
   Timer? cameraFollowTimer;
+  double _followZoom = 15.7;
 
   // Config
   final ApiConfigController cfg = Get.find<ApiConfigController>();
@@ -148,11 +153,10 @@ class DriverMainController extends GetxController
   }
 
   // ---------------- map style ----------------
+  // ---------------- map style ----------------
   Future<void> loadMapStyle(BuildContext context) async {
     try {
-      final style = await DefaultAssetBundle.of(
-        context,
-      ).loadString('assets/map_style/map_style.json');
+      final style = await AppMapStyle.loadUberLight();
       mapStyle = style;
       if (mapController != null) {
         await mapController!.setMapStyle(style);
@@ -204,7 +208,13 @@ class DriverMainController extends GetxController
 
     if (!movedEnough(lastPosition!, newPos)) return;
 
-    final bearing = bearingBetween(lastPosition!, newPos);
+    final rawBearing = bearingBetween(lastPosition!, newPos);
+    final currentBearing = carMarker?.rotation ?? 0;
+    final bearing = MapMotionProfile.smoothBearing(
+      current: currentBearing,
+      target: rawBearing,
+      speedMs: 4.0,
+    );
 
     latTween = Tween(begin: lastPosition!.latitude, end: newPos.latitude);
     lngTween = Tween(begin: lastPosition!.longitude, end: newPos.longitude);
@@ -237,7 +247,7 @@ class DriverMainController extends GetxController
 
     await mapController?.animateCamera(
       CameraUpdate.newCameraPosition(
-        CameraPosition(target: latLng, zoom: 16.6, tilt: 35),
+        CameraPosition(target: latLng, zoom: _followZoom, tilt: 35),
       ),
     );
   }
@@ -250,7 +260,7 @@ class DriverMainController extends GetxController
     final latLng = LatLng(pos.latitude, pos.longitude);
     await mapController?.animateCamera(
       CameraUpdate.newCameraPosition(
-        CameraPosition(target: latLng, zoom: 16.8, tilt: 35),
+        CameraPosition(target: latLng, zoom: _followZoom, tilt: 35),
       ),
     );
 
@@ -301,7 +311,7 @@ class DriverMainController extends GetxController
         CameraUpdate.newCameraPosition(
           CameraPosition(
             target: lastPosition!,
-            zoom: 16.8,
+            zoom: _followZoom,
             tilt: 40,
             bearing: bearing,
           ),
@@ -325,6 +335,10 @@ class DriverMainController extends GetxController
     ).listen((pos) {
       if (_disposed || isClosed) return;
 
+      final speedMs = (pos.speed.isFinite && pos.speed >= 0) ? pos.speed : 0.0;
+      final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs);
+      _followZoom = MapMotionProfile.smoothZoom(_followZoom, targetZoom);
+
       latestLocationPayload = {
         'userId': driverId,
         'latitude': pos.latitude,
@@ -342,6 +356,9 @@ class DriverMainController extends GetxController
       if (payload == null) return;
 
       socketService.emit('updateLocation', payload);
+      Get.find<DriverAnalyticsController>().trackOnlineTick(
+        const Duration(seconds: 10),
+      );
       CommonLogger.log.i('updateLocation :$payload');
     });
   }
@@ -483,6 +500,7 @@ class DriverMainController extends GetxController
     if (_disposed || isClosed) return;
     if (statusController.isLoading.value) return;
 
+    HapticFeedback.lightImpact();
     statusController.isLoading.value = true;
 
     try {
@@ -690,6 +708,7 @@ class DriverMainController extends GetxController
 //   // Follow mode
 //   final RxBool followDriver = true.obs;
 //   Timer? cameraFollowTimer;
+//   double _followZoom = 15.7;
 //
 //   // Config
 //   final ApiConfigController cfg = Get.find<ApiConfigController>();
@@ -822,7 +841,9 @@ class DriverMainController extends GetxController
 //
 //     if (!movedEnough(lastPosition!, newPos)) return;
 //
-//     final bearing = bearingBetween(lastPosition!, newPos);
+//     final rawBearing = bearingBetween(lastPosition!, newPos);
+//     final currentBearing = carMarker?.rotation ?? 0;
+//     final bearing = MapMotionProfile.smoothBearing(current: currentBearing, target: rawBearing, speedMs: 4.0);
 //
 //     latTween = Tween(begin: lastPosition!.latitude, end: newPos.latitude);
 //     lngTween = Tween(begin: lastPosition!.longitude, end: newPos.longitude);
@@ -848,7 +869,7 @@ class DriverMainController extends GetxController
 //
 //     await mapController?.animateCamera(
 //       CameraUpdate.newCameraPosition(
-//         CameraPosition(target: latLng, zoom: 16.6, tilt: 35),
+//         CameraPosition(target: latLng, zoom: _followZoom, tilt: 35),
 //       ),
 //     );
 //   }
@@ -860,7 +881,7 @@ class DriverMainController extends GetxController
 //     final latLng = LatLng(pos.latitude, pos.longitude);
 //     await mapController?.animateCamera(
 //       CameraUpdate.newCameraPosition(
-//         CameraPosition(target: latLng, zoom: 16.8, tilt: 35),
+//         CameraPosition(target: latLng, zoom: _followZoom, tilt: 35),
 //       ),
 //     );
 //     updateCarMarker(latLng);
@@ -908,7 +929,7 @@ class DriverMainController extends GetxController
 //         CameraUpdate.newCameraPosition(
 //           CameraPosition(
 //             target: lastPosition!,
-//             zoom: 16.8,
+//             zoom: _followZoom,
 //             tilt: 40,
 //             bearing: bearing,
 //           ),
@@ -1200,3 +1221,4 @@ class DriverMainController extends GetxController
 //
 
 //
+

@@ -20,6 +20,7 @@ import '../Presentation/OnBoarding/controller/stateList_Controller.dart';
 import '../Presentation/OnBoarding/controller/userprofile_controller.dart';
 import '../Presentation/OnBoarding/controller/vehicledetails_controller.dart';
 import '../api/repository/api_config_controller.dart';
+import 'map/navigation_assist.dart';
 
 Future<void> initController() async {
   Get.lazyPut(() => NetworkController());
@@ -52,4 +53,5 @@ Future<void> initController() async {
 
   // Get.lazyPut(() => BookingRequestController(), fenix: true);
   Get.put(ApiConfigController(), permanent: true);
+  Get.put(DriverAnalyticsController(), permanent: true);
 }

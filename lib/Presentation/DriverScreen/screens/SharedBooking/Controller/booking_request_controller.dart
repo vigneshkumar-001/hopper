@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:get/get.dart';
+import 'package:hopper/utils/map/navigation_assist.dart';
 
 class BookingRequestController extends GetxController {
   // null => no popup
@@ -30,6 +31,7 @@ class BookingRequestController extends GetxController {
     }
 
     bookingRequestData.value = data;
+    Get.find<DriverAnalyticsController>().trackOffer();
     _startTimer(15);
   }
 

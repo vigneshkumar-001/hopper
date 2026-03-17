@@ -1,10 +1,10 @@
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
 import '../../../api/repository/api_config_controller.dart';
 import '../../../utils/sharedprefsHelper/sharedprefs_handler.dart';
-import '../model/notification_response.dart';
+import 'package:hopper/Presentation/Drawer/model/notification_response.dart';
 
 class NotificationController extends GetxController {
   final ApiDataSource apiDataSource = ApiDataSource();
@@ -42,6 +42,7 @@ class NotificationController extends GetxController {
 
     // ✅ Optimistic UI
     isSharedEnabled.value = enabled;
+    _showSafeSnackbar(enabled, serverMessage: enabled ? 'Shared booking enabled' : 'Shared booking disabled');
     isLoading.value = true;
 
     try {
@@ -49,40 +50,39 @@ class NotificationController extends GetxController {
       final result = await apiDataSource.setStatusEnabled(enabled: enabled);
 
       result.fold(
-            (failure) {
+        (failure) {
           // ❌ revert on failure
           isSharedEnabled.value = prev;
           CommonLogger.log.e("Shared booking update failed: $failure");
-          Get.snackbar("Failed", "Shared booking update failed");
+          _showSafeSnackbar(false, serverMessage: 'Shared booking update failed');
         },
-            (response) async {
-          // ✅ server is source of truth
+        (response) async {
+          // server is source of truth
           final serverEnabled = response.status.isEnabled;
           isSharedEnabled.value = serverEnabled;
 
-          // 2) Save local for next app open
-          await SharedPrefHelper.instance.setSharedBookingEnabled(serverEnabled);
 
-          // 3) If you want to store in cfg too (optional)
-          // (Only if cfg has RxBool / getter)
-           await cfg.setSharedEnabled(serverEnabled);
+          // persist after showing UI feedback so snackbar is immediate
+          await SharedPrefHelper.instance.setSharedBookingEnabled(
+            serverEnabled,
+          );
+          await cfg.setSharedEnabled(serverEnabled);
 
           CommonLogger.log.i(
-            '✅ Shared booking saved: ${serverEnabled ? 'ENABLED' : 'DISABLED'}',
+            "Shared booking saved: ${serverEnabled ? 'ENABLED' : 'DISABLED'}",
           );
-
-          Get.snackbar("Success", response.message);
         },
       );
     } catch (e) {
       // ❌ revert on crash
       isSharedEnabled.value = prev;
       CommonLogger.log.e("❌ Error in setSharedEnabled: $e");
-      Get.snackbar("Error", "Something went wrong");
+      _showSafeSnackbar(false, serverMessage: 'Something went wrong');
     } finally {
       isLoading.value = false;
     }
   }
+
   //
   // Future<void> setSharedEnabled(bool value) async {
   //   isSharedEnabled.value = value;
@@ -93,6 +93,13 @@ class NotificationController extends GetxController {
   //   // );
   // }
   //
+  void _showSafeSnackbar(bool enabled, {required String serverMessage}) {
+    try {
+      CustomSnackBar.showStatusToggle(enabled: enabled, label: 'Shared Booking');
+    } catch (e) {
+      CommonLogger.log.e('Snackbar show failed: $e | $serverMessage');
+    }
+  }
 
   Future<void> getNotification({bool isRefresh = false}) async {
     if (isRefresh) {
@@ -149,9 +156,6 @@ class NotificationController extends GetxController {
 // import 'package:hopper/Core/Constants/log.dart';
 //
 // import 'package:hopper/api/dataSource/apiDataSource.dart';
-//
-// import '../model/notification_response.dart';
-//
 // class NotificationController extends GetxController {
 //   final ApiDataSource apiDataSource = ApiDataSource();
 //
@@ -186,3 +190,7 @@ class NotificationController extends GetxController {
 //     }
 //   }
 // }
+
+
+
+

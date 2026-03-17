@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:action_slider/action_slider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -11,20 +9,23 @@ import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
-import 'package:hopper/utils/map/google_map.dart';
+import 'package:hopper/utils/map/shared_map.dart';
+import 'package:hopper/utils/map/navigation_assist.dart';
+import 'package:hopper/utils/map/driver_message_suggestions.dart';
+import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
+import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 
 import '../controller/ride_starts_controller.dart';
 import 'cash_collected_screen.dart';
 
-import 'driver_main_screen.dart';
-
 class RideStatsScreen extends StatelessWidget {
+  final GlobalKey<SharedMapState> _mapKey = GlobalKey<SharedMapState>();
   final String bookingId;
   final String? pickupAddress;
   final String? dropAddress;
 
-  const RideStatsScreen({
+  RideStatsScreen({
     super.key,
     required this.bookingId,
     this.pickupAddress,
@@ -43,7 +44,23 @@ class RideStatsScreen extends StatelessWidget {
     );
 
     final DriverStatusController driverStatusController =
-    Get.find<DriverStatusController>();
+        Get.find<DriverStatusController>();
+
+    Future<void> sendDriverQuickMsg(String msg) async {
+      final driverId = await SharedPrefHelper.getDriverId();
+      final eta = driverStatusController.dropDurationInMin.value.round();
+      final payload = <String, dynamic>{
+        'bookingId': bookingId,
+        'driverId': driverId,
+        'delayMinutes': eta < 0 ? 0 : eta,
+        'message': msg,
+      };
+      c.socketService.emitWithAck('driver-message', payload, (_) {});
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Sent: $msg')));
+    }
 
     return NoInternetOverlay(
       child: WillPopScope(
@@ -54,16 +71,17 @@ class RideStatsScreen extends StatelessWidget {
               SizedBox(
                 height: 650,
                 child: Obx(() {
-                  final from = c.bookingFromLocation.value;
+                  final from =
+                      c.driverLocation.value ?? c.bookingFromLocation.value;
                   final to = c.bookingToLocation.value;
 
                   final markers = <Marker>{
                     if (c.movingMarker.value != null)
                       c.movingMarker.value!
-                    else if (from != null)
+                    else if (c.driverLocation.value != null)
                       Marker(
-                        markerId: const MarkerId('start'),
-                        position: from,
+                        markerId: const MarkerId('driver'),
+                        position: c.driverLocation.value!,
                         icon: c.carIcon.value ?? BitmapDescriptor.defaultMarker,
                         anchor: const Offset(0.5, 0.5),
                         flat: true,
@@ -73,72 +91,98 @@ class RideStatsScreen extends StatelessWidget {
                       Marker(markerId: const MarkerId('end'), position: to),
                   };
 
-                  final initialPos = from ?? const LatLng(0, 0);
+                  final initialPos = from ?? to ?? const LatLng(0, 0);
 
-                  return CommonGoogleMap(
-                    myLocationEnabled: false,
-                    onCameraMove: (pos) => c.currentBearing.value = pos.bearing,
-                    onCameraMoveStarted: c.onUserMapMoveStarted,
-                    onMapCreated: (controller) async {
-                      c.mapController = controller;
-
-                      final style = await DefaultAssetBundle.of(context)
-                          .loadString('assets/map_style/map_style1.json');
-                      c.mapController?.setMapStyle(style);
-
-                      await Future.delayed(const Duration(milliseconds: 400));
-
-                      if (from != null && to != null) {
-                        final sw = LatLng(
-                          math.min(from.latitude, to.latitude),
-                          math.min(from.longitude, to.longitude),
-                        );
-                        final ne = LatLng(
-                          math.max(from.latitude, to.latitude),
-                          math.max(from.longitude, to.longitude),
-                        );
-
-                        await c.mapController!.animateCamera(
-                          CameraUpdate.newLatLngBounds(
-                            LatLngBounds(southwest: sw, northeast: ne),
-                            100,
-                          ),
-                        );
-
-                        final z = await c.mapController!.getZoomLevel();
-                        c.mapController!.animateCamera(
-                          CameraUpdate.zoomTo(z.clamp(12.0, 17.0)),
-                        );
-                      }
-                    },
+                  return SharedMap(
+                    key: _mapKey,
                     initialPosition: initialPos,
+                    pickupPosition: to,
+                    myLocationEnabled: false,
+                    fitToBounds: true,
+                    trafficEnabled: false,
+                    compassEnabled: false,
+                    onMapCreated: (controller) {
+                      c.attachMap(controller);
+                    },
+                    onCameraMoveStarted: c.onUserMapMoveStarted,
                     markers: markers,
                     polylines: {
-                      Polyline(
-                        polylineId: const PolylineId("route"),
-                        color: AppColors.commonBlack,
-                        width: 4,
-                        points: c.polylinePoints,
-                      ),
+                      if (c.polylinePoints.length >= 2)
+                        Polyline(
+                          polylineId: const PolylineId('route_main'),
+                          color: AppColors.commonBlack,
+                          width: 5,
+                          points: c.polylinePoints,
+                          startCap: Cap.roundCap,
+                          endCap: Cap.roundCap,
+                          jointType: JointType.round,
+                        ),
                     },
                   );
                 }),
               ),
 
               // my location
-              Obx(() => Positioned(
-                top: c.driverCompletedRide.value ? 550.0 : 450.0,
-                right: 10,
-                child: FloatingActionButton(
-                  mini: true,
-                  backgroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
+              Obx(
+                () => Positioned(
+                  top: c.driverCompletedRide.value ? 550.0 : 350.0,
+                  right: 10,
+                  child: Column(
+                    children: [
+                      ValueListenableBuilder<bool>(
+                        valueListenable:
+                            NavigationVoiceService.instance.mutedNotifier,
+                        builder: (context, muted, _) {
+                          return FloatingActionButton(
+                            mini: true,
+                            backgroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            onPressed:
+                                () =>
+                                    NavigationVoiceService.instance
+                                        .toggleMuted(),
+                            child: Icon(
+                              muted
+                                  ? Icons.volume_off_rounded
+                                  : Icons.volume_up_rounded,
+                              color: Colors.black,
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Obx(
+                        () => FloatingActionButton(
+                          mini: true,
+                          backgroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          onPressed: () {
+                            final ms = _mapKey.currentState;
+                            if (ms == null) return;
+                            ms.pauseAutoFollow(const Duration(seconds: 4));
+                            if (c.isDriverFocused.value) {
+                              ms.fitRouteBounds();
+                            } else {
+                              ms.focusPickup();
+                            }
+                            c.isDriverFocused.value = !c.isDriverFocused.value;
+                          },
+                          child: Icon(
+                            c.isDriverFocused.value
+                                ? Icons.fit_screen_rounded
+                                : Icons.my_location_rounded,
+                            color: Colors.black,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  onPressed: c.goToCurrentLocation,
-                  child: const Icon(Icons.my_location, color: Colors.black),
                 ),
-              )),
+              ),
 
               // direction bar
               Positioned(
@@ -161,10 +205,12 @@ class RideStatsScreen extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                Image.asset(
-                                  c.maneuverAsset(c.maneuver.value),
-                                  height: 32,
-                                  width: 32,
+                                Icon(
+                                  NavigationAssist.iconForManeuver(
+                                    c.maneuver.value,
+                                  ),
+                                  size: 32,
+                                  color: AppColors.commonWhite,
                                 ),
                                 const SizedBox(height: 5),
                                 CustomTextfield.textWithStyles600(
@@ -233,30 +279,95 @@ class RideStatsScreen extends StatelessWidget {
                           const SizedBox(height: 20),
 
                           if (!completed) ...[
-                            GestureDetector(
-                              onTap: () => Get.to(const CashCollectedScreen()),
-                              child: Container(
-                                color:
-                                AppColors.rideInProgress.withOpacity(0.1),
-                                padding: const EdgeInsets.all(15),
-                                child: Center(
-                                  child: CustomTextfield.textWithStyles600(
-                                    fontSize: 14,
-                                    color: AppColors.rideInProgress,
-                                    'Ride in Progress',
-                                  ),
+                            Container(
+                              color: AppColors.rideInProgress.withOpacity(0.1),
+                              padding: const EdgeInsets.all(15),
+                              child: Center(
+                                child: CustomTextfield.textWithStyles600(
+                                  fontSize: 14,
+                                  color: AppColors.rideInProgress,
+                                  'Ride in Progress',
                                 ),
                               ),
                             ),
                             const SizedBox(height: 20),
+                            Obx(() {
+                              final eta =
+                                  driverStatusController.dropDurationInMin.value
+                                      .round();
+                              final chips = DriverMessageSuggestions.drop(
+                                etaMinutes: eta,
+                              );
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children:
+                                        chips
+                                            .map(
+                                              (msg) => Padding(
+                                                padding: const EdgeInsets.only(
+                                                  right: 8,
+                                                ),
+                                                child: InkWell(
+                                                  onTap:
+                                                      () => sendDriverQuickMsg(
+                                                        msg,
+                                                      ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(18),
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 8,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: AppColors
+                                                          .commonBlack
+                                                          .withOpacity(0.04),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            18,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: AppColors
+                                                            .commonBlack
+                                                            .withOpacity(0.08),
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      msg,
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            )
+                                            .toList(),
+                                  ),
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 10),
 
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Obx(
-                                      () => CustomTextfield.textWithStyles600(
-                                    c.formatDuration(driverStatusController
-                                        .dropDurationInMin.value),
+                                  () => CustomTextfield.textWithStyles600(
+                                    c.formatDuration(
+                                      driverStatusController
+                                          .dropDurationInMin
+                                          .value,
+                                    ),
                                     fontSize: 20,
                                   ),
                                 ),
@@ -268,9 +379,12 @@ class RideStatsScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 10),
                                 Obx(
-                                      () => CustomTextfield.textWithStyles600(
-                                    c.formatDistance(driverStatusController
-                                        .dropDistanceInMeters.value),
+                                  () => CustomTextfield.textWithStyles600(
+                                    c.formatDistance(
+                                      driverStatusController
+                                          .dropDistanceInMeters
+                                          .value,
+                                    ),
                                     fontSize: 20,
                                   ),
                                 ),
@@ -283,8 +397,9 @@ class RideStatsScreen extends StatelessWidget {
                             ),
 
                             Padding(
-                              padding:
-                              const EdgeInsets.symmetric(horizontal: 20),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                              ),
                               child: _rideDetails(
                                 context: context,
                                 c: c,
@@ -346,20 +461,20 @@ class RideStatsScreen extends StatelessWidget {
                                         const Duration(milliseconds: 700),
                                       );
 
-                                      final msg =
-                                      await driverStatusController
+                                      final msg = await driverStatusController
                                           .completeRideRequest(
-                                        context,
-                                        Amount: c.amount.value,
-                                        bookingId: bookingId,
-                                      );
+                                            context,
+                                            Amount: c.amount.value,
+                                            bookingId: bookingId,
+                                          );
 
                                       if (msg != null) {
                                         controller.success();
                                       } else {
                                         controller.failure();
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           const SnackBar(
                                             content: Text(
                                               'Failed to complete ride',
@@ -476,43 +591,41 @@ class RideStatsScreen extends StatelessWidget {
         ),
 
         const SizedBox(height: 20),
-
-        GestureDetector(
-          onTap: () => c.driverCompletedRide.value = !c.driverCompletedRide.value,
-          child: Row(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(5),
-                child: ClipOval(
-                  child: Obx(
-                        () => CachedNetworkImage(
-                      imageUrl: c.profilePic.value,
-                      height: 45,
-                      width: 45,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => const SizedBox(
-                        height: 40,
-                        width: 40,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      errorWidget: (_, __, ___) => const Icon(
-                        Icons.person,
-                        size: 30,
-                        color: Colors.black,
-                      ),
-                    ),
+        Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(5),
+              child: ClipOval(
+                child: Obx(
+                  () => CachedNetworkImage(
+                    imageUrl: c.profilePic.value,
+                    height: 45,
+                    width: 45,
+                    fit: BoxFit.cover,
+                    placeholder:
+                        (_, __) => const SizedBox(
+                          height: 40,
+                          width: 40,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                    errorWidget:
+                        (_, __, ___) => const Icon(
+                          Icons.person,
+                          size: 30,
+                          color: Colors.black,
+                        ),
                   ),
                 ),
               ),
-              const SizedBox(width: 15),
-              Obx(
-                    () => CustomTextfield.textWithStyles600(
-                  c.custName.value,
-                  fontSize: 20,
-                ),
+            ),
+            const SizedBox(width: 15),
+            Obx(
+              () => CustomTextfield.textWithStyles600(
+                c.custName.value,
+                fontSize: 20,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
 
         const SizedBox(height: 15),
@@ -549,43 +662,59 @@ class RideStatsScreen extends StatelessWidget {
           buttonColor: AppColors.commonWhite,
           borderRadius: 8,
           textColor: AppColors.commonBlack,
-          onTap: () => Buttons.showDialogBox(
-            context: context,
-            onConfirmStop: () async {},
-          ),
+          onTap:
+              () => Buttons.showDialogBox(
+                context: context,
+                onConfirmStop: () async {},
+              ),
           text: const Text('Stop New Ride Request'),
         ),
 
         const SizedBox(height: 10),
-
-        Buttons.button(
-          borderRadius: 8,
-          buttonColor: AppColors.red,
-          onTap: () {
-            Buttons.showCancelRideBottomSheet(
-              context,
-              onConfirmCancel: (reason) async {
-                driverStatusController.cancelBooking(
-                  bookingId: c.bookingId,
-                  context,
-                  reason: reason,
-                );
-              },
-            );
-          },
-          text: const Text('Cancel this Ride'),
+        Obx(
+          () => Buttons.button(
+            borderRadius: 8,
+            buttonColor: AppColors.red,
+            onTap:
+                c.cancelLoading.value
+                    ? null
+                    : () {
+                      Buttons.showCancelRideBottomSheet(
+                        context,
+                        onConfirmCancel: (reason) async {
+                          c.cancelLoading.value = true;
+                          try {
+                            await driverStatusController.cancelBooking(
+                              bookingId: c.bookingId,
+                              context,
+                              reason: reason,
+                            );
+                          } finally {
+                            c.cancelLoading.value = false;
+                          }
+                        },
+                      );
+                    },
+            text:
+                c.cancelLoading.value
+                    ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                    : const Text('Cancel this Ride'),
+          ),
         ),
       ],
     );
   }
 }
 
-
-
 /*
 import 'dart:async';
-import 'dart:math' as math;
-
 import 'package:action_slider/action_slider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -601,21 +730,28 @@ import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
-import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
-import 'package:hopper/utils/map/google_map.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:hopper/utils/map/shared_map.dart';
 import 'package:hopper/utils/map/route_info.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
+import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 
 import 'cash_collected_screen.dart';
+
+class _QueuedSocketEmit {
+  final String event;
+  final Map<String, dynamic> payload;
+  const _QueuedSocketEmit({required this.event, required this.payload});
+}
 
 class RideStatsScreen extends StatefulWidget {
   final String bookingId;
   final String? pickupAddress;
   final String? dropAddress;
 
-  const RideStatsScreen({
+  RideStatsScreen({
     super.key,
     required this.bookingId,
     this.pickupAddress,
@@ -657,7 +793,9 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 
   /// Streams & timers
   StreamSubscription<Position>? positionStream;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   Timer? _autoFollowTimer;
+  Timer? _routeRetryTimer;
   bool _autoFollowEnabled = true;
   bool _userInteractingWithMap = false;
 
@@ -667,6 +805,19 @@ class _RideStatsScreenState extends State<RideStatsScreen>
   );
   late SocketService socketService;
   bool driverCompletedRide = false;
+  bool _isNetworkOffline = false;
+  bool _isOffRouteAlert = false;
+  int _pendingQueueCount = 0;
+  double _followZoom = 16.8;
+  bool _pendingRouteRetry = false;
+  String? _driverId;
+  DateTime? _lastSpeedAt;
+  LatLng? _lastSpeedPos;
+  final List<_QueuedSocketEmit> _socketRetryQueue = <_QueuedSocketEmit>[];
+  List<LatLng> _cachedPolyline = <LatLng>[];
+  String _cachedDirectionText = '';
+  String _cachedDistance = '';
+  String _cachedManeuver = '';
 
   /// Rider info
   String customerFrom = '';
@@ -715,7 +866,12 @@ class _RideStatsScreenState extends State<RideStatsScreen>
       if (_autoFollowEnabled && _mapController != null) {
         _mapController!.animateCamera(
           CameraUpdate.newCameraPosition(
-            CameraPosition(target: pos, zoom: 17, tilt: 50, bearing: bearing),
+            CameraPosition(
+              target: pos,
+              zoom: _followZoom,
+              tilt: 45,
+              bearing: bearing,
+            ),
           ),
         );
       }
@@ -734,13 +890,17 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     _loadMarkerIcons();
     _hydrateFromJoinedData();
     _wireSocketEvents();
+    _initConnectivityWatchdog();
+    _loadDriverId();
     _startLocationStream();
   }
 
   @override
   void dispose() {
     positionStream?.cancel();
+    _connectivitySub?.cancel();
     _autoFollowTimer?.cancel();
+    _routeRetryTimer?.cancel();
     _markerController.dispose();
     try {
       // remove ONLY listeners; keep socket alive if singleton in app
@@ -751,6 +911,29 @@ class _RideStatsScreenState extends State<RideStatsScreen>
       // socketService.socket.disconnect(); // uncomment only if this screen owns the socket
     } catch (_) {}
     super.dispose();
+  }
+
+  Future<void> _loadDriverId() async {
+    _driverId = await SharedPrefHelper.getDriverId();
+  }
+
+  void _initConnectivityWatchdog() {
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
+      final offline = results.every((r) => r == ConnectivityResult.none);
+      if (_isNetworkOffline != offline && mounted) {
+        setState(() => _isNetworkOffline = offline);
+      } else {
+        _isNetworkOffline = offline;
+      }
+      if (offline) return;
+      if (!socketService.connected) {
+        socketService.connect();
+      }
+      _flushSocketRetryQueue();
+      if (_pendingRouteRetry && _lastDriverPosition != null) {
+        _refreshRouteFrom(_lastDriverPosition!);
+      }
+    });
   }
 
   // ========== SETUP ==========
@@ -825,7 +1008,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
       if (status == true || status?.toString() == 'true') {
         if (!mounted) return;
         setState(() => driverCompletedRide = true);
-        CommonLogger.log.i('✅ Driver reached destination');
+        CommonLogger.log.i('ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Driver reached destination');
       }
     });
 
@@ -845,12 +1028,15 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     });
 
     socketService.socket.onAny((event, data) {
-      CommonLogger.log.i('📦 [socket] $event: $data');
+      CommonLogger.log.i('ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚Â¦ [socket] $event: $data');
     });
 
     if (!socketService.connected) {
       socketService.connect();
-      socketService.onConnect(() => CommonLogger.log.i('🔌 Socket connected'));
+      socketService.onConnect(() {
+        CommonLogger.log.i('Socket connected');
+        _flushSocketRetryQueue();
+      });
     }
   }
 
@@ -858,7 +1044,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
   static const double _MIN_MOVE_METERS = 3.0;
   static const double _MIN_SPEED_MS = 1.0;
   static const double _HEADING_TRUST_MS =
-      2.0; // use sensor heading only if ≥ 2 m/s
+      2.0; // use sensor heading only if ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°Ãƒâ€šÃ‚Â¥ 2 m/s
   static const double _MIN_TURN_DEG = 10.0; // ignore tiny turns when slow
   double _angleDeltaDeg(double a, double b) {
     double d = (b - a) % 360;
@@ -881,6 +1067,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
           (position.heading.isFinite)
               ? position.heading
               : -1.0; // deg 0..360 or -1
+      _updateSmartAutoZoom(current, speed);
 
       // 1) Ignore very inaccurate fixes
       if (acc > _MAX_ACCURACY_M) return;
@@ -928,7 +1115,13 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 
         // 5) Route maintenance
         _trimPolylineAlongProgress(current);
-        if (_isOffRoute(current)) {
+        final offRoute = _isOffRoute(current);
+        if (mounted && _isOffRouteAlert != offRoute) {
+          setState(() => _isOffRouteAlert = offRoute);
+        } else {
+          _isOffRouteAlert = offRoute;
+        }
+        if (offRoute) {
           await _refreshRouteFrom(current);
         }
       } else {
@@ -974,35 +1167,161 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 
   Future<void> _loadFullRoute() async {
     if (bookingFromLocation == null || bookingToLocation == null) return;
+    if (_isNetworkOffline) {
+      _pendingRouteRetry = true;
+      _scheduleRouteRetry();
+      return;
+    }
 
-    final result = await getRouteInfo(
-      origin: bookingFromLocation!,
-      destination: bookingToLocation!,
-    );
+    try {
+      final result = await getRouteInfo(
+        origin: bookingFromLocation!,
+        destination: bookingToLocation!,
+      );
 
-    if (!mounted) return;
-    setState(() {
-      directionText = result['direction'];
-      distance = result['distance'];
-      maneuver = (result['maneuver'] ?? '').toString();
-      polylinePoints = decodePolyline(result['polyline']);
-    });
+      if (!mounted) return;
+      setState(() {
+        directionText = result['direction'];
+        distance = result['distance'];
+        maneuver = (result['maneuver'] ?? '').toString();
+        polylinePoints = decodePolyline(result['polyline']);
+        _cachedDirectionText = directionText;
+        _cachedDistance = distance;
+        _cachedManeuver = maneuver;
+        _cachedPolyline = List<LatLng>.from(polylinePoints);
+        _pendingRouteRetry = false;
+      });
+    } catch (_) {
+      _pendingRouteRetry = true;
+      if (!mounted) return;
+      if (_cachedPolyline.isNotEmpty) {
+        setState(() {
+          directionText = _cachedDirectionText;
+          distance = _cachedDistance;
+          maneuver = _cachedManeuver;
+          polylinePoints = List<LatLng>.from(_cachedPolyline);
+        });
+      }
+      _scheduleRouteRetry();
+    }
   }
 
   Future<void> _refreshRouteFrom(LatLng from) async {
     if (bookingToLocation == null) return;
-    final result = await getRouteInfo(
-      origin: from,
-      destination: bookingToLocation!,
-    );
+    if (_isNetworkOffline) {
+      _pendingRouteRetry = true;
+      _scheduleRouteRetry();
+      return;
+    }
 
-    if (!mounted) return;
-    setState(() {
-      directionText = result['direction'];
-      distance = result['distance'];
-      maneuver = (result['maneuver'] ?? '').toString();
-      polylinePoints = decodePolyline(result['polyline']);
+    try {
+      final result = await getRouteInfo(
+        origin: from,
+        destination: bookingToLocation!,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        directionText = result['direction'];
+        distance = result['distance'];
+        maneuver = (result['maneuver'] ?? '').toString();
+        polylinePoints = decodePolyline(result['polyline']);
+        _cachedDirectionText = directionText;
+        _cachedDistance = distance;
+        _cachedManeuver = maneuver;
+        _cachedPolyline = List<LatLng>.from(polylinePoints);
+        _pendingRouteRetry = false;
+      });
+    } catch (_) {
+      _pendingRouteRetry = true;
+      _scheduleRouteRetry();
+    }
+  }
+
+  void _scheduleRouteRetry() {
+    _routeRetryTimer?.cancel();
+    _routeRetryTimer = Timer(const Duration(seconds: 3), () {
+      if (_isNetworkOffline || _lastDriverPosition == null) return;
+      _refreshRouteFrom(_lastDriverPosition!);
     });
+  }
+
+  void _updateSmartAutoZoom(LatLng current, double speedMs) {
+    double kmh = speedMs * 3.6;
+    if (kmh < 1.0 && _lastSpeedPos != null && _lastSpeedAt != null) {
+      final dt = DateTime.now().difference(_lastSpeedAt!).inMilliseconds / 1000.0;
+      if (dt > 0.2) {
+        final d = Geolocator.distanceBetween(
+          _lastSpeedPos!.latitude,
+          _lastSpeedPos!.longitude,
+          current.latitude,
+          current.longitude,
+        );
+        kmh = (d / dt) * 3.6;
+      }
+    }
+    _lastSpeedPos = current;
+    _lastSpeedAt = DateTime.now();
+
+    double targetZoom;
+    if (kmh >= 55) {
+      targetZoom = 14.1;
+    } else if (kmh >= 30) {
+      targetZoom = 14.7;
+    } else if (kmh >= 15) {
+      targetZoom = 15.4;
+    } else {
+      targetZoom = 16.0;
+    }
+    _followZoom = (_followZoom * 0.75) + (targetZoom * 0.25);
+  }
+
+  Future<void> _sendQuickMessage(String text, {int? delayMinutes}) async {
+    final driverId = _driverId ?? await SharedPrefHelper.getDriverId();
+    final payload = <String, dynamic>{
+      'bookingId': widget.bookingId,
+      'driverId': driverId,
+      'delayMinutes': (delayMinutes ?? 0) < 0 ? 0 : (delayMinutes ?? 0),
+      'message': text,
+    };
+    if (_isNetworkOffline || !socketService.connected) {
+      _enqueueSocketEmit('driver-message', payload);
+      return;
+    }
+    socketService.emitWithAck('driver-message', payload, (ack) {
+      final ok = (ack is Map && ack['success'] == true);
+      if (!ok) {
+        _enqueueSocketEmit('driver-message', payload);
+      }
+    });
+  }
+
+  void _enqueueSocketEmit(String event, Map<String, dynamic> payload) {
+    _socketRetryQueue.add(_QueuedSocketEmit(event: event, payload: payload));
+    if (mounted) {
+      setState(() => _pendingQueueCount = _socketRetryQueue.length);
+    } else {
+      _pendingQueueCount = _socketRetryQueue.length;
+    }
+  }
+
+  void _flushSocketRetryQueue() {
+    if (_socketRetryQueue.isEmpty || !socketService.connected) return;
+    final queued = List<_QueuedSocketEmit>.from(_socketRetryQueue);
+    _socketRetryQueue.clear();
+    if (mounted) {
+      setState(() => _pendingQueueCount = 0);
+    } else {
+      _pendingQueueCount = 0;
+    }
+    for (final q in queued) {
+      socketService.emitWithAck(q.event, q.payload, (ack) {
+        final ok = (ack is Map && ack['success'] == true);
+        if (!ok) {
+          _enqueueSocketEmit(q.event, q.payload);
+        }
+      });
+    }
   }
 
   void _trimPolylineAlongProgress(LatLng current) {
@@ -1128,7 +1447,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
         _currentMapBearing = endRot;
       }
     });
-  }*//*
+  }*/ /*
 
 
   double _bearingBetween(LatLng a, LatLng b) {
@@ -1147,7 +1466,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     return _normalizeAngle(bearing);
   }
 
-  // pick shortest rotation direction (e.g., 350° -> 10° goes +20°, not -340°)
+  // pick shortest rotation direction (e.g., 350ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° -> 10ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° goes +20ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°, not -340ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°)
   double _shortestAngle(double from, double to) {
     double diff = (to - from) % 360;
     if (diff > 180) diff -= 360;
@@ -1387,6 +1706,68 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                   ],
                 ),
               ),
+              if (_isNetworkOffline || _pendingQueueCount > 0)
+                Positioned(
+                  top: 150,
+                  left: 12,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1F2937),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _isNetworkOffline
+                          ? 'No internet. Route cache active, syncing when online.'
+                          : 'Sync pending: $_pendingQueueCount message(s)',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              if (_isOffRouteAlert)
+                Positioned(
+                  top: 202,
+                  left: 12,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.shade700),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, size: 18),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Route deviation detected',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _goToCurrentLocation,
+                          child: const Text('Recenter'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
 
               // Bottom sheet
               DraggableScrollableSheet(
@@ -1413,7 +1794,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                         const SizedBox(height: 20),
                         if (!driverCompletedRide) ...[
                           GestureDetector(
-                            onTap: () => Get.to(const CashCollectedScreen()),
+                            onTap: () => Get.to(CashCollectedScreen(Amount: c.amount.value, bookingId: bookingId)),
                             child: Container(
                               color: AppColors.rideInProgress.withOpacity(0.1),
                               padding: const EdgeInsets.all(15),
@@ -1427,6 +1808,63 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                             ),
                           ),
                           const SizedBox(height: 20),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Obx(() {
+                              final eta = driverStatusController
+                                  .dropDurationInMin.value
+                                  .round();
+                              final chips =
+                                  DriverMessageSuggestions.drop(etaMinutes: eta);
+                              return SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: chips
+                                      .map(
+                                        (msg) => Padding(
+                                          padding:
+                                              const EdgeInsets.only(right: 8),
+                                          child: InkWell(
+                                            onTap: () => _sendQuickMessage(
+                                              msg,
+                                              delayMinutes: eta,
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(18),
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 8,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.commonBlack
+                                                    .withOpacity(0.04),
+                                                borderRadius:
+                                                    BorderRadius.circular(18),
+                                                border: Border.all(
+                                                  color: AppColors.commonBlack
+                                                      .withOpacity(0.08),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                msg,
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                ),
+                              );
+                            }),
+                          ),
+                          ),
+                          const SizedBox(height: 14),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -1787,7 +2225,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 //   final String bookingId;
 //   final String? pickupAddress;
 //   final String? dropAddress;
-//   const RideStatsScreen({
+//   RideStatsScreen({
 //     super.key,
 //     required this.bookingId,
 //     this.pickupAddress,
@@ -1928,7 +2366,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 //         _currentMapBearing = rotation;
 //       });
 //
-//       // 🎯 Animate map with rotation like Google Maps/Uber/Ola
+//       // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¯ Animate map with rotation like Google Maps/Uber/Ola
 //       if (_autoFollowEnabled && _mapController != null) {
 //         final currentZoom = await _mapController!.getZoomLevel();
 //         final safeZoom = currentZoom > 15 ? 15.0 : currentZoom;
@@ -1974,7 +2412,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 //
 //         // arrivedAtPickup = false;
 //         CommonLogger.log.i(
-//           '🚦 driver-reached-destination updated to false $data',
+//           'ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â¦ driver-reached-destination updated to false $data',
 //         );
 //       }
 //     });
@@ -2013,16 +2451,16 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 //     });
 //     // Debug: See all events
 //     socketService.socket.onAny((event, data) {
-//       CommonLogger.log.i('📦 [onAny] $event: $data');
+//       CommonLogger.log.i('ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚Â¦ [onAny] $event: $data');
 //     });
 //
 //     if (!socketService.connected) {
 //       socketService.connect();
 //       socketService.onConnect(() {
-//         CommonLogger.log.i("✅ Socket connected");
+//         CommonLogger.log.i("ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Socket connected");
 //       });
 //     } else {
-//       CommonLogger.log.i("✅ Socket already connected");
+//       CommonLogger.log.i("ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Socket already connected");
 //     }
 //   }
 //
@@ -2367,7 +2805,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 //                       CameraUpdate.newLatLngBounds(bounds, 100),
 //                     );
 //
-//                     // ✅ Clamp zoom between 12 (normal city view) and 17 (max detail)
+//                     // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Clamp zoom between 12 (normal city view) and 17 (max detail)
 //                     final zoomLevel = await _mapController!.getZoomLevel();
 //                     double safeZoom = zoomLevel.clamp(12.0, 17.0);
 //                     _mapController!.animateCamera(
@@ -2555,7 +2993,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 //                               () => CustomTextfield.textWithStyles600(
 //                                 formatDuration(
 //                                   driverStatusController.dropDurationInMin.value
-//                                       .toInt(), // ✅ FIXED
+//                                       .toInt(), // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ FIXED
 //                                 ),
 //                                 fontSize: 20,
 //                               ),

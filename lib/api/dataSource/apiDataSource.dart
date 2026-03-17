@@ -30,13 +30,13 @@ import '../../Presentation/Drawer/model/notification_response.dart';
 import '../../Presentation/Drawer/model/ride_history_response.dart';
 import '../../Presentation/Drawer/model/shared_booking_response.dart';
 import '../../Presentation/Drawer/model/wallet_history_response.dart';
-import '../../Presentation/DriverScreen/models/booking_accept_model.dart';
+import 'package:hopper/Presentation/DriverScreen/models/booking_accept_model.dart';
 import '../../Presentation/DriverScreen/models/cash_collected_response.dart';
 import '../../Presentation/DriverScreen/models/chat_history_response.dart';
 import '../../Presentation/DriverScreen/models/driver_online_status_model.dart';
-import '../../Presentation/DriverScreen/models/get_todays_activity_models.dart';
+import 'package:hopper/Presentation/DriverScreen/models/get_todays_activity_models.dart';
 import '../../Presentation/DriverScreen/models/payment_response.dart';
-import '../../Presentation/DriverScreen/models/today_parcel_activity_response.dart';
+import 'package:hopper/Presentation/DriverScreen/models/today_parcel_activity_response.dart';
 import '../repository/failure.dart';
 import 'package:dio/dio.dart';
 import 'package:dartz/dartz.dart';
@@ -482,15 +482,18 @@ class ApiDataSource extends BaseApiDataSource {
 
       String url = ApiConstents.userImageUpload;
       FormData formData = FormData.fromMap({
-        'images': await MultipartFile.fromFile(
+        'image': await MultipartFile.fromFile(
           imageFile.path,
           filename: imageFile.path.split('/').last,
         ),
       });
 
       final response = await Request.formData(url, formData, 'POST', true);
-      Map<String, dynamic> responseData =
-          jsonDecode(response.data) as Map<String, dynamic>;
+      final rawData = response.data;
+      final Map<String, dynamic> responseData =
+          rawData is String
+              ? jsonDecode(rawData) as Map<String, dynamic>
+              : Map<String, dynamic>.from(rawData as Map);
       if (response.statusCode == 200) {
         if (responseData['status'] == true) {
           return Right(UserImageModels.fromJson(responseData));
@@ -504,8 +507,8 @@ class ApiDataSource extends BaseApiDataSource {
       } else {
         return Left(ServerFailure("Unexpected error"));
       }
-    } catch (e) {
-      CommonLogger.log.e(e);
+    } catch (e, st) {
+      CommonLogger.log.e('$e,$st');
       return Left(ServerFailure('Something went wrong'));
     }
   }
@@ -1728,7 +1731,8 @@ class ApiDataSource extends BaseApiDataSource {
     required bool enabled,
   }) async {
     try {
-      final url = "${ApiConfigController.sharedBase}/shared/customer/shared-booking/status";
+      final url =
+          "${ApiConfigController.sharedBase}/shared/customer/shared-booking/status";
       CommonLogger.log.i(url);
 
       dynamic response = await Request.sendRequest(

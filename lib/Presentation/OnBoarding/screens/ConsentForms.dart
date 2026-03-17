@@ -18,10 +18,14 @@ class ConsentForms extends StatefulWidget {
 }
 
 class _ConsentFormsState extends State<ConsentForms> {
-  final StateListController controller = Get.find();
+  late final StateListController controller;
   @override
   void initState() {
     super.initState();
+    controller =
+        Get.isRegistered<StateListController>()
+            ? Get.find<StateListController>()
+            : Get.put(StateListController());
   }
 
   bool isChecked = false;

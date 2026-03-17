@@ -8,10 +8,10 @@ import 'package:hopper/Presentation/DriverScreen/screens/cash_collected_screen.d
 import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
+import 'package:hopper/utils/map/navigation_assist.dart';
 import '../../../Core/Utility/snackbar.dart';
-import '../models/booking_accept_model.dart';
-import '../models/get_todays_activity_models.dart';
-import '../models/stop_request_response.dart';
+import 'package:hopper/Presentation/DriverScreen/models/booking_accept_model.dart';
+import 'package:hopper/Presentation/DriverScreen/models/get_todays_activity_models.dart';
 import '../screens/SharedBooking/Screens/picking_shared_screens.dart';
 import '../screens/driver_main_screen.dart';
 import '../screens/picking_customer_screen.dart';
@@ -78,6 +78,7 @@ class DriverStatusController extends GetxController {
           return '';
         },
         (response) {
+          Get.find<DriverAnalyticsController>().trackAccept();
           final bookingData = {
             'bookingId': response.data?.bookingId,
             'userId': response.data?.driverId,
@@ -135,19 +136,17 @@ class DriverStatusController extends GetxController {
     }
   }
 
-
-
   // 🔹 booking accept
   Future<String?> bookingAcceptForSharedRide(
-      BuildContext context, {
-        required String bookingId,
-        required String status,
-        required String pickupLocationAddress,
-        required String dropLocationAddress,
-        required LatLng pickupLocation,
-        required LatLng driverLocation,
-        bool navigateToPickup = true,
-      }) async {
+    BuildContext context, {
+    required String bookingId,
+    required String status,
+    required String pickupLocationAddress,
+    required String dropLocationAddress,
+    required LatLng pickupLocation,
+    required LatLng driverLocation,
+    bool navigateToPickup = true,
+  }) async {
     isLoading.value = true;
     try {
       final results = await apiDataSource.bookingAccept(
@@ -156,12 +155,13 @@ class DriverStatusController extends GetxController {
       );
 
       return results.fold(
-            (failure) {
+        (failure) {
           CustomSnackBar.showError(failure.message);
           isLoading.value = false;
           return '';
         },
-            (response) {
+        (response) {
+          Get.find<DriverAnalyticsController>().trackAccept();
           final bookingData = {
             'bookingId': response.data?.bookingId,
             'userId': response.data?.driverId,
@@ -185,7 +185,6 @@ class DriverStatusController extends GetxController {
           CommonLogger.log.i(response.data);
 
           if (navigateToPickup) {
-
             Get.to(
               () => PickingCustomerSharedScreen(
                 pickupLocation: pickupLocation,
@@ -340,6 +339,8 @@ class DriverStatusController extends GetxController {
         },
         (response) {
           arrivedLoadingBookingId.value = '';
+          final onTime = pickupDurationInMin.value <= 2.0;
+          Get.find<DriverAnalyticsController>().trackPickup(onTime: onTime);
           return response;
         },
       );
@@ -362,14 +363,19 @@ class DriverStatusController extends GetxController {
         longitude: longitude,
         onlineStatus: status,
       );
-      results.fold(
+      return results.fold(
         (failure) {
           isLoading.value = false;
+          CustomSnackBar.showError(failure.message);
           return '';
         },
         (response) {
           CommonLogger.log.i(response.data);
           isLoading.value = false;
+          CustomSnackBar.showDriverStatus(
+            isOnline: status,
+            message: response.message,
+          );
           return ' ';
         },
       );
@@ -384,7 +390,7 @@ class DriverStatusController extends GetxController {
       final results = await apiDataSource.todayActivity();
       CommonLogger.log.i("API called. Awaiting result...");
 
-      results.fold(
+      return results.fold(
         (failure) {
           return null;
         },
@@ -395,14 +401,12 @@ class DriverStatusController extends GetxController {
           todayStatusData.value = response.data;
           CommonLogger.log.i("Assigned to todayStatusData:");
           CommonLogger.log.i(todayStatusData.value.toString());
-          return response;
+          return response.toString();
         },
       );
     } catch (e) {
       return ' ';
     }
-
-    return '';
   }
 
   Future<void> weeklyChallenges() async {
@@ -454,13 +458,14 @@ class DriverStatusController extends GetxController {
 
     return '';
   }
+
   Future<String?> cancelBooking(
-      BuildContext context, {
-        required String reason,
-        required String bookingId,
-        bool silent = true,
-        bool navigate = true,
-      }) async {
+    BuildContext context, {
+    required String reason,
+    required String bookingId,
+    bool silent = true,
+    bool navigate = true,
+  }) async {
     String? msg;
 
     try {
@@ -472,13 +477,16 @@ class DriverStatusController extends GetxController {
       );
 
       results.fold(
-            (failure) {
+        (failure) {
           msg = failure.message;
           CommonLogger.log.e("cancelBooking failure: ${failure.message}");
         },
-            (response) {
+        (response) {
           msg = response.message;
           CommonLogger.log.i("cancelBooking success: ${response.message}");
+          Get.find<DriverAnalyticsController>().trackCancel(
+            bookingId: bookingId,
+          );
         },
       );
     } catch (e) {
@@ -495,13 +503,14 @@ class DriverStatusController extends GetxController {
 
     if (navigate) {
       try {
-        // ✅ closes dialog + bottomsheet + snackbar safely (does NOT pop the page)
-        Get.back(closeOverlays: true);
+        if (Get.isBottomSheetOpen == true) {
+          Get.back();
+        } else if (Get.isDialogOpen == true) {
+          Get.back();
+        }
       } catch (_) {}
 
-      // ✅ small delay to avoid race conditions with overlay closing
       Future.delayed(const Duration(milliseconds: 80), () {
-        // ✅ always go main screen after cancel
         Get.offAll(() => const DriverMainScreen());
       });
     }
@@ -509,7 +518,7 @@ class DriverStatusController extends GetxController {
     return msg;
   }
 
-/*
+  /*
   Future<String?> cancelBooking(
     BuildContext context, {
     required String reason,
@@ -592,7 +601,7 @@ class DriverStatusController extends GetxController {
           CommonLogger.log.e("failure: ${failure.message}");
           return '';
         },
-        (StopRequestResponse response) {
+        (response) {
           CommonLogger.log.i("Response: ${response.message}");
           CustomSnackBar.showSuccess(response.message);
 
@@ -671,10 +680,9 @@ class DriverStatusController extends GetxController {
         (response) {
           isLoading.value = false;
           CommonLogger.log.i(response.toJson());
+          paymentStatus.value = 'PAID';
 
-          if (response.status == 200) {
-            if (onSuccess != null) onSuccess();
-          }
+          if (onSuccess != null) onSuccess();
         },
       );
     } catch (e) {
@@ -707,6 +715,8 @@ class DriverStatusController extends GetxController {
         (response) {
           isLoading.value = false;
           resultMessage = response.message;
+          Get.find<DriverAnalyticsController>().trackEarning(Amount ?? 0);
+          Get.find<DriverAnalyticsController>().trackComplete();
 
           // ✅ Shared ride -> DON'T navigate from controller
           if (isSharedRide) return;
@@ -772,3 +782,8 @@ class DriverStatusController extends GetxController {
     }
   }
 }
+
+
+
+
+

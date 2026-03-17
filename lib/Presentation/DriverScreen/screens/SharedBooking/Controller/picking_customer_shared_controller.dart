@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -10,8 +11,13 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/api/repository/api_constents.dart';
 import 'package:hopper/utils/map/route_info.dart';
+import 'package:hopper/utils/map/navigation_assist.dart';
+import 'package:hopper/utils/map/navigation_voice_service.dart';
+import 'package:hopper/utils/map/map_motion_profile.dart';
+import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 
 import 'shared_ride_controller.dart';
@@ -23,6 +29,7 @@ class SharedRouteUiState {
   final String directionText;
   final String distanceText;
   final String maneuver;
+  final String laneGuidance;
 
   const SharedRouteUiState({
     required this.driverLocation,
@@ -31,6 +38,7 @@ class SharedRouteUiState {
     required this.directionText,
     required this.distanceText,
     required this.maneuver,
+    required this.laneGuidance,
   });
 
   SharedRouteUiState copyWith({
@@ -40,6 +48,7 @@ class SharedRouteUiState {
     String? directionText,
     String? distanceText,
     String? maneuver,
+    String? laneGuidance,
   }) {
     return SharedRouteUiState(
       driverLocation: driverLocation ?? this.driverLocation,
@@ -48,6 +57,7 @@ class SharedRouteUiState {
       directionText: directionText ?? this.directionText,
       distanceText: distanceText ?? this.distanceText,
       maneuver: maneuver ?? this.maneuver,
+      laneGuidance: laneGuidance ?? this.laneGuidance,
     );
   }
 }
@@ -57,6 +67,12 @@ class _Eta {
   final double minutes;
   final DateTime at;
   const _Eta(this.meters, this.minutes, this.at);
+}
+
+class _QueuedSocketEmit {
+  final String event;
+  final Map<String, dynamic> payload;
+  const _QueuedSocketEmit({required this.event, required this.payload});
 }
 
 class PickingCustomerSharedController extends GetxController {
@@ -72,10 +88,10 @@ class PickingCustomerSharedController extends GetxController {
 
   // deps
   final DriverStatusController driverStatusController =
-  Get.find<DriverStatusController>();
+      Get.find<DriverStatusController>();
 
   final SharedRideController sharedRideController =
-  Get.find<SharedRideController>();
+      Get.find<SharedRideController>();
 
   // socket
   late final SocketService socketService;
@@ -98,23 +114,40 @@ class PickingCustomerSharedController extends GetxController {
 
   // focus toggle (used by your UI button)
   final isDriverFocused = false.obs;
+  final RxBool isOffRouteAlert = false.obs;
+  final RxBool isNetworkOffline = false.obs;
+  final RxInt pendingQueueCount = 0.obs;
+  final RxDouble followZoom = 15.0.obs;
 
   // tracking
   StreamSubscription<Position>? _posSub;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   LatLng? _lastPos;
+  bool _hasLiveGpsFix = false;
   bool _animating = false;
+  LatLng? _queuedTarget;
+  double? _queuedBearing;
 
   // routing
   List<LatLng> _poly = [];
   DateTime _lastRouteFetch = DateTime.fromMillisecondsSinceEpoch(0);
+  SharedRouteUiState? _cachedRouteUi;
+  bool _pendingRouteRetry = false;
+  Timer? _routeRetryTimer;
+  final List<_QueuedSocketEmit> _socketRetryQueue = <_QueuedSocketEmit>[];
+  String? _driverId;
 
   // thresholds
   static const double _MAX_ACCURACY_M = 25.0;
   static const double _MIN_MOVE_METERS = 3.0;
   static const double _MIN_SPEED_MS = 1.0;
+  static const double _STATIONARY_DRIFT_M = 8.0;
   static const double _HEADING_TRUST_MS = 2.0;
   static const double _MIN_TURN_DEG = 10.0;
   static const double _OFF_ROUTE_TOLERANCE_M = 25.0;
+  static const double _POLYLINE_TRIM_TOLERANCE_M = 30.0;
+  static const int _POLYLINE_TRIM_LOOKAHEAD_POINTS = 40;
+  static const int _OFF_ROUTE_LOOKAHEAD_POINTS = 80;
 
   @override
   void onInit() {
@@ -122,16 +155,20 @@ class PickingCustomerSharedController extends GetxController {
 
     DirectionsConfig.apiKey = ApiConstents.googleMapApiKey;
 
-    routeUi = SharedRouteUiState(
-      driverLocation: driverLocation,
-      bearing: 0,
-      polyline: const [],
-      directionText: '',
-      distanceText: '',
-      maneuver: '',
-    ).obs;
+    routeUi =
+        SharedRouteUiState(
+          driverLocation: driverLocation,
+          bearing: 0,
+          polyline: const [],
+          directionText: '',
+          distanceText: '',
+          maneuver: '',
+          laneGuidance: '',
+        ).obs;
 
     _applySystemUi();
+    _initConnectivityWatchdog();
+    _loadDriverId();
     _loadCarIcon();
     _initSocket();
     _startTracking();
@@ -141,14 +178,37 @@ class PickingCustomerSharedController extends GetxController {
   @override
   void onClose() {
     _posSub?.cancel();
+    _connectivitySub?.cancel();
+    _routeRetryTimer?.cancel();
     try {
       socketService.socket.off('joined-booking');
       socketService.socket.off('driver-location');
+      socketService.socket.off('location-updated');
       socketService.socket.off('driver-arrived');
       socketService.socket.off('driver-cancelled');
       socketService.socket.off('customer-cancelled');
     } catch (_) {}
     super.onClose();
+  }
+
+  Future<void> _loadDriverId() async {
+    _driverId = await SharedPrefHelper.getDriverId();
+  }
+
+  void _initConnectivityWatchdog() {
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
+      final offline = results.every((r) => r == ConnectivityResult.none);
+      isNetworkOffline.value = offline;
+      if (offline) return;
+
+      if (!socketService.connected) {
+        socketService.connect();
+      }
+      _flushSocketRetryQueue();
+      if (_pendingRouteRetry) {
+        _fetchRoute(force: true);
+      }
+    });
   }
 
   // ---------------- UI ----------------
@@ -173,9 +233,10 @@ class PickingCustomerSharedController extends GetxController {
         devicePixelRatio: dpr,
       );
 
-      final asset = driverStatusController.serviceType.value == "Bike"
-          ? AppImages.parcelBike
-          : AppImages.movingCar;
+      final asset =
+          driverStatusController.serviceType.value == "Bike"
+              ? AppImages.parcelBike
+              : AppImages.movingCar;
 
       final icon = await BitmapDescriptor.fromAssetImage(cfg, asset);
       carIcon.value = icon;
@@ -188,9 +249,12 @@ class PickingCustomerSharedController extends GetxController {
   // ---------------- SOCKET ----------------
   void _initSocket() {
     socketService = SocketService();
+    final cfg = Get.find<ApiConfigController>();
+    socketService.initSocket(cfg.socketUrl);
 
     socketService.on('joined-booking', (data) async {
       if (data == null) return;
+      _syncDriverLocationFromSocket(data);
 
       CommonLogger.log.i("✅ [SHARED] joined-booking received: $data");
 
@@ -208,18 +272,21 @@ class PickingCustomerSharedController extends GetxController {
 
     socketService.on('driver-location', (data) {
       if (data == null) return;
+      _syncDriverLocationFromSocket(data);
 
-      final map = Map<String, dynamic>.from(data as Map);
+      final map = Map<String, dynamic>.from(data);
       final eventBookingId = (map['bookingId'] ?? '').toString();
-      final activeId = sharedRideController.activeTarget.value?.bookingId;
+      final activeId =
+          sharedRideController.activeTarget.value?.bookingId ?? bookingId;
+      final cacheKey = eventBookingId.isNotEmpty ? eventBookingId : activeId;
 
       // ✅ update cache always (so when user taps later, we instantly show latest)
       final meters = (map['pickupDistanceInMeters'] as num?)?.toDouble() ?? 0.0;
       final mins = (map['pickupDurationInMin'] as num?)?.toDouble() ?? 0.0;
-      _etaCache[eventBookingId] = _Eta(meters, mins, DateTime.now());
+      _etaCache[cacheKey] = _Eta(meters, mins, DateTime.now());
 
       // ✅ update UI ONLY if this event belongs to selected rider
-      if (activeId != null && eventBookingId == activeId) {
+      if (eventBookingId.isEmpty || eventBookingId == activeId) {
         etaMeters.value = meters;
         etaMinutes.value = mins;
         isEtaUpdating.value = false;
@@ -229,6 +296,10 @@ class PickingCustomerSharedController extends GetxController {
         driverStatusController.pickupDurationInMin.value = mins;
       }
     });
+    socketService.on('location-updated', (data) {
+      if (data == null) return;
+      _syncDriverLocationFromSocket(data);
+    });
 
     socketService.socket.onAny((event, data) {
       CommonLogger.log.i('📦 [shared picking socket] $event: $data');
@@ -236,7 +307,10 @@ class PickingCustomerSharedController extends GetxController {
 
     if (!socketService.connected) {
       socketService.connect();
-      socketService.onConnect(() => CommonLogger.log.i("✅ Socket connected"));
+      socketService.onConnect(() {
+        CommonLogger.log.i("Socket connected");
+        _flushSocketRetryQueue();
+      });
     }
   }
 
@@ -262,10 +336,18 @@ class PickingCustomerSharedController extends GetxController {
 
   // ---------------- ROUTE ----------------
   String _stripHtml(String s) {
-    return s
-        .replaceAll(RegExp(r'<[^>]*>'), '')
+    var text = s
+        .replaceAll(RegExp(r'<[^>]*>'), ' ')
         .replaceAll('&nbsp;', ' ')
         .replaceAll('&amp;', '&');
+
+    // Remove landmark-side hints that confuse turn direction.
+    text = text.replaceAll(
+      RegExp(r'\(\s*on the (left|right)\s*\)', caseSensitive: false),
+      '',
+    );
+
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   LatLng _getCurrentDestination() {
@@ -288,8 +370,56 @@ class PickingCustomerSharedController extends GetxController {
     return double.tryParse(v.toString()) ?? 0.0;
   }
 
+  LatLng? _extractDriverLocation(dynamic data) {
+    if (data is! Map) return null;
+    final map = Map<String, dynamic>.from(data);
+
+    final nested = map['driverLocation'] ?? map['updatePayload'];
+    if (nested is Map) {
+      final nestedMap = Map<String, dynamic>.from(nested);
+      final lat = _safeToDouble(nestedMap['latitude']);
+      final lng = _safeToDouble(nestedMap['longitude']);
+      if (lat != 0 && lng != 0) {
+        return LatLng(lat, lng);
+      }
+    }
+
+    final lat = _safeToDouble(map['latitude']);
+    final lng = _safeToDouble(map['longitude']);
+    if (lat != 0 && lng != 0) {
+      return LatLng(lat, lng);
+    }
+    return null;
+  }
+
+  void _syncDriverLocationFromSocket(dynamic data) {
+    final loc = _extractDriverLocation(data);
+    if (loc == null) return;
+
+    // If live GPS is healthy, avoid socket jitter overriding local marker.
+    if (_hasLiveGpsFix && _lastPos != null) {
+      final driftMeters = Geolocator.distanceBetween(
+        _lastPos!.latitude,
+        _lastPos!.longitude,
+        loc.latitude,
+        loc.longitude,
+      );
+      if (driftMeters < 120) return;
+    }
+
+    _lastPos = loc;
+    sharedRideController.updateDriverLocation(loc);
+    routeUi.value = routeUi.value.copyWith(driverLocation: loc);
+  }
+
   Future<void> _fetchRoute({bool force = false}) async {
     try {
+      if (isNetworkOffline.value) {
+        _pendingRouteRetry = true;
+        _scheduleRouteRetry();
+        return;
+      }
+
       final now = DateTime.now();
       if (!force && now.difference(_lastRouteFetch).inSeconds < 6) return;
       _lastRouteFetch = now;
@@ -307,7 +437,19 @@ class PickingCustomerSharedController extends GetxController {
       );
 
       final poly = (result['polyline'] ?? '').toString();
-      final pts = decodePolyline(poly);
+      final pts = _simplifyPolyline(
+        decodePolyline(poly),
+        minStepMeters: 6,
+        maxPoints: 220,
+      );
+      if (pts.length < 2) {
+        _pendingRouteRetry = true;
+        if ((_cachedRouteUi?.polyline.length ?? 0) >= 2) {
+          routeUi.value = _cachedRouteUi!;
+        }
+        _scheduleRouteRetry();
+        return;
+      }
       _poly = pts;
 
       // ✅ Optional: route numeric ETA (only if your getRouteInfo returns them)
@@ -331,28 +473,63 @@ class PickingCustomerSharedController extends GetxController {
         directionText: _stripHtml((result['direction'] ?? '').toString()),
         distanceText: (result['distance'] ?? '').toString(),
         maneuver: (result['maneuver'] ?? '').toString(),
+        laneGuidance: (result['laneGuidance'] ?? '').toString(),
       );
+      final analytics = Get.find<DriverAnalyticsController>();
+      analytics.setSlaFromEtaMinutes(etaMinutes.value);
+      final voiceLine = NavigationAssist.buildVoiceLine(
+        maneuver: routeUi.value.maneuver,
+        distanceText: routeUi.value.distanceText,
+        directionText: routeUi.value.directionText,
+      );
+      NavigationVoiceService.instance.speakTurn(voiceLine);
+      _cachedRouteUi = routeUi.value;
+      _pendingRouteRetry = false;
     } catch (e) {
       CommonLogger.log.e("❌ [SHARED] _fetchRoute failed: $e");
+      _pendingRouteRetry = true;
+      if (_cachedRouteUi != null) {
+        routeUi.value = _cachedRouteUi!;
+      }
+      _scheduleRouteRetry();
     }
   }
 
+  void _scheduleRouteRetry() {
+    _routeRetryTimer?.cancel();
+    _routeRetryTimer = Timer(const Duration(seconds: 3), () {
+      if (isNetworkOffline.value) return;
+      _fetchRoute(force: true);
+    });
+  }
+
   void _trimPolyline(LatLng current) {
-    if (_poly.isEmpty) return;
+    if (_poly.length < 2) return;
 
-    final idx = _closestPointIndex(current, _poly);
+    final closest = _closestPoint(
+      current,
+      _poly,
+      limit: _POLYLINE_TRIM_LOOKAHEAD_POINTS,
+    );
+    final idx = closest.$1;
+    final bestDistance = closest.$2;
     if (idx <= 0) return;
+    if (bestDistance > _POLYLINE_TRIM_TOLERANCE_M) return;
 
-    final keepFrom = (idx - 1).clamp(0, _poly.length - 1);
-    _poly = _poly.sublist(keepFrom);
+    final keepFrom = (idx - 1).clamp(0, _poly.length - 2);
+    final trimmed = _poly.sublist(keepFrom);
+    if (trimmed.length < 2) return;
 
+    _poly = trimmed;
     routeUi.value = routeUi.value.copyWith(polyline: _poly);
   }
 
-  int _closestPointIndex(LatLng pos, List<LatLng> pts) {
+  (int, double) _closestPoint(LatLng pos, List<LatLng> pts, {int? limit}) {
     double best = double.infinity;
     int idx = 0;
-    for (int i = 0; i < pts.length; i++) {
+    final searchLimit =
+        limit == null ? pts.length : math.min(pts.length, limit);
+    for (int i = 0; i < searchLimit; i++) {
       final d = Geolocator.distanceBetween(
         pos.latitude,
         pos.longitude,
@@ -364,13 +541,15 @@ class PickingCustomerSharedController extends GetxController {
         idx = i;
       }
     }
-    return idx;
+    return (idx, best);
   }
 
   bool _isOffRoute(LatLng current) {
     if (_poly.isEmpty) return true;
 
-    for (final p in _poly) {
+    final searchLimit = math.min(_poly.length, _OFF_ROUTE_LOOKAHEAD_POINTS);
+    for (int i = 0; i < searchLimit; i++) {
+      final p = _poly[i];
       final d = Geolocator.distanceBetween(
         current.latitude,
         current.longitude,
@@ -380,6 +559,44 @@ class PickingCustomerSharedController extends GetxController {
       if (d < _OFF_ROUTE_TOLERANCE_M) return false;
     }
     return true;
+  }
+
+  LatLng _snapToRouteIfNear(LatLng point) {
+    if (_poly.length < 2) return point;
+    LatLng bestPoint = _poly.first;
+    double bestDist = double.infinity;
+
+    for (int i = 0; i < _poly.length - 1; i++) {
+      final candidate = _closestPointOnSegment(point, _poly[i], _poly[i + 1]);
+      final d = Geolocator.distanceBetween(
+        point.latitude,
+        point.longitude,
+        candidate.latitude,
+        candidate.longitude,
+      );
+      if (d < bestDist) {
+        bestDist = d;
+        bestPoint = candidate;
+      }
+    }
+
+    if (bestDist <= 24.0) return bestPoint;
+    return point;
+  }
+
+  LatLng _closestPointOnSegment(LatLng p, LatLng a, LatLng b) {
+    final vx = b.longitude - a.longitude;
+    final vy = b.latitude - a.latitude;
+    if (vx == 0 && vy == 0) return a;
+
+    final wx = p.longitude - a.longitude;
+    final wy = p.latitude - a.latitude;
+
+    final c1 = (wx * vx) + (wy * vy);
+    final c2 = (vx * vx) + (vy * vy);
+    final t = (c1 / c2).clamp(0.0, 1.0);
+
+    return LatLng(a.latitude + (vy * t), a.longitude + (vx * t));
   }
 
   // ---------------- TRACKING ----------------
@@ -407,51 +624,92 @@ class PickingCustomerSharedController extends GetxController {
     ).listen((pos) async {
       final acc = (pos.accuracy.isFinite) ? pos.accuracy : 9999.0;
       if (acc > _MAX_ACCURACY_M) return;
+      _hasLiveGpsFix = true;
 
-      final current = LatLng(pos.latitude, pos.longitude);
-      sharedRideController.updateDriverLocation(current);
+      final currentRaw = LatLng(pos.latitude, pos.longitude);
+      // Keep marker on true live GPS location (do not snap marker to route polyline).
+      final snappedForRoute = _snapToRouteIfNear(currentRaw);
+      sharedRideController.updateDriverLocation(currentRaw);
 
       final speed = (pos.speed.isFinite) ? pos.speed : 0.0;
       final heading = (pos.heading.isFinite) ? pos.heading : -1.0;
+      _updateSmartAutoZoom(speed);
 
       if (_lastPos == null) {
-        _lastPos = current;
-        routeUi.value = routeUi.value.copyWith(driverLocation: current);
+        _lastPos = currentRaw;
+        routeUi.value = routeUi.value.copyWith(driverLocation: currentRaw);
+        await _fetchRoute(force: true);
         return;
       }
 
       final moved = Geolocator.distanceBetween(
         _lastPos!.latitude,
         _lastPos!.longitude,
-        current.latitude,
-        current.longitude,
+        currentRaw.latitude,
+        currentRaw.longitude,
       );
 
       if (moved < _MIN_MOVE_METERS) {
-        routeUi.value = routeUi.value.copyWith(driverLocation: current);
-        _lastPos = current;
+        routeUi.value = routeUi.value.copyWith(driverLocation: currentRaw);
+        _lastPos = currentRaw;
+        if (routeUi.value.polyline.length < 2) {
+          await _fetchRoute(force: true);
+        }
+        return;
+      }
+
+      // Prevent idle GPS jitter from rotating marker while vehicle is standing.
+      if (MapMotionProfile.shouldFreezeTurn(
+        speedMs: speed,
+        movedMeters: moved,
+        accuracyM: acc,
+      )) {
+        routeUi.value = routeUi.value.copyWith(
+          driverLocation: currentRaw,
+          bearing: routeUi.value.bearing,
+        );
+        _lastPos = currentRaw;
         return;
       }
 
       double targetBearing = routeUi.value.bearing;
 
-      if (speed >= _HEADING_TRUST_MS && heading >= 0) {
+      final shouldHoldBearing =
+          speed < _MIN_SPEED_MS || moved < _STATIONARY_DRIFT_M;
+
+      if (shouldHoldBearing) {
+        targetBearing = routeUi.value.bearing;
+      } else if (speed >= _HEADING_TRUST_MS && heading >= 0) {
         targetBearing = heading;
       } else {
-        targetBearing = _bearingBetween(_lastPos!, current);
+        targetBearing = _bearingBetween(
+          routeUi.value.driverLocation,
+          currentRaw,
+        );
       }
 
-      final diff = _angleDeltaDeg(routeUi.value.bearing, targetBearing);
+      final diff = MapMotionProfile.angleDelta(
+        routeUi.value.bearing,
+        targetBearing,
+      );
       if (speed < _MIN_SPEED_MS && diff < _MIN_TURN_DEG) {
         targetBearing = routeUi.value.bearing;
       }
 
-      await _animateTo(current, targetBearing);
-      _lastPos = current;
+      targetBearing = MapMotionProfile.smoothBearing(
+        current: routeUi.value.bearing,
+        target: targetBearing,
+        speedMs: speed,
+      );
 
-      _trimPolyline(current);
+      await _animateTo(currentRaw, targetBearing);
+      _lastPos = currentRaw;
 
-      if (_isOffRoute(current)) {
+      _trimPolyline(snappedForRoute);
+
+      final offRoute = _isOffRoute(snappedForRoute);
+      isOffRouteAlert.value = offRoute;
+      if (offRoute) {
         await _fetchRoute(force: true);
       } else {
         await _fetchRoute(force: false);
@@ -459,21 +717,92 @@ class PickingCustomerSharedController extends GetxController {
     });
   }
 
+  void _updateSmartAutoZoom(double speedMs) {
+    final kmh = speedMs * 3.6;
+    double targetZoom;
+    if (kmh >= 55) {
+      targetZoom = 13.8;
+    } else if (kmh >= 30) {
+      targetZoom = 14.2;
+    } else if (kmh >= 15) {
+      targetZoom = 14.7;
+    } else {
+      targetZoom = 15.2;
+    }
+    followZoom.value = (followZoom.value * 0.75) + (targetZoom * 0.25);
+  }
+
+  Future<void> sendQuickMessage({
+    required String bookingId,
+    required String text,
+    int? delayMinutes,
+  }) async {
+    final driverId = _driverId ?? await SharedPrefHelper.getDriverId();
+    final payload = <String, dynamic>{
+      'bookingId': bookingId,
+      'parentBookingId': this.bookingId,
+      'driverId': driverId,
+      'delayMinutes': (delayMinutes ?? 0) < 0 ? 0 : (delayMinutes ?? 0),
+      'message': text,
+    };
+
+    if (isNetworkOffline.value || !socketService.connected) {
+      _enqueueSocketEmit('driver-message', payload);
+      return;
+    }
+
+    socketService.emitWithAck('driver-message', payload, (ack) {
+      final ok = (ack is Map && ack['success'] == true);
+      if (!ok) {
+        _enqueueSocketEmit('driver-message', payload);
+      }
+    });
+  }
+
+  Future<void> refreshRouteNow() async {
+    await _fetchRoute(force: true);
+  }
+
+  void _enqueueSocketEmit(String event, Map<String, dynamic> payload) {
+    _socketRetryQueue.add(_QueuedSocketEmit(event: event, payload: payload));
+    pendingQueueCount.value = _socketRetryQueue.length;
+  }
+
+  void _flushSocketRetryQueue() {
+    if (_socketRetryQueue.isEmpty || !socketService.connected) return;
+    final queued = List<_QueuedSocketEmit>.from(_socketRetryQueue);
+    _socketRetryQueue.clear();
+    pendingQueueCount.value = 0;
+    for (final q in queued) {
+      socketService.emitWithAck(q.event, q.payload, (ack) {
+        final ok = (ack is Map && ack['success'] == true);
+        if (!ok) {
+          _enqueueSocketEmit(q.event, q.payload);
+        }
+      });
+    }
+  }
+
   Future<void> _animateTo(LatLng to, double bearing) async {
-    if (_animating) return;
+    if (_animating) {
+      _queuedTarget = to;
+      _queuedBearing = bearing;
+      return;
+    }
     _animating = true;
 
     final from = routeUi.value.driverLocation;
     final startBearing = routeUi.value.bearing;
-    final endBearing = _shortestAngle(startBearing, bearing);
+    final endBearing = MapMotionProfile.shortestAngle(startBearing, bearing);
 
-    const steps = 18; // ✅ faster + smoother
-    const total = Duration(milliseconds: 520);
+    const steps = 20;
+    const total = Duration(milliseconds: 560);
     final stepMs = total.inMilliseconds ~/ steps;
 
     for (int i = 1; i <= steps; i++) {
       await Future.delayed(Duration(milliseconds: stepMs));
-      final t = i / steps;
+      final linearT = i / steps;
+      final t = Curves.easeInOut.transform(linearT);
 
       final lat = _lerp(from.latitude, to.latitude, t);
       final lng = _lerp(from.longitude, to.longitude, t);
@@ -481,11 +810,18 @@ class PickingCustomerSharedController extends GetxController {
 
       routeUi.value = routeUi.value.copyWith(
         driverLocation: LatLng(lat, lng),
-        bearing: _normalizeAngle(b),
+        bearing: MapMotionProfile.normalizeAngle(b),
       );
     }
 
     _animating = false;
+    if (_queuedTarget != null && _queuedBearing != null) {
+      final nextTarget = _queuedTarget!;
+      final nextBearing = _queuedBearing!;
+      _queuedTarget = null;
+      _queuedBearing = null;
+      await _animateTo(nextTarget, nextBearing);
+    }
   }
 
   double _lerp(double a, double b, double t) => a + (b - a) * t;
@@ -503,11 +839,30 @@ class PickingCustomerSharedController extends GetxController {
 
     final dLon = lon2 - lon1;
     final y = math.sin(dLon) * math.cos(lat2);
-    final x = math.cos(lat1) * math.sin(lat2) -
+    final x =
+        math.cos(lat1) * math.sin(lat2) -
         math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
 
     final bearing = math.atan2(y, x) * 180 / math.pi;
     return _normalizeAngle(bearing);
+  }
+
+  double _smoothBearing({
+    required double current,
+    required double target,
+    required double speedMs,
+  }) {
+    final delta = ((target - current + 540) % 360) - 180;
+
+    // Low speed: softer rotation. High speed: slightly faster response.
+    final gain =
+        speedMs >= 8
+            ? 0.65
+            : speedMs >= 4
+            ? 0.55
+            : 0.42;
+
+    return _normalizeAngle(current + (delta * gain));
   }
 
   double _angleDeltaDeg(double a, double b) {
@@ -527,6 +882,46 @@ class PickingCustomerSharedController extends GetxController {
     a %= 360;
     if (a < 0) a += 360;
     return a;
+  }
+
+  double _degToRad(double d) => d * (math.pi / 180.0);
+
+  double _haversineMeters(LatLng a, LatLng b) {
+    const r = 6371000.0;
+    final dLat = _degToRad(b.latitude - a.latitude);
+    final dLon = _degToRad(b.longitude - a.longitude);
+    final lat1 = _degToRad(a.latitude);
+    final lat2 = _degToRad(b.latitude);
+
+    final h =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1) *
+            math.cos(lat2) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+
+    return 2 * r * math.asin(math.sqrt(h));
+  }
+
+  List<LatLng> _simplifyPolyline(
+    List<LatLng> points, {
+    required double minStepMeters,
+    required int maxPoints,
+  }) {
+    if (points.length <= 2) return points;
+    final simplified = <LatLng>[points.first];
+
+    LatLng last = points.first;
+    for (int i = 1; i < points.length - 1; i++) {
+      final p = points[i];
+      if (_haversineMeters(last, p) >= minStepMeters) {
+        simplified.add(p);
+        last = p;
+        if (simplified.length >= maxPoints) break;
+      }
+    }
+    simplified.add(points.last);
+    return simplified;
   }
 }
 /*import 'dart:async';
@@ -620,6 +1015,7 @@ class PickingCustomerSharedController extends GetxController {
   // tracking
   StreamSubscription<Position>? _posSub;
   LatLng? _lastPos;
+  bool _hasLiveGpsFix = false;
   bool _animating = false;
 
   // routing
@@ -662,6 +1058,7 @@ class PickingCustomerSharedController extends GetxController {
     try {
       socketService.socket.off('joined-booking');
       socketService.socket.off('driver-location');
+      socketService.socket.off('location-updated');
       socketService.socket.off('driver-arrived');
       socketService.socket.off('driver-cancelled');
       socketService.socket.off('customer-cancelled');
@@ -700,6 +1097,7 @@ class PickingCustomerSharedController extends GetxController {
 
     socketService.on('joined-booking', (data) async {
       if (data == null) return;
+      _syncDriverLocationFromSocket(data);
 
       CommonLogger.log.i("✅ [SHARED] joined-booking received: $data");
 
@@ -718,8 +1116,9 @@ class PickingCustomerSharedController extends GetxController {
     // But ETA UI will now use our route ETA (etaMeters/etaMinutes)
     socketService.on('driver-location', (data) {
       if (data == null) return;
+      _syncDriverLocationFromSocket(data);
 
-      final map = Map<String, dynamic>.from(data as Map);
+      final map = Map<String, dynamic>.from(data);
       final String eventBookingId = (map['bookingId'] ?? '').toString();
 
       final activeId = sharedRideController.activeTarget.value?.bookingId;
@@ -739,6 +1138,10 @@ class PickingCustomerSharedController extends GetxController {
       driverStatusController.pickupDistanceInMeters.value = etaMeters.value;
       driverStatusController.pickupDurationInMin.value = etaMinutes.value;
     });
+    socketService.on('location-updated', (data) {
+      if (data == null) return;
+      _syncDriverLocationFromSocket(data);
+    });
 
     socketService.socket.onAny((event, data) {
       CommonLogger.log.i('📦 [shared picking socket] $event: $data');
@@ -746,7 +1149,10 @@ class PickingCustomerSharedController extends GetxController {
 
     if (!socketService.connected) {
       socketService.connect();
-      socketService.onConnect(() => CommonLogger.log.i("✅ Socket connected"));
+      socketService.onConnect(() {
+        CommonLogger.log.i("✅ Socket connected");
+        _flushSocketRetryQueue();
+      });
     }
   }
 
@@ -787,6 +1193,47 @@ class PickingCustomerSharedController extends GetxController {
     if (v is int) return v.toDouble();
     if (v is num) return v.toDouble();
     return double.tryParse(v.toString()) ?? 0.0;
+  }
+  LatLng? _extractDriverLocation(dynamic data) {
+    if (data is! Map) return null;
+    final map = Map<String, dynamic>.from(data);
+
+    final nested = map['driverLocation'] ?? map['updatePayload'];
+    if (nested is Map) {
+      final nestedMap = Map<String, dynamic>.from(nested);
+      final lat = _safeToDouble(nestedMap['latitude']);
+      final lng = _safeToDouble(nestedMap['longitude']);
+      if (lat != 0 && lng != 0) {
+        return LatLng(lat, lng);
+      }
+    }
+
+    final lat = _safeToDouble(map['latitude']);
+    final lng = _safeToDouble(map['longitude']);
+    if (lat != 0 && lng != 0) {
+      return LatLng(lat, lng);
+    }
+    return null;
+  }
+
+  void _syncDriverLocationFromSocket(dynamic data) {
+    final loc = _extractDriverLocation(data);
+    if (loc == null) return;
+
+    // If live GPS is healthy, avoid socket jitter overriding local marker.
+    if (_hasLiveGpsFix && _lastPos != null) {
+      final driftMeters = Geolocator.distanceBetween(
+        _lastPos!.latitude,
+        _lastPos!.longitude,
+        loc.latitude,
+        loc.longitude,
+      );
+      if (driftMeters < 120) return;
+    }
+
+    _lastPos = loc;
+    sharedRideController.updateDriverLocation(loc);
+    routeUi.value = routeUi.value.copyWith(driverLocation: loc);
   }
 
   Future<void> _fetchRoute({bool force = false}) async {
@@ -840,8 +1287,19 @@ class PickingCustomerSharedController extends GetxController {
   void _trimPolyline(LatLng current) {
     if (_poly.isEmpty) return;
 
-    int idx = _closestPointIndex(current, _poly);
+    int idx = _closestPointIndex(
+      current,
+      _poly,
+      limit: _POLYLINE_TRIM_LOOKAHEAD_POINTS,
+    );
     if (idx <= 0) return;
+    final bestDistance = Geolocator.distanceBetween(
+      current.latitude,
+      current.longitude,
+      _poly[idx].latitude,
+      _poly[idx].longitude,
+    );
+    if (bestDistance > _POLYLINE_TRIM_TOLERANCE_M) return;
 
     final keepFrom = (idx - 1).clamp(0, _poly.length - 1);
     _poly = _poly.sublist(keepFrom);
@@ -849,10 +1307,11 @@ class PickingCustomerSharedController extends GetxController {
     routeUi.value = routeUi.value.copyWith(polyline: _poly);
   }
 
-  int _closestPointIndex(LatLng pos, List<LatLng> pts) {
+  int _closestPointIndex(LatLng pos, List<LatLng> pts, {int? limit}) {
     double best = double.infinity;
     int idx = 0;
-    for (int i = 0; i < pts.length; i++) {
+    final searchLimit = limit == null ? pts.length : math.min(pts.length, limit);
+    for (int i = 0; i < searchLimit; i++) {
       final d = Geolocator.distanceBetween(
         pos.latitude,
         pos.longitude,
@@ -870,7 +1329,9 @@ class PickingCustomerSharedController extends GetxController {
   bool _isOffRoute(LatLng current) {
     if (_poly.isEmpty) return true;
 
-    for (final p in _poly) {
+    final searchLimit = math.min(_poly.length, _OFF_ROUTE_LOOKAHEAD_POINTS);
+    for (int i = 0; i < searchLimit; i++) {
+      final p = _poly[i];
       final d = Geolocator.distanceBetween(
         current.latitude,
         current.longitude,
@@ -880,6 +1341,20 @@ class PickingCustomerSharedController extends GetxController {
       if (d < _OFF_ROUTE_TOLERANCE_M) return false;
     }
     return true;
+  }
+
+  LatLng _snapToRouteIfNear(LatLng point) {
+    if (_poly.length < 2) return point;
+    final idx = _closestPointIndex(point, _poly);
+    final nearest = _poly[idx];
+    final d = Geolocator.distanceBetween(
+      point.latitude,
+      point.longitude,
+      nearest.latitude,
+      nearest.longitude,
+    );
+    if (d <= 18.0) return nearest;
+    return point;
   }
 
   // ---------------- TRACKING ----------------
@@ -907,6 +1382,7 @@ class PickingCustomerSharedController extends GetxController {
     ).listen((pos) async {
       final acc = (pos.accuracy.isFinite) ? pos.accuracy : 9999.0;
       if (acc > _MAX_ACCURACY_M) return;
+      _hasLiveGpsFix = true;
 
       final current = LatLng(pos.latitude, pos.longitude);
       sharedRideController.updateDriverLocation(current);
@@ -941,7 +1417,7 @@ class PickingCustomerSharedController extends GetxController {
         targetBearing = _bearingBetween(_lastPos!, current);
       }
 
-      final diff = _angleDeltaDeg(routeUi.value.bearing, targetBearing);
+      final diff = MapMotionProfile.angleDelta(routeUi.value.bearing, targetBearing);
       if (speed < _MIN_SPEED_MS && diff < _MIN_TURN_DEG) {
         targetBearing = routeUi.value.bearing;
       }
@@ -965,7 +1441,7 @@ class PickingCustomerSharedController extends GetxController {
 
     final from = routeUi.value.driverLocation;
     final startBearing = routeUi.value.bearing;
-    final endBearing = _shortestAngle(startBearing, bearing);
+    final endBearing = MapMotionProfile.shortestAngle(startBearing, bearing);
 
     const steps = 28;
     const total = Duration(milliseconds: 750);
@@ -981,7 +1457,7 @@ class PickingCustomerSharedController extends GetxController {
 
       routeUi.value = routeUi.value.copyWith(
         driverLocation: LatLng(lat, lng),
-        bearing: _normalizeAngle(b),
+        bearing: MapMotionProfile.normalizeAngle(b),
       );
     }
 
@@ -1029,9 +1505,6 @@ class PickingCustomerSharedController extends GetxController {
     return a;
   }
 }*/
-
-
-
 
 // import 'dart:async';
 // import 'dart:math' as math;

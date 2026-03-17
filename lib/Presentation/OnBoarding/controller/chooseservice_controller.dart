@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../../Core/Constants/log.dart';
@@ -6,7 +5,7 @@ import '../../../Core/Utility/snackbar.dart';
 import '../../../api/dataSource/apiDataSource.dart';
 import '../../Authentication/screens/GetStarted_Screens.dart';
 import '../../DriverScreen/screens/driver_main_screen.dart';
-import '../models/getuserdetails_models.dart';
+import 'package:hopper/Presentation/OnBoarding/models/getuserdetails_models.dart';
 import '../screens/ConsentForms.dart';
 import '../screens/basicInfo.dart';
 import '../screens/carOwnerShip.dart';
@@ -208,3 +207,4 @@ class ChooseServiceController extends GetxController {
 
   void clearState() {}
 }
+

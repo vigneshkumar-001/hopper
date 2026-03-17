@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:hopper/utils/map/app_map_style.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 class SharedMap extends StatefulWidget {
   final LatLng initialPosition;
@@ -12,9 +13,14 @@ class SharedMap extends StatefulWidget {
   final Set<Polyline> polylines;
   final bool myLocationEnabled;
   final bool fitToBounds;
+  final bool trafficEnabled;
+  final bool compassEnabled;
+  final ValueChanged<GoogleMapController>? onMapCreated;
+  final VoidCallback? onCameraMoveStarted;
 
   /// ✅ Uber/Ola follow driver camera
   final bool followDriver;
+  final bool followBearingEnabled;
   final double followZoom;
   final double followTilt;
 
@@ -26,9 +32,14 @@ class SharedMap extends StatefulWidget {
     this.polylines = const <Polyline>{},
     this.myLocationEnabled = true,
     this.fitToBounds = true,
+    this.trafficEnabled = true,
+    this.compassEnabled = true,
+    this.onMapCreated,
+    this.onCameraMoveStarted,
     this.followDriver = false,
-    this.followZoom = 16.5,
-    this.followTilt = 45,
+    this.followBearingEnabled = true,
+    this.followZoom = 15.2,
+    this.followTilt = 0,
   });
 
   @override
@@ -47,13 +58,17 @@ class SharedMapState extends State<SharedMap> {
 
   // smooth follow debounce
   Timer? _followDebounce;
+  Timer? _programmaticCameraTimer;
   LatLng? _lastFollowTarget;
   double _lastFollowBearing = 0;
+  DateTime _followPausedUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _isProgrammaticCameraMove = false;
 
   @override
   void initState() {
     super.initState();
     _loadMapStyle();
+    _setKeepAwake(true);
 
     // update pulse every 200ms only (smooth enough, low cost)
     _pulseTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
@@ -67,25 +82,40 @@ class SharedMapState extends State<SharedMap> {
 
   Future<void> _loadMapStyle() async {
     try {
-      final style = await rootBundle.loadString('assets/map_style/map_style1.json');
+      final style = await AppMapStyle.loadUberLight();
       _mapStyle = style;
       if (_mapController != null) {
-        _mapController!.setMapStyle(_mapStyle);
+        await _mapController!.setMapStyle(style);
       }
-    } catch (_) {
-      // ignore
-    }
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _followDebounce?.cancel();
+    _programmaticCameraTimer?.cancel();
     _pulseTimer?.cancel();
     _mapController?.dispose();
+    _setKeepAwake(false);
     super.dispose();
   }
 
+  Future<void> _setKeepAwake(bool enabled) async {
+    try {
+      await WakelockPlus.toggle(enable: enabled);
+    } catch (_) {}
+  }
+
+  void _markProgrammaticCameraMove() {
+    _isProgrammaticCameraMove = true;
+    _programmaticCameraTimer?.cancel();
+    _programmaticCameraTimer = Timer(const Duration(milliseconds: 350), () {
+      _isProgrammaticCameraMove = false;
+    });
+  }
+
   void _onMapCreated(GoogleMapController controller) {
+    widget.onMapCreated?.call(controller);
     _mapController = controller;
 
     if (_mapStyle != null) {
@@ -100,14 +130,19 @@ class SharedMapState extends State<SharedMap> {
     } else {
       _mapController!.moveCamera(
         CameraUpdate.newCameraPosition(
-          CameraPosition(target: widget.initialPosition, zoom: 15),
+          CameraPosition(target: widget.initialPosition, zoom: 14.6),
         ),
       );
     }
   }
-  Future<void> fitPolylineBounds(List<LatLng> pts, {double padding = 80}) async {
+
+  Future<void> fitPolylineBounds(
+    List<LatLng> pts, {
+    double padding = 80,
+  }) async {
     if (_mapController == null) return;
     if (pts.length < 2) return;
+    pauseAutoFollow(const Duration(seconds: 2));
 
     double minLat = pts.first.latitude;
     double maxLat = pts.first.latitude;
@@ -121,14 +156,19 @@ class SharedMapState extends State<SharedMap> {
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
 
-    final bounds = LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
-    );
+    final bounds = _safeBounds(minLat, minLng, maxLat, maxLng);
 
-    await _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, padding),
-    );
+    try {
+      _markProgrammaticCameraMove();
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, padding),
+      );
+      final z = await _mapController!.getZoomLevel();
+      if (z > 16.2) {
+        _markProgrammaticCameraMove();
+        await _mapController!.animateCamera(CameraUpdate.zoomTo(16.2));
+      }
+    } catch (_) {}
   }
 
   // ------------------ circles ------------------
@@ -163,16 +203,19 @@ class SharedMapState extends State<SharedMap> {
   // ------------------ PUBLIC API ------------------
   Future<void> focusPickup() async {
     if (_mapController == null || widget.pickupPosition == null) return;
+    pauseAutoFollow(const Duration(seconds: 2));
 
+    _markProgrammaticCameraMove();
     await _mapController!.animateCamera(
       CameraUpdate.newCameraPosition(
-        CameraPosition(target: widget.pickupPosition!, zoom: 18),
+        CameraPosition(target: widget.pickupPosition!, zoom: 15.8),
       ),
     );
   }
 
   Future<void> fitRouteBounds() async {
     if (_mapController == null || widget.markers.isEmpty) return;
+    pauseAutoFollow(const Duration(seconds: 2));
 
     final list = widget.markers.toList();
 
@@ -198,49 +241,54 @@ class SharedMapState extends State<SharedMap> {
 
     double zoom;
     if (spread < 0.001) {
-      zoom = 18;
+      zoom = 16.3;
     } else if (spread < 0.01) {
-      zoom = 16;
+      zoom = 15.4;
     } else if (spread < 0.05) {
-      zoom = 14;
+      zoom = 14.2;
     } else if (spread < 0.1) {
       zoom = 12;
     } else {
       zoom = 10;
     }
 
+    _markProgrammaticCameraMove();
     await _mapController!.animateCamera(
-      CameraUpdate.newCameraPosition(CameraPosition(target: center, zoom: zoom)),
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: center, zoom: zoom),
+      ),
     );
   }
 
   Future<void> focusOnCustomerRoute(LatLng pickup, LatLng drop) async {
     if (_mapController == null) return;
+    pauseAutoFollow(const Duration(seconds: 2));
 
     final minLat = math.min(pickup.latitude, drop.latitude);
     final maxLat = math.max(pickup.latitude, drop.latitude);
     final minLng = math.min(pickup.longitude, drop.longitude);
     final maxLng = math.max(pickup.longitude, drop.longitude);
 
-    final bounds = LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
-    );
+    final bounds = _safeBounds(minLat, minLng, maxLat, maxLng);
 
     try {
-      await _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
+      _markProgrammaticCameraMove();
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 95),
+      );
     } catch (_) {
       await Future.delayed(const Duration(milliseconds: 250));
-      await _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
+      _markProgrammaticCameraMove();
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 95),
+      );
     }
   }
 
   /// ✅ Uber follow camera (call this from screen if you want)
-  void followDriverCamera({
-    required LatLng target,
-    required double bearing,
-  }) {
+  void followDriverCamera({required LatLng target, required double bearing}) {
     if (_mapController == null) return;
+    if (DateTime.now().isBefore(_followPausedUntil)) return;
 
     // avoid micro-updates
     if (_lastFollowTarget != null) {
@@ -256,12 +304,13 @@ class SharedMapState extends State<SharedMap> {
       if (!mounted || _mapController == null) return;
 
       try {
-        await _mapController!.animateCamera(
+        _markProgrammaticCameraMove();
+        await _mapController!.moveCamera(
           CameraUpdate.newCameraPosition(
             CameraPosition(
               target: target,
               zoom: widget.followZoom,
-              bearing: bearing,
+              bearing: widget.followBearingEnabled ? bearing : 0,
               tilt: widget.followTilt,
             ),
           ),
@@ -270,11 +319,21 @@ class SharedMapState extends State<SharedMap> {
     });
   }
 
+  void pauseAutoFollow(Duration duration) {
+    final until = DateTime.now().add(duration);
+    if (until.isAfter(_followPausedUntil)) {
+      _followPausedUntil = until;
+    }
+  }
+
   // ------------------ helpers ------------------
   static double _distanceMeters(LatLng a, LatLng b) {
     // approx ok for small distances
     final dx = (a.latitude - b.latitude) * 111320.0;
-    final dy = (a.longitude - b.longitude) * 111320.0 * math.cos(a.latitude * math.pi / 180);
+    final dy =
+        (a.longitude - b.longitude) *
+        111320.0 *
+        math.cos(a.latitude * math.pi / 180);
     return math.sqrt(dx * dx + dy * dy);
   }
 
@@ -285,12 +344,33 @@ class SharedMapState extends State<SharedMap> {
     return d.abs();
   }
 
+  static LatLngBounds _safeBounds(
+    double minLat,
+    double minLng,
+    double maxLat,
+    double maxLng,
+  ) {
+    const eps = 0.00012;
+    if ((maxLat - minLat).abs() < eps) {
+      maxLat += eps;
+      minLat -= eps;
+    }
+    if ((maxLng - minLng).abs() < eps) {
+      maxLng += eps;
+      minLng -= eps;
+    }
+    return LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // If followDriver enabled, we follow the driver marker (markerId 'driver')
     if (widget.followDriver && widget.markers.isNotEmpty) {
       final driver = widget.markers.firstWhere(
-            (m) => m.markerId.value == 'driver',
+        (m) => m.markerId.value == 'driver',
         orElse: () => widget.markers.first,
       );
       // Note: bearing comes from marker rotation
@@ -298,19 +378,30 @@ class SharedMapState extends State<SharedMap> {
     }
 
     return GoogleMap(
-      initialCameraPosition: CameraPosition(target: widget.initialPosition, zoom: 15),
+      initialCameraPosition: CameraPosition(
+        target: widget.initialPosition,
+        zoom: 14.6,
+      ),
       onMapCreated: _onMapCreated,
+      onCameraMoveStarted: () {
+        if (_isProgrammaticCameraMove) return;
+        widget.onCameraMoveStarted?.call();
+        pauseAutoFollow(const Duration(seconds: 6));
+      },
       markers: widget.markers,
       polylines: widget.polylines,
       circles: _buildPickupCircles(),
       myLocationEnabled: widget.myLocationEnabled,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
-      compassEnabled: false,
+      minMaxZoomPreference: const MinMaxZoomPreference(12.0, 18.0),
+      compassEnabled: widget.compassEnabled,
+      buildingsEnabled: false,
+      indoorViewEnabled: false,
       // ✅ Uber feel: allow tilt gestures (optional)
       tiltGesturesEnabled: true,
       mapToolbarEnabled: false,
-      trafficEnabled: false,
+      trafficEnabled: widget.trafficEnabled,
     );
   }
 }
@@ -318,8 +409,7 @@ class SharedMapState extends State<SharedMap> {
 // import 'dart:async';
 // import 'dart:math' as math; // 👈 for focusOnCustomerRoute bounds
 // import 'package:flutter/material.dart';
-// import 'package:flutter/services.dart' show rootBundle;
-// import 'package:google_maps_flutter/google_maps_flutter.dart';
+// // import 'package:google_maps_flutter/google_maps_flutter.dart';
 //
 // class SharedMap extends StatefulWidget {
 //   final LatLng initialPosition;
@@ -385,8 +475,9 @@ class SharedMapState extends State<SharedMap> {
 //     super.dispose();
 //   }
 //
-//   void _onMapCreated(GoogleMapController controller) {
+//   void _onMapCreated(GoogleMapController controller) {`r`n    widget.onMapCreated?.call(controller);
 //     _mapController = controller;
+
 //
 //     if (_mapStyle != null) {
 //       _mapController!.setMapStyle(_mapStyle);
@@ -600,10 +691,10 @@ class SharedMapState extends State<SharedMap> {
 //       myLocationEnabled: widget.myLocationEnabled,
 //       myLocationButtonEnabled: false,
 //       zoomControlsEnabled: false,
-//       compassEnabled: false,
+//       compassEnabled: widget.compassEnabled,
 //       tiltGesturesEnabled: false,
 //       mapToolbarEnabled: false,
-//       trafficEnabled: false,
+//       trafficEnabled: widget.trafficEnabled,
 //     );
 //   }
 // }

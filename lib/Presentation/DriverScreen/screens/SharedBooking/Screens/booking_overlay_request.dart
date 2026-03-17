@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
@@ -11,14 +12,12 @@ import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/booking_request_controller.dart';
+import 'package:hopper/utils/map/navigation_assist.dart';
 
 class BookingOverlayRequest extends StatefulWidget {
   /// ✅ allowNavigate = true  => normal ride accept can navigate to pickup
   /// ✅ allowNavigate = false => stay in same screen (Pickup / RideStart / Shared)
-  const BookingOverlayRequest({
-    super.key,
-    this.allowNavigate = true,
-  });
+  const BookingOverlayRequest({super.key, this.allowNavigate = true});
 
   final bool allowNavigate;
 
@@ -57,12 +56,24 @@ class _BookingOverlayRequestState extends State<BookingOverlayRequest> {
 
   LatLng? _parsePickupLatLng(Map<String, dynamic> data) {
     final pickupLoc = data['pickupLocation'];
-    if (pickupLoc is! Map) return null;
+    if (pickupLoc is Map) {
+      final lat = _safeDouble(pickupLoc['latitude']);
+      final lng = _safeDouble(pickupLoc['longitude']);
+      if (lat != 0 && lng != 0) {
+        return LatLng(lat, lng);
+      }
+    }
 
-    final lat = _safeDouble(pickupLoc['latitude']);
-    final lng = _safeDouble(pickupLoc['longitude']);
-    if (lat == 0 || lng == 0) return null;
-    return LatLng(lat, lng);
+    // Shared payload fallback: customerLocation.fromLatitude/fromLongitude.
+    final customerLoc = data['customerLocation'];
+    if (customerLoc is Map) {
+      final lat = _safeDouble(customerLoc['fromLatitude']);
+      final lng = _safeDouble(customerLoc['fromLongitude']);
+      if (lat != 0 && lng != 0) {
+        return LatLng(lat, lng);
+      }
+    }
+    return null;
   }
 
   bool _isSharedBooking(Map<String, dynamic> data) {
@@ -116,7 +127,7 @@ class _BookingOverlayRequestState extends State<BookingOverlayRequest> {
                     Container(
                       width: double.infinity,
                       height: 65,
-                      decoration:   BoxDecoration(
+                      decoration: BoxDecoration(
                         borderRadius: BorderRadius.only(
                           topLeft: Radius.circular(10),
                           topRight: Radius.circular(10),
@@ -159,8 +170,11 @@ class _BookingOverlayRequestState extends State<BookingOverlayRequest> {
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.circle,
-                                  color: Colors.green, size: 12),
+                              const Icon(
+                                Icons.circle,
+                                color: Colors.green,
+                                size: 12,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -174,8 +188,11 @@ class _BookingOverlayRequestState extends State<BookingOverlayRequest> {
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              const Icon(Icons.circle,
-                                  color: Colors.red, size: 12),
+                              const Icon(
+                                Icons.circle,
+                                color: Colors.red,
+                                size: 12,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -205,8 +222,11 @@ class _BookingOverlayRequestState extends State<BookingOverlayRequest> {
                         children: [
                           Row(
                             children: [
-                              Image.asset(AppImages.time,
-                                  height: 20, width: 20),
+                              Image.asset(
+                                AppImages.time,
+                                height: 20,
+                                width: 20,
+                              ),
                               const SizedBox(width: 10),
                               Text(
                                 _formatDuration(
@@ -226,8 +246,11 @@ class _BookingOverlayRequestState extends State<BookingOverlayRequest> {
                           ),
                           Row(
                             children: [
-                              Image.asset(AppImages.distance,
-                                  height: 20, width: 20),
+                              Image.asset(
+                                AppImages.distance,
+                                height: 20,
+                                width: 20,
+                              ),
                               const SizedBox(width: 10),
                               Text(
                                 _formatDistance(
@@ -264,6 +287,9 @@ class _BookingOverlayRequestState extends State<BookingOverlayRequest> {
                               borderRadius: 10,
                               buttonColor: AppColors.red,
                               onTap: () {
+                                HapticFeedback.selectionClick();
+                                Get.find<DriverAnalyticsController>()
+                                    .trackDecline(bookingId: bookingId);
                                 bookingController.markHandled(bookingId);
                               },
                               text: const Text('Decline'),
@@ -278,51 +304,59 @@ class _BookingOverlayRequestState extends State<BookingOverlayRequest> {
                               buttonColor: AppColors.drkGreen,
                               onTap: () async {
                                 if (_isAccepting) return;
+                                HapticFeedback.mediumImpact();
                                 setState(() => _isAccepting = true);
 
                                 try {
                                   final pickup = _parsePickupLatLng(data);
                                   if (pickup == null) {
                                     CommonLogger.log.e(
-                                        "pickupLocation missing / invalid");
+                                      "pickupLocation missing / invalid",
+                                    );
                                     return;
                                   }
 
-                                  final pos = await Geolocator.getCurrentPosition(
-                                    desiredAccuracy: LocationAccuracy.high,
+                                  final pos =
+                                      await Geolocator.getCurrentPosition(
+                                        desiredAccuracy: LocationAccuracy.high,
+                                      );
+
+                                  final driverLocation = LatLng(
+                                    pos.latitude,
+                                    pos.longitude,
                                   );
 
-                                  final driverLocation =
-                                  LatLng(pos.latitude, pos.longitude);
-
-                                  await statusController.bookingAcceptForSharedRide(
-                                    context,
-                                    bookingId: bookingId,
-                                    status: 'ACCEPT',
-                                    pickupLocationAddress: pickupAddress,
-                                    dropLocationAddress: dropAddress,
-                                    pickupLocation: pickup,
-                                    driverLocation: driverLocation,
-                                    navigateToPickup: navigateToPickup,
-                                  );
+                                  await statusController
+                                      .bookingAcceptForSharedRide(
+                                        context,
+                                        bookingId: bookingId,
+                                        status: 'ACCEPT',
+                                        pickupLocationAddress: pickupAddress,
+                                        dropLocationAddress: dropAddress,
+                                        pickupLocation: pickup,
+                                        driverLocation: driverLocation,
+                                        navigateToPickup: navigateToPickup,
+                                      );
 
                                   bookingController.markHandled(bookingId);
                                 } catch (e) {
-                                  CommonLogger.log
-                                      .e("Booking accept failed: $e");
+                                  CommonLogger.log.e(
+                                    "Booking accept failed: $e",
+                                  );
                                 } finally {
                                   if (mounted) {
                                     setState(() => _isAccepting = false);
                                   }
                                 }
                               },
-                              text: _isAccepting
-                                  ? SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: AppLoader.circularLoader(),
-                              )
-                                  : const Text('Accept'),
+                              text:
+                                  _isAccepting
+                                      ? SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: AppLoader.circularLoader(),
+                                      )
+                                      : const Text('Accept'),
                             ),
                           ),
                         ],
@@ -609,6 +643,7 @@ class BookingOverlayRequest extends StatelessWidget {
                                           ? null
                                           : () {
                                         final id = data['bookingId']?.toString();
+                                        Get.find<DriverAnalyticsController>().trackDecline(bookingId: id);
                                         if (id != null) {
                                           bookingController.markHandled(id);   // ✅ no more popup for this id
                                         } else {

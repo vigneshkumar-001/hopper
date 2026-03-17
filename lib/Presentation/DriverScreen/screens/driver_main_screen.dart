@@ -1,9 +1,8 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:percent_indicator/percent_indicator.dart';
@@ -12,12 +11,14 @@ import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/utils/map/navigation_assist.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import '../controller/driver_main_controller.dart';
 import 'SharedBooking/Controller/booking_request_controller.dart';
 import '../../Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 
 class DriverMainScreen extends StatefulWidget {
   const DriverMainScreen({super.key});
@@ -28,6 +29,7 @@ class DriverMainScreen extends StatefulWidget {
 
 class _DriverMainScreenState extends State<DriverMainScreen> {
   late final DriverMainController c;
+  late final ChooseServiceController profileController;
   @override
   void initState() {
     super.initState();
@@ -38,6 +40,13 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
     } else {
       c = Get.put(DriverMainController(), permanent: true);
     }
+
+    profileController = Get.isRegistered<ChooseServiceController>()
+        ? Get.find<ChooseServiceController>()
+        : Get.put(ChooseServiceController(), permanent: true);
+
+    // Home owns profile refresh; drawer should only read cached data.
+    profileController.getUserDetails();
   }
 
   @override
@@ -415,6 +424,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
               ),
               child: RefreshIndicator(
                 onRefresh: () async {
+                  await Get.find<ChooseServiceController>().getUserDetails();
                   await widget.statusController.weeklyChallenges();
                   if (serviceType == 'Car') {
                     await widget.statusController.todayActivity();
@@ -867,101 +877,116 @@ class _CarBookingCardUI extends StatelessWidget {
                 horizontal: 8.0,
                 vertical: 10,
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Buttons.button(
-                      borderRadius: 10,
-                      buttonColor: AppColors.red,
-                      onTap:
-                          statusController.isLoading.value
-                              ? null
-                              : () {
-                                final id = data['bookingId']?.toString();
-                                if (id != null) {
-                                  bookingController.markHandled(id);
-                                } else {
-                                  bookingController.clear();
-                                }
-                              },
-                      text: const Text('Decline'),
-                    ),
-                  ),
-                  const SizedBox(width: 20),
-
-                  Expanded(
-                    child: Buttons.button(
-                      borderRadius: 10,
-                      buttonColor: AppColors.drkGreen,
-                      onTap:
-                          statusController.isLoading.value
-                              ? null
-                              : () async {
-                                try {
-                                  final bookingId = data['bookingId'];
-                                  final pickupAddress =
-                                      data['pickupAddress'] ?? '';
-                                  final isShared =
-                                      data['sharedBooking'] == true ||
-                                      (data['sharedBooking']
-                                              ?.toString()
-                                              .toLowerCase() ==
-                                          'true');
-                                  final dropAddress = data['dropAddress'] ?? '';
-
-                                  final pickupLoc = data['pickupLocation'];
-                                  if (pickupLoc == null) return;
-
-                                  final pickup = LatLng(
-                                    (pickupLoc['latitude'] as num).toDouble(),
-                                    (pickupLoc['longitude'] as num).toDouble(),
-                                  );
-                                  if (isShared) {
-                                    CommonLogger.log.w(isShared);
-                                    await statusController
-                                        .bookingAcceptForSharedRide(
-                                          pickupLocationAddress: pickupAddress,
-                                          dropLocationAddress: dropAddress,
-                                          context,
-                                          bookingId: bookingId,
-                                          status: 'ACCEPT',
-                                          pickupLocation: pickup,
-                                          driverLocation: pickup,
-                                        );
+              child: Obx(() {
+                final isLoading = statusController.isLoading.value;
+                return Row(
+                  children: [
+                    Expanded(
+                      child: Buttons.button(
+                        borderRadius: 10,
+                        buttonColor: AppColors.red,
+                        onTap:
+                            isLoading
+                                ? null
+                                : () {
+                                  HapticFeedback.selectionClick();
+                                  final id = data['bookingId']?.toString();
+                                  if (id != null) {
+                                    Get.find<DriverAnalyticsController>()
+                                        .trackDecline(bookingId: id);
+                                    bookingController.markHandled(id);
                                   } else {
-                                    await statusController.bookingAccept(
-                                      pickupLocationAddress: pickupAddress,
-                                      dropLocationAddress: dropAddress,
-                                      context,
-                                      bookingId: bookingId,
-                                      status: 'ACCEPT',
-                                      pickupLocation: pickup,
-                                      driverLocation: pickup,
+                                    Get.find<DriverAnalyticsController>()
+                                        .trackDecline();
+                                    bookingController.clear();
+                                  }
+                                },
+                        text:
+                            isLoading
+                                ? const Text('Decline')
+                                : const Text('Decline'),
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+
+                    Expanded(
+                      child: Buttons.button(
+                        borderRadius: 10,
+                        buttonColor: AppColors.drkGreen,
+                        onTap:
+                            isLoading
+                                ? null
+                                : () async {
+                                  HapticFeedback.mediumImpact();
+                                  try {
+                                    final bookingId = data['bookingId'];
+                                    final pickupAddress =
+                                        data['pickupAddress'] ?? '';
+                                    final isShared =
+                                        data['sharedBooking'] == true ||
+                                        (data['sharedBooking']
+                                                ?.toString()
+                                                .toLowerCase() ==
+                                            'true');
+                                    final dropAddress =
+                                        data['dropAddress'] ?? '';
+
+                                    final pickupLoc = data['pickupLocation'];
+                                    if (pickupLoc == null) return;
+
+                                    final pickup = LatLng(
+                                      (pickupLoc['latitude'] as num).toDouble(),
+                                      (pickupLoc['longitude'] as num)
+                                          .toDouble(),
+                                    );
+                                    if (isShared) {
+                                      CommonLogger.log.w(isShared);
+                                      await statusController
+                                          .bookingAcceptForSharedRide(
+                                            pickupLocationAddress:
+                                                pickupAddress,
+                                            dropLocationAddress: dropAddress,
+                                            context,
+                                            bookingId: bookingId,
+                                            status: 'ACCEPT',
+                                            pickupLocation: pickup,
+                                            driverLocation: pickup,
+                                          );
+                                    } else {
+                                      await statusController.bookingAccept(
+                                        pickupLocationAddress: pickupAddress,
+                                        dropLocationAddress: dropAddress,
+                                        context,
+                                        bookingId: bookingId,
+                                        status: 'ACCEPT',
+                                        pickupLocation: pickup,
+                                        driverLocation: pickup,
+                                      );
+                                    }
+
+                                    bookingController.markHandled(
+                                      bookingId.toString(),
+                                    );
+                                  } catch (e) {
+                                    bookingController.clear();
+                                    CommonLogger.log.e(
+                                      "Booking accept failed: $e",
                                     );
                                   }
-
-                                  bookingController.markHandled(
-                                    bookingId.toString(),
-                                  );
-                                } catch (e) {
-                                  bookingController.clear();
-                                  CommonLogger.log.e(
-                                    "Booking accept failed: $e",
-                                  );
-                                }
-                              },
-                      text:
-                          statusController.isLoading.value
-                              ? SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: AppLoader.circularLoader(),
-                              )
-                              : const Text('Accept'),
+                                },
+                        text:
+                            isLoading
+                                ? SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: AppLoader.circularLoader(),
+                                )
+                                : const Text('Accept'),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                );
+              }),
             ),
           ],
         ),
@@ -2933,3 +2958,4 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 //
+

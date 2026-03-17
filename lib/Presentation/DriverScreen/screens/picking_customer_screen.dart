@@ -14,20 +14,24 @@ import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
-import 'package:hopper/utils/map/google_map.dart';
+import 'package:hopper/utils/map/shared_map.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
+import 'package:hopper/utils/map/navigation_assist.dart';
+import 'package:hopper/utils/map/driver_message_suggestions.dart';
+import 'package:hopper/utils/map/navigation_voice_service.dart';
 
 import '../controller/driver_status_controller.dart';
 import '../controller/pickup_customer_controller.dart';
 
 class PickingCustomerScreen extends StatelessWidget {
+  final GlobalKey<SharedMapState> _mapKey = GlobalKey<SharedMapState>();
   final LatLng pickupLocation;
   final String? pickupLocationAddress;
   final String? dropLocationAddress;
   final LatLng driverLocation;
   final String bookingId;
 
-  const PickingCustomerScreen({
+  PickingCustomerScreen({
     super.key,
     required this.pickupLocation,
     required this.driverLocation,
@@ -50,10 +54,9 @@ class PickingCustomerScreen extends StatelessWidget {
     );
 
     final DriverStatusController driverStatusController =
-    Get.find<DriverStatusController>();
+        Get.find<DriverStatusController>();
 
     final sliderController = ActionSliderController();
-
     return NoInternetOverlay(
       child: WillPopScope(
         onWillPop: () async => false,
@@ -77,99 +80,56 @@ class PickingCustomerScreen extends StatelessWidget {
               ),
             };
 
+            final routePoints =
+                ui.polyline.length >= 2
+                    ? ui.polyline
+                    : <LatLng>[ui.driverLocation, pickupLocation];
+            c.ensureRouteReady();
             return Stack(
               children: [
-                SizedBox(
-                  height: 650,
-                  child: CommonGoogleMap(
-                    myLocationEnabled: false,
-                    initialPosition: pickupLocation,
-                    markers: markers,
-                    polylines: {
-                      if (ui.polyline.length >= 2)
-                        Polyline(
-                          polylineId: const PolylineId("route"),
-                          color: AppColors.commonBlack,
-                          width: 5,
-                          points: ui.polyline,
-                        ),
-                    },
-                    onMapCreated: (gm) => c.onMapCreated(gm, context),
+                DecoratedBox(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0x18000000),
+                        blurRadius: 18,
+                        offset: Offset(0, 6),
+                      ),
+                    ],
                   ),
-                ),
-
-                // My location
-                Positioned(
-                  top: c.arrivedAtPickup.value ? 350 : 500,
-                  right: 10,
-                  child: FloatingActionButton(
-                    mini: true,
-                    backgroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    onPressed: c.goToCurrentLocation,
-                    child: const Icon(Icons.my_location, color: Colors.black),
-                  ),
-                ),
-
-                // Direction header
-                Positioned(
-                  top: 45,
-                  left: 10,
-                  right: 10,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Row(
+                  child: SizedBox(
+                    height: 650,
+                    child: Stack(
                       children: [
-                        Expanded(
-                          flex: 1,
-                          child: Container(
-                            height: 92,
-                            color: AppColors.directionColor,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 14,
-                                horizontal: 10,
+                        SharedMap(
+                          key: _mapKey,
+                          pickupPosition: pickupLocation,
+                          myLocationEnabled: false,
+                          initialPosition: pickupLocation,
+                          markers: markers,
+                          polylines: {
+                            if (routePoints.length >= 2)
+                              Polyline(
+                                polylineId: const PolylineId("route"),
+                                color: AppColors.commonBlack,
+                                width: 5,
+                                startCap: Cap.roundCap,
+                                endCap: Cap.roundCap,
+                                jointType: JointType.round,
+                                points: routePoints,
                               ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image.asset(
-                                    c.getManeuverIcon(ui.maneuver),
-                                    height: 30,
-                                    width: 30,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  CustomTextfield.textWithStyles600(
-                                    ui.distanceText.isEmpty ? '--' : ui.distanceText,
-                                    color: AppColors.commonWhite,
-                                    fontSize: 14,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                          },
+                          onMapCreated: (gm) => c.onMapCreated(gm, context),
                         ),
-                        Expanded(
-                          flex: 3,
+                        IgnorePointer(
                           child: Container(
-                            height: 92,
-                            color: AppColors.directionColor1,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 14,
-                                horizontal: 12,
-                              ),
-                              child: Center(
-                                child: CustomTextfield.textWithStyles600(
-                                  ui.directionText.isEmpty
-                                      ? 'Searching best route…'
-                                      : ui.directionText,
-                                  fontSize: 13,
-                                  color: AppColors.commonWhite,
-                                  maxLine: 2,
-                                ),
+                            height: 190,
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0x26000000), Color(0x00000000)],
                               ),
                             ),
                           ),
@@ -178,6 +138,222 @@ class PickingCustomerScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+
+                // Map controls
+                Positioned(
+                  top: c.arrivedAtPickup.value ? 322 : 472,
+                  right: 12,
+                  child: Column(
+                    children: [
+                      ValueListenableBuilder<bool>(
+                        valueListenable:
+                            NavigationVoiceService.instance.mutedNotifier,
+                        builder: (context, muted, _) {
+                          return _mapActionButton(
+                            icon:
+                                muted
+                                    ? Icons.volume_off_rounded
+                                    : Icons.volume_up_rounded,
+                            onTap:
+                                () =>
+                                    NavigationVoiceService.instance
+                                        .toggleMuted(),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      Obx(
+                        () => _mapActionButton(
+                          icon:
+                              c.isDriverFocused.value
+                                  ? Icons.fit_screen_rounded
+                                  : Icons.my_location_rounded,
+                          onTap: () {
+                            final ms = _mapKey.currentState;
+                            if (ms == null) return;
+                            ms.pauseAutoFollow(const Duration(seconds: 4));
+                            if (c.isDriverFocused.value) {
+                              ms.fitRouteBounds();
+                            } else {
+                              ms.focusPickup();
+                            }
+                            c.isDriverFocused.value = !c.isDriverFocused.value;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Direction header
+                Positioned(
+                  top: 42,
+                  left: 12,
+                  right: 12,
+                  child: GestureDetector(
+                    onTap: c.focusRouteOverview,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x22000000),
+                            blurRadius: 20,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: Container(
+                                height: 86,
+                                color: AppColors.directionColor,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                  horizontal: 10,
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      NavigationAssist.iconForManeuver(
+                                        ui.maneuver,
+                                      ),
+                                      size: 26,
+                                      color: Colors.white,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    CustomTextfield.textWithStyles600(
+                                      _routeDistanceText(
+                                        driverStatusController,
+                                        ui.distanceText,
+                                      ),
+                                      color: AppColors.commonWhite,
+                                      fontSize: 13,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              flex: 5,
+                              child: Container(
+                                height: 86,
+                                color: AppColors.directionColor1,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                  horizontal: 14,
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    CustomTextfield.textWithStyles600(
+                                      ui.directionText.isEmpty
+                                          ? _routeDirectionText(
+                                            driverStatusController,
+                                            ui.directionText,
+                                          )
+                                          : ui.directionText,
+                                      fontSize: 13,
+                                      color: AppColors.commonWhite,
+                                      maxLine: 2,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      children: const [
+                                        Icon(
+                                          Icons.touch_app_rounded,
+                                          size: 13,
+                                          color: Colors.white70,
+                                        ),
+                                        SizedBox(width: 6),
+                                        Text(
+                                          'Tap for route overview',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white70,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (c.isNetworkOffline.value || c.pendingQueueCount.value > 0)
+                  Positioned(
+                    top: 145,
+                    left: 12,
+                    right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1F2937),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        c.isNetworkOffline.value
+                            ? 'No internet. Route cache active, syncing when online.'
+                            : 'Sync pending: ${c.pendingQueueCount.value} message(s)',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (c.isOffRouteAlert.value)
+                  Positioned(
+                    top: 198,
+                    left: 12,
+                    right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.amber.shade700),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, size: 18),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Route deviation detected',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: c.fitBoundsToDriverAndPickup,
+                            child: const Text('Recenter'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
 
                 // Bottom sheet + timer badge
                 Stack(
@@ -208,22 +384,106 @@ class PickingCustomerScreen extends StatelessWidget {
 
                               // ✅ TOP ROW: Call (left) + Duration (center) + Chat (right)
                               // ✅ SUBTITLE: Customer name (below duration)
-                              if (c.arrivedAtPickup.value && !c.driverReached.value) ...[
+                              if (c.arrivedAtPickup.value) ...[
                                 _topActionRow(
                                   c: c,
                                   context: context,
                                   bookingId: bookingId,
-                                  driverStatusController: driverStatusController,
+                                  driverStatusController:
+                                      driverStatusController,
                                 ),
                                 const SizedBox(height: 10),
 
-                                // ✅ SECOND ROW: Customer photo + name (tap name -> enable Arrived button for testing)
+                                // Second row: customer photo + name (manual tap only in test mode)
                                 _customerRow(
                                   c,
-                                  onTapName: () {
-                                    // TESTING: Tap customer name -> show Arrived button
-                                    c.driverReached.value = true;
-                                  },
+                                  onTapName:
+                                      PickingCustomerController
+                                              .enableArrivedTesting
+                                          ? c.debugSetDriverReachedTrue
+                                          : null,
+                                ),
+                                const SizedBox(height: 10),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  child: Obx(() {
+                                    final eta =
+                                        driverStatusController
+                                            .pickupDurationInMin
+                                            .value
+                                            .round();
+                                    final chips =
+                                        DriverMessageSuggestions.pickup(
+                                          reachedPickup: c.driverReached.value,
+                                          etaMinutes: eta,
+                                        );
+                                    return SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Row(
+                                        children:
+                                            chips
+                                                .map(
+                                                  (msg) => Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          right: 8,
+                                                        ),
+                                                    child: InkWell(
+                                                      onTap:
+                                                          () => c
+                                                              .sendQuickMessage(
+                                                                msg,
+                                                                delayMinutes:
+                                                                    eta,
+                                                              ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            18,
+                                                          ),
+                                                      child: Container(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 12,
+                                                              vertical: 8,
+                                                            ),
+                                                        decoration: BoxDecoration(
+                                                          color: AppColors
+                                                              .commonBlack
+                                                              .withOpacity(
+                                                                0.04,
+                                                              ),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                18,
+                                                              ),
+                                                          border: Border.all(
+                                                            color: AppColors
+                                                                .commonBlack
+                                                                .withOpacity(
+                                                                  0.08,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                        child: Text(
+                                                          msg,
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 12,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                )
+                                                .toList(),
+                                      ),
+                                    );
+                                  }),
                                 ),
                                 const SizedBox(height: 10),
                               ],
@@ -231,29 +491,70 @@ class PickingCustomerScreen extends StatelessWidget {
                               // ===== BEFORE ARRIVED (picking up) =====
                               if (c.arrivedAtPickup.value) ...[
                                 if (c.driverReached.value) ...[
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                                    child: Buttons.button(
-                                      buttonColor: AppColors.resendBlue,
-                                      borderRadius: 8,
-                                      onTap: () => c.onArrivedAtPickupPressed(context),
-                                      text: const Text('Arrived at Pickup Point'),
+                                  if (c.driverReached.value) ...[
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 20,
+                                      ),
+                                      child: Obx(
+                                        () => Buttons.button(
+                                          buttonColor: AppColors.resendBlue,
+                                          borderRadius: 8,
+                                          onTap:
+                                              c.isArrivedSubmitting.value
+                                                  ? null
+                                                  : () => c
+                                                      .onArrivedAtPickupPressed(
+                                                        context,
+                                                      ),
+                                          text: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (c
+                                                  .isArrivedSubmitting
+                                                  .value) ...[
+                                                const SizedBox(
+                                                  height: 16,
+                                                  width: 16,
+                                                  child: CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation<
+                                                          Color
+                                                        >(Colors.white),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                              ],
+                                              const Text(
+                                                'Arrived at Pickup Point',
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 10),
+                                    const SizedBox(height: 10),
+                                  ],
                                 ],
 
                                 const SizedBox(height: 12),
 
                                 _rideDetailsBlock(
-                                  pickupAddress: pickupLocationAddress ?? c.pickupAddressText.value,
-                                  dropAddress: dropLocationAddress ?? c.dropAddressText.value,
+                                  pickupAddress:
+                                      pickupLocationAddress ??
+                                      c.pickupAddressText.value,
+                                  dropAddress:
+                                      dropLocationAddress ??
+                                      c.dropAddressText.value,
                                 ),
 
                                 const SizedBox(height: 10),
 
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                  ),
                                   child: Column(
                                     children: [
                                       Buttons.button(
@@ -261,11 +562,14 @@ class PickingCustomerScreen extends StatelessWidget {
                                         buttonColor: AppColors.commonWhite,
                                         borderRadius: 8,
                                         textColor: AppColors.commonBlack,
-                                        onTap: () => Buttons.showDialogBox(
-                                          context: context,
-                                          onConfirmStop: () async {},
+                                        onTap:
+                                            () => Buttons.showDialogBox(
+                                              context: context,
+                                              onConfirmStop: () async {},
+                                            ),
+                                        text: const Text(
+                                          'Stop New Ride Request',
                                         ),
-                                        text: const Text('Stop New Ride Request'),
                                       ),
                                       const SizedBox(height: 10),
                                       Buttons.button(
@@ -275,11 +579,12 @@ class PickingCustomerScreen extends StatelessWidget {
                                           Buttons.showCancelRideBottomSheet(
                                             context,
                                             onConfirmCancel: (reason) async {
-                                              await driverStatusController.cancelBooking(
-                                                bookingId: bookingId,
-                                                context,
-                                                reason: reason,
-                                              );
+                                              await driverStatusController
+                                                  .cancelBooking(
+                                                    bookingId: bookingId,
+                                                    context,
+                                                    reason: reason,
+                                                  );
                                             },
                                           );
                                         },
@@ -289,12 +594,13 @@ class PickingCustomerScreen extends StatelessWidget {
                                   ),
                                 ),
                               ]
-
                               // ===== AFTER ARRIVED (wait rider + swipe) =====
                               else ...[
                                 if (c.showRedTimer.value)
                                   Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                    ),
                                     child: Container(
                                       color: AppColors.red.withOpacity(0.1),
                                       child: ListTile(
@@ -302,16 +608,25 @@ class PickingCustomerScreen extends StatelessWidget {
                                           Buttons.showCancelRideBottomSheet(
                                             context,
                                             onConfirmCancel: (reason) async {
-                                              await driverStatusController.cancelBooking(
-                                                bookingId: bookingId,
-                                                context,
-                                                reason: reason,
-                                              );
+                                              await driverStatusController
+                                                  .cancelBooking(
+                                                    bookingId: bookingId,
+                                                    context,
+                                                    reason: reason,
+                                                  );
                                             },
                                           );
                                         },
-                                        trailing: Image.asset(AppImages.redArrow, height: 20, width: 20),
-                                        leading: Image.asset(AppImages.close, height: 20, width: 20),
+                                        trailing: Image.asset(
+                                          AppImages.redArrow,
+                                          height: 20,
+                                          width: 20,
+                                        ),
+                                        leading: Image.asset(
+                                          AppImages.close,
+                                          height: 20,
+                                          width: 20,
+                                        ),
                                         title: CustomTextfield.textWithStyles600(
                                           'Tap to cancel the ride, If rider don’t show up',
                                           fontSize: 14,
@@ -327,7 +642,10 @@ class PickingCustomerScreen extends StatelessWidget {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => ChatScreen(bookingId: bookingId),
+                                          builder:
+                                              (_) => ChatScreen(
+                                                bookingId: bookingId,
+                                              ),
                                         ),
                                       );
                                     },
@@ -338,7 +656,8 @@ class PickingCustomerScreen extends StatelessWidget {
                                       final ph = c.customerPhone.value;
                                       if (ph.isEmpty) return;
                                       final url = Uri.parse('tel:$ph');
-                                      if (await canLaunchUrl(url)) await launchUrl(url);
+                                      if (await canLaunchUrl(url))
+                                        await launchUrl(url);
                                     },
                                     child: _roundIconBox(AppImages.call),
                                   ),
@@ -350,7 +669,7 @@ class PickingCustomerScreen extends StatelessWidget {
                                   ),
                                   subtitle: Center(
                                     child: Obx(
-                                          () => CustomTextfield.textWithStylesSmall(
+                                      () => CustomTextfield.textWithStylesSmall(
                                         c.customerName.value.trim().isEmpty
                                             ? 'Rider'
                                             : c.customerName.value,
@@ -362,7 +681,10 @@ class PickingCustomerScreen extends StatelessWidget {
                                 ),
 
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 10,
+                                  ),
                                   child: ActionSlider.standard(
                                     controller: sliderController,
                                     height: 50,
@@ -404,14 +726,20 @@ class PickingCustomerScreen extends StatelessWidget {
                         right: 0,
                         child: Center(
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 7),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 22,
+                              vertical: 7,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(30),
                               border: Border.all(
-                                color: c.showRedTimer.value
-                                    ? AppColors.timerBorderColor
-                                    : AppColors.commonBlack.withOpacity(0.2),
+                                color:
+                                    c.showRedTimer.value
+                                        ? AppColors.timerBorderColor
+                                        : AppColors.commonBlack.withOpacity(
+                                          0.2,
+                                        ),
                                 width: 6,
                               ),
                             ),
@@ -421,9 +749,10 @@ class PickingCustomerScreen extends StatelessWidget {
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 1.5,
-                                color: c.showRedTimer.value
-                                    ? AppColors.timerBorderColor
-                                    : AppColors.commonBlack,
+                                color:
+                                    c.showRedTimer.value
+                                        ? AppColors.timerBorderColor
+                                        : AppColors.commonBlack,
                               ),
                             ),
                           ),
@@ -440,6 +769,27 @@ class PickingCustomerScreen extends StatelessWidget {
   }
 
   // ---------------- UI BLOCKS ----------------
+
+  static String _routeDistanceText(
+    DriverStatusController driverStatusController,
+    String distanceText,
+  ) {
+    if (distanceText.trim().isNotEmpty) return distanceText;
+    final meters = driverStatusController.pickupDistanceInMeters.value;
+    if (meters <= 0) return '--';
+    if (meters >= 1000) return '${(meters / 1000).toStringAsFixed(1)} km';
+    return '${meters.round()} m';
+  }
+
+  static String _routeDirectionText(
+    DriverStatusController driverStatusController,
+    String directionText,
+  ) {
+    if (directionText.trim().isNotEmpty) return directionText;
+    final eta = driverStatusController.pickupDurationInMin.value;
+    if (eta > 0) return 'ETA  min';
+    return 'Route to pickup';
+  }
 
   static Widget _topActionRow({
     required PickingCustomerController c,
@@ -466,9 +816,7 @@ class PickingCustomerScreen extends StatelessWidget {
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => ChatScreen(bookingId: bookingId),
-            ),
+            MaterialPageRoute(builder: (_) => ChatScreen(bookingId: bookingId)),
           );
         },
         child: _roundIconBox(AppImages.msg),
@@ -477,7 +825,7 @@ class PickingCustomerScreen extends StatelessWidget {
       // Center: Duration + Customer name below
       title: Center(
         child: Obx(
-              () => CustomTextfield.textWithStyles600(
+          () => CustomTextfield.textWithStyles600(
             _formatDuration(driverStatusController.pickupDurationInMin.value),
             fontSize: 20,
           ),
@@ -485,7 +833,7 @@ class PickingCustomerScreen extends StatelessWidget {
       ),
       subtitle: Center(
         child: Obx(
-              () => CustomTextfield.textWithStylesSmall(
+          () => CustomTextfield.textWithStylesSmall(
             c.customerName.value.trim().isEmpty
                 ? 'Picking up Rider'
                 : 'Picking up ${c.customerName.value.trim()}',
@@ -497,15 +845,16 @@ class PickingCustomerScreen extends StatelessWidget {
     );
   }
 
-  // Second row: left photo + name (tap name -> enable Arrived button for testing)
+  // Second row: left photo + name
   static Widget _customerRow(
-      PickingCustomerController c, {
-        required VoidCallback onTapName,
-      }) {
+    PickingCustomerController c, {
+    VoidCallback? onTapName,
+  }) {
     return Obx(() {
-      final name = c.customerName.value.trim().isEmpty
-          ? "Rider"
-          : c.customerName.value.trim();
+      final name =
+          c.customerName.value.trim().isEmpty
+              ? "Rider"
+              : c.customerName.value.trim();
       final img = c.customerProfilePic.value.trim();
 
       return Padding(
@@ -518,18 +867,17 @@ class PickingCustomerScreen extends StatelessWidget {
                 height: 42,
                 width: 42,
                 fit: BoxFit.cover,
-                placeholder: (_, __) => const SizedBox(
-                  height: 42,
-                  width: 42,
-                  child: Center(
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-                errorWidget: (_, __, ___) => const Icon(
-                  Icons.person,
-                  size: 36,
-                  color: Colors.black,
-                ),
+                placeholder:
+                    (_, __) => const SizedBox(
+                      height: 42,
+                      width: 42,
+                      child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                errorWidget:
+                    (_, __, ___) =>
+                        const Icon(Icons.person, size: 36, color: Colors.black),
               ),
             ),
             const SizedBox(width: 12),
@@ -538,10 +886,7 @@ class PickingCustomerScreen extends StatelessWidget {
                 onTap: onTapName,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: CustomTextfield.textWithStyles600(
-                    name,
-                    fontSize: 18,
-                  ),
+                  child: CustomTextfield.textWithStyles600(name, fontSize: 18),
                 ),
               ),
             ),
@@ -549,6 +894,27 @@ class PickingCustomerScreen extends StatelessWidget {
         ),
       );
     });
+  }
+
+  static Widget _mapActionButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white.withOpacity(0.96),
+      elevation: 4,
+      shadowColor: const Color(0x24000000),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: SizedBox(
+          height: 46,
+          width: 46,
+          child: Icon(icon, color: Colors.black87, size: 22),
+        ),
+      ),
+    );
   }
 
   static Widget _roundIconBox(String asset) {
@@ -637,8 +1003,6 @@ class PickingCustomerScreen extends StatelessWidget {
   }
 }
 
-
-
 /*
 import 'dart:async';
 import 'dart:math' as math;
@@ -678,7 +1042,7 @@ class PickingCustomerScreen extends StatefulWidget {
   final LatLng driverLocation;
   final String bookingId;
 
-  const PickingCustomerScreen({
+  PickingCustomerScreen({
     Key? key,
     required this.pickupLocation,
     required this.driverLocation,
@@ -1449,7 +1813,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
             children: [
               SizedBox(
                 height: 650,
-                child: CommonGoogleMap(
+                child: SharedMap(
                   onCameraMove:
                       (position) => _currentMapBearing = position.bearing,
                   myLocationEnabled: false,
@@ -2307,7 +2671,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 //   final LatLng driverLocation;
 //   final String bookingId;
 //
-//   const PickingCustomerScreen({
+//   PickingCustomerScreen({
 //     Key? key,
 //     required this.pickupLocation,
 //     required this.driverLocation,
@@ -3002,7 +3366,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 //           children: [
 //             SizedBox(
 //               height: 650,
-//               child: CommonGoogleMap(
+//               child: SharedMap(
 //                 onCameraMove:
 //                     (position) => _currentMapBearing = position.bearing,
 //                 myLocationEnabled: false,

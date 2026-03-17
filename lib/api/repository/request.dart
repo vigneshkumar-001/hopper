@@ -2,10 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import '../../Core/Constants/log.dart';
-import '../../Presentation/Authentication/controller/otp_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../Presentation/Authentication/controller/authController.dart';
-import 'package:get/get.dart' as getx;
 
 class Request {
   static Future<dynamic> sendRequest(
@@ -17,7 +14,6 @@ class Request {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('token');
     String? userId = prefs.getString('userId');
-
 
     Dio dio = Dio(
       BaseOptions(
@@ -102,8 +98,6 @@ class Request {
     String? token = prefs.getString('token');
     String? userId = prefs.getString('userId');
 
-    AuthController authController = getx.Get.find();
-    OtpController otpController = getx.Get.find();
     Dio dio = Dio();
     dio.interceptors.add(
       InterceptorsWrapper(

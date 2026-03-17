@@ -9,8 +9,15 @@ class ApiConstents {
   // static String singleRideSocket =
   //     'https://hoppr-backend-3d2b7f783917.herokuapp.com/api';
 
-  static String sharedRideSocket = 'https://q29l3cr9-6000.inc1.devtunnels.ms';
-  static String googleMapApiKey = 'AIzaSyCvU6g43_aujUMDTTHpCtg1wkHszDhdC28';
+  static String sharedRideSocket = const String.fromEnvironment(
+    'HOPPR_SHARED_SOCKET_URL',
+    defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com/api',
+    // defaultValue: 'https://q29l3cr9-6000.inc1.devtunnels.ms',
+  );
+  static String googleMapApiKey = const String.fromEnvironment(
+    'GOOGLE_MAPS_API_KEY',
+    defaultValue: 'AIzaSyCvU6g43_aujUMDTTHpCtg1wkHszDhdC28',
+  );
   // static String baseUrl12 =
   //     'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api';
 
@@ -52,7 +59,7 @@ class ApiConstents {
   static String get driverStatus => _u('/users/status');
 
   static String userImageUpload =
-      'https://next.fenizotechnologies.com/Adrox/api/image-save';
+     _u('/upload/image');
 
   // ✅ These already functions - just use _u()
   static String driverOnlineStatus({required String driverId}) {

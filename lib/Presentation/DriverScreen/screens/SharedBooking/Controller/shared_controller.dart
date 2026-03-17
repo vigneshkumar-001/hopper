@@ -16,6 +16,7 @@ import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
+import 'package:hopper/utils/map/navigation_assist.dart';
 
 class SharedController extends GetxController {
   var isOnline = false.obs;
@@ -44,10 +45,7 @@ class SharedController extends GetxController {
     if (Get.isRegistered<SharedRideController>()) {
       sharedRideController = Get.find<SharedRideController>();
     } else {
-      sharedRideController = Get.put(
-        SharedRideController(),
-        permanent: true,
-      );
+      sharedRideController = Get.put(SharedRideController(), permanent: true);
     }
 
     _listenDriverLocation();
@@ -71,8 +69,7 @@ class SharedController extends GetxController {
       }
 
       final String? eventBookingId = data['bookingId']?.toString();
-      final String? activeBookingId =
-          sharedRide?.activeTarget.value?.bookingId;
+      final String? activeBookingId = sharedRide?.activeTarget.value?.bookingId;
 
       // If we already have an active target, ignore updates for other bookings
       if (activeBookingId != null &&
@@ -178,14 +175,14 @@ class SharedController extends GetxController {
   // ───────────────── API ACTIONS ─────────────────
 
   Future<String?> bookingAccept(
-      BuildContext context, {
-        required String bookingId,
-        required String status,
-        required String pickupLocationAddress,
-        required String dropLocationAddress,
-        required LatLng pickupLocation,
-        required LatLng driverLocation,
-      }) async {
+    BuildContext context, {
+    required String bookingId,
+    required String status,
+    required String pickupLocationAddress,
+    required String dropLocationAddress,
+    required LatLng pickupLocation,
+    required LatLng driverLocation,
+  }) async {
     isLoading.value = true;
     try {
       final results = await apiDataSource.bookingAccept(
@@ -193,12 +190,12 @@ class SharedController extends GetxController {
         status: status,
       );
       results.fold(
-            (failure) {
+        (failure) {
           CustomSnackBar.showError(failure.message);
           isLoading.value = false;
           return '';
         },
-            (response) {
+        (response) {
           final bookingData = {
             'bookingId': response.data?.bookingId,
             'userId': response.data?.driverId,
@@ -222,7 +219,7 @@ class SharedController extends GetxController {
           CommonLogger.log.i(response.data);
 
           Get.to(
-                () => PickingCustomerSharedScreen(
+            () => PickingCustomerSharedScreen(
               pickupLocation: pickupLocation,
               driverLocation: driverLocation,
               bookingId: bookingId,
@@ -244,12 +241,12 @@ class SharedController extends GetxController {
   }
 
   Future<String?> otpRequest(
-      BuildContext context, {
-        required String bookingId,
-        required String custName,
-        required String pickupAddress,
-        required String dropAddress,
-      }) async {
+    BuildContext context, {
+    required String bookingId,
+    required String custName,
+    required String pickupAddress,
+    required String dropAddress,
+  }) async {
     isLoading.value = true;
     try {
       final results = await apiDataSource.otpRequest(bookingId: bookingId);
@@ -257,12 +254,12 @@ class SharedController extends GetxController {
       String? resultMessage;
 
       results.fold(
-            (failure) {
+        (failure) {
           isLoading.value = false;
           CustomSnackBar.showError(failure.message);
           resultMessage = null;
         },
-            (response) {
+        (response) {
           isLoading.value = false;
           CustomSnackBar.showSuccess(response.message);
           CommonLogger.log.i(response.message);
@@ -272,12 +269,13 @@ class SharedController extends GetxController {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => VerifyRiderScreen(
-                pickupAddress: pickupAddress,
-                dropAddress: dropAddress,
-                bookingId: bookingId,
-                custName: custName,
-              ),
+              builder:
+                  (context) => VerifyRiderScreen(
+                    pickupAddress: pickupAddress,
+                    dropAddress: dropAddress,
+                    bookingId: bookingId,
+                    custName: custName,
+                  ),
             ),
           );
         },
@@ -291,10 +289,10 @@ class SharedController extends GetxController {
   }
 
   Future<String?> completeRideRequest(
-      BuildContext context, {
-        required String bookingId,
-        required dynamic Amount,
-      }) async {
+    BuildContext context, {
+    required String bookingId,
+    required dynamic Amount,
+  }) async {
     isLoading.value = true;
     try {
       final results = await apiDataSource.completeRideRequest(
@@ -304,19 +302,20 @@ class SharedController extends GetxController {
       String? resultMessage;
 
       results.fold(
-            (failure) {
+        (failure) {
           isLoading.value = false;
           CustomSnackBar.showError(failure.message);
           resultMessage = null;
         },
-            (response) {
+        (response) {
           isLoading.value = false;
           CommonLogger.log.i(response.message);
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) =>
-                  CashCollectedScreen(Amount: Amount, bookingId: bookingId),
+              builder:
+                  (context) =>
+                      CashCollectedScreen(Amount: Amount, bookingId: bookingId),
             ),
           );
 
@@ -332,10 +331,10 @@ class SharedController extends GetxController {
   }
 
   Future<String?> otpInsert(
-      BuildContext context, {
-        required String bookingId,
-        required String otp,
-      }) async {
+    BuildContext context, {
+    required String bookingId,
+    required String otp,
+  }) async {
     isLoading.value = true;
 
     try {
@@ -345,12 +344,12 @@ class SharedController extends GetxController {
       );
 
       return results.fold(
-            (failure) {
+        (failure) {
           isLoading.value = false;
           CustomSnackBar.showError(failure.message);
           return null;
         },
-            (response) {
+        (response) {
           return response.message;
         },
       );
@@ -361,20 +360,20 @@ class SharedController extends GetxController {
   }
 
   Future<BookingAcceptModel?> driverArrived(
-      BuildContext context, {
-        required String bookingId,
-      }) async {
+    BuildContext context, {
+    required String bookingId,
+  }) async {
     arrivedIsLoading.value = true;
 
     try {
       final results = await apiDataSource.driverArrived(bookingId: bookingId);
 
       return results.fold(
-            (failure) {
+        (failure) {
           arrivedIsLoading.value = false;
           return null;
         },
-            (response) {
+        (response) {
           arrivedIsLoading.value = false;
           return response;
         },
@@ -386,11 +385,11 @@ class SharedController extends GetxController {
   }
 
   Future<String?> onlineAcceptStatus(
-      BuildContext context, {
-        required bool status,
-        required double latitude,
-        required double longitude,
-      }) async {
+    BuildContext context, {
+    required bool status,
+    required double latitude,
+    required double longitude,
+  }) async {
     isLoading.value = true;
     try {
       final results = await apiDataSource.driverOnlineStatus(
@@ -399,11 +398,11 @@ class SharedController extends GetxController {
         onlineStatus: status,
       );
       results.fold(
-            (failure) {
+        (failure) {
           isLoading.value = false;
           return '';
         },
-            (response) {
+        (response) {
           CommonLogger.log.i(response.data);
           isLoading.value = false;
           return ' ';
@@ -418,10 +417,10 @@ class SharedController extends GetxController {
   }
 
   Future<String?> cancelBooking(
-      BuildContext context, {
-        required String reason,
-        required String bookingId,
-      }) async {
+    BuildContext context, {
+    required String reason,
+    required String bookingId,
+  }) async {
     try {
       final results = await apiDataSource.cancelBooking(
         reason: reason,
@@ -429,14 +428,17 @@ class SharedController extends GetxController {
       );
 
       results.fold(
-            (failure) {
+        (failure) {
           Get.offAll(DriverMainScreen());
           CommonLogger.log.e("failure: ${failure.message}");
           return '';
         },
-            (response) {
+        (response) {
           Get.offAll(DriverMainScreen());
           CommonLogger.log.i("Response: ${response.message}");
+          Get.find<DriverAnalyticsController>().trackCancel(
+            bookingId: bookingId,
+          );
           CustomSnackBar.showSuccess(response.message);
           return '';
         },
@@ -453,11 +455,11 @@ class SharedController extends GetxController {
       final results = await apiDataSource.getDriverStatus();
 
       results.fold(
-            (failure) {
+        (failure) {
           CommonLogger.log.e("failure: ${failure.message}");
           return '';
         },
-            (response) {
+        (response) {
           CommonLogger.log.i("Response: ${response.data}");
           isOnline.value = response.data.onlineStatus;
           serviceType.value = response.data.serviceType;
@@ -474,10 +476,10 @@ class SharedController extends GetxController {
       final results = await apiDataSource.getAmountStatus(bookingId: bookingId);
 
       results.fold(
-            (failure) {
+        (failure) {
           CommonLogger.log.e("failure: ${failure.message}");
         },
-            (response) {
+        (response) {
           CommonLogger.log.i("Response: ${response.data}");
           paymentType.value = response.data.paymentType;
           paymentStatus.value = response.data.paymentStatus;
@@ -499,17 +501,17 @@ class SharedController extends GetxController {
       );
 
       results.fold(
-            (failure) {
+        (failure) {
           isLoading.value = false;
+          CustomSnackBar.showError(failure.message);
           CommonLogger.log.e("failure: ${failure.message}");
         },
-            (response) {
+        (response) {
           isLoading.value = false;
           CommonLogger.log.i(response.toJson());
+          paymentStatus.value = 'PAID';
 
-          if (response.status == 200) {
-            if (onSuccess != null) onSuccess();
-          }
+          if (onSuccess != null) onSuccess();
         },
       );
     } catch (e) {
@@ -517,7 +519,6 @@ class SharedController extends GetxController {
       CommonLogger.log.i(e);
     }
   }
-
   Future<void> driverRatingToCustomer({
     required String bookingId,
     required int rating,
@@ -531,12 +532,12 @@ class SharedController extends GetxController {
       );
 
       results.fold(
-            (failure) {
+        (failure) {
           isLoading.value = false;
           CommonLogger.log.e("failure: ${failure.message}");
           return '';
         },
-            (response) {
+        (response) {
           isLoading.value = false;
           Navigator.pushReplacement(
             context,
@@ -551,7 +552,6 @@ class SharedController extends GetxController {
     }
   }
 }
-
 
 // import 'package:flutter/material.dart';
 // import 'package:flutter/scheduler.dart';

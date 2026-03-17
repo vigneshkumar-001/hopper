@@ -4,20 +4,28 @@ import 'package:hopper/Core/Constants/log.dart';
 import '../../utils/sharedprefsHelper/sharedprefs_handler.dart';
 
 class ApiConfigController extends GetxController {
-  // Shared ON -> 3000, Shared OFF -> 4000
-  static const String sharedBase =
-      'https://q29l3cr9-6000.inc1.devtunnels.ms/api';
-  // 'https://q29l3cr9-3000.inc1.devtunnels.ms/api';
-  static const String singleBase =
-      //'https://q29l3cr9-5000.inc1.devtunnels.ms/api';
-      'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api';
-  // 'https://q29l3cr9-4000.inc1.devtunnels.ms/api';
+  // Shared ON -> shared backend, Shared OFF -> single backend
+  static const String sharedBase = String.fromEnvironment(
+    'HOPPR_SHARED_BASE_URL',
+    defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com/api',
+        // defaultValue: 'https://q29l3cr9-6000.inc1.devtunnels.ms/api',
+  );
+  static const String singleBase = String.fromEnvironment(
+    'HOPPR_SINGLE_BASE_URL',
+    defaultValue: 'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api',
+  );
 
-  static const String sharedSocket = 'https://q29l3cr9-6000.inc1.devtunnels.ms';
-  // static const String singleSocket = 'https://q29l3cr9-5000.inc1.devtunnels.ms';
-  // static const String sharedSocket = 'https://q29l3cr9-3000.inc1.devtunnels.ms';
-  static const String singleSocket =
-      'https://hoppr-face-two-dbe557472d7f.herokuapp.com';
+  static const String sharedSocket = String.fromEnvironment(
+    'HOPPR_SHARED_SOCKET_URL',
+
+    defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com',
+    // defaultValue: 'https://q29l3cr9-6000.inc1.devtunnels.ms',
+  );
+  static const String singleSocket = String.fromEnvironment(
+    'HOPPR_SINGLE_SOCKET_URL',
+    defaultValue: 'https://hoppr-face-two-dbe557472d7f.herokuapp.com',
+  );
+
   final RxBool isSharedEnabled = false.obs;
 
   String get baseUrl => isSharedEnabled.value ? sharedBase : singleBase;
@@ -32,15 +40,15 @@ class ApiConfigController extends GetxController {
   Future<void> _load() async {
     final v = await SharedPrefHelper.instance.getSharedBookingEnabled();
     isSharedEnabled.value = v;
-    CommonLogger.log.i("🌐 BaseUrl loaded => $baseUrl");
-    CommonLogger.log.i("🔌 SocketUrl loaded => $socketUrl");
+    CommonLogger.log.i("BaseUrl loaded => $baseUrl");
+    CommonLogger.log.i("SocketUrl loaded => $socketUrl");
   }
 
   Future<void> setSharedEnabled(bool value) async {
     isSharedEnabled.value = value;
     await SharedPrefHelper.instance.setSharedBookingEnabled(value);
-    CommonLogger.log.i("🌐 switched => $baseUrl");
-    CommonLogger.log.i("🔌 switched => $socketUrl");
-    update(); // notify listeners if needed
+    CommonLogger.log.i("BaseUrl switched => $baseUrl");
+    CommonLogger.log.i("SocketUrl switched => $socketUrl");
+    update();
   }
 }

@@ -1,19 +1,16 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Presentation/Authentication/screens/GetStarted_Screens.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
 import 'package:hopper/Presentation/Drawer/controller/notification_controller.dart';
 import 'package:hopper/Presentation/Drawer/screens/notification_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/ride_activity.dart';
 import 'package:hopper/Presentation/Drawer/screens/settings_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/wallet_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/driver_analytics_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-import '../../OnBoarding/controller/chooseservice_controller.dart';
+import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 
 class DrawerScreen extends StatefulWidget {
   const DrawerScreen({super.key});
@@ -23,8 +20,7 @@ class DrawerScreen extends StatefulWidget {
 }
 
 class _DrawerScreenState extends State<DrawerScreen> {
-  final ChooseServiceController getDetails = Get.put(ChooseServiceController());
-
+  late final ChooseServiceController getDetails;
   final NotificationController sharedCtrl = Get.put(
     NotificationController(),
     permanent: true,
@@ -33,7 +29,9 @@ class _DrawerScreenState extends State<DrawerScreen> {
   @override
   void initState() {
     super.initState();
-    getDetails.getUserDetails();
+    getDetails = Get.isRegistered<ChooseServiceController>()
+        ? Get.find<ChooseServiceController>()
+        : Get.put(ChooseServiceController());
   }
 
   @override
@@ -44,216 +42,168 @@ class _DrawerScreenState extends State<DrawerScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFFFFD), Color(0xFFF6F7FF)],
+            colors: [Color(0xFFFCFCFD), Color(0xFFF5F7FA)],
           ),
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Column(
               children: [
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 20,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            InkWell(
+                            _CircleButton(
+                              icon: Icons.close_rounded,
                               onTap: () {
                                 if (Navigator.canPop(context)) {
                                   Navigator.pop(context);
                                 } else {
-                                  Get.offAll(
-                                    () => const DriverMainScreen(),
-                                  ); // fallback
+                                  Get.offAll(() => const DriverMainScreen());
                                 }
-
-                                // Navigator.pushAndRemoveUntil(
-                                //   context,
-                                //   MaterialPageRoute(
-                                //     builder: (context) => DriverMainScreen(),
-                                //   ),
-                                //   (route) => false,
-                                // );
                               },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.containerColor,
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                                child: Image.asset(
-                                  AppImages.closeButton,
-                                  height: 17,
-                                  width: 17,
-                                ),
-                              ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 40),
-                        InkWell(
-                          onTap: () {
-                            Get.to(() => RideAndPackageHistoryScreen());
-                          },
-                          child: CustomTextfield.textWithStyles700(
-                            'Ride Activity',
-                          ),
+                        const SizedBox(height: 34),
+                        _MenuTile(
+                          title: 'Ride Activity',
+                          onTap: () => Get.to(() => RideAndPackageHistoryScreen()),
                         ),
-                        const SizedBox(height: 15),
-                        Divider(
-                          color: AppColors.dividerColor.withOpacity(0.1),
-                          thickness: 1.5,
+                        const _MenuDivider(),
+                        _MenuTile(
+                          title: 'Wallet',
+                          onTap: () => Get.to(() => WalletScreen()),
                         ),
-
-                        const SizedBox(height: 30),
-                        InkWell(
-                          onTap: () {
-                            Get.to(() => WalletScreen());
-                          },
-                          child: CustomTextfield.textWithStyles700('Wallet'),
+                        const _MenuDivider(),
+                        _MenuTile(
+                          title: 'Driver Analytics',
+                          onTap: () => Get.to(() => const DriverAnalyticsScreen()),
                         ),
-                        const SizedBox(height: 15),
-                        Divider(
-                          color: AppColors.dividerColor.withOpacity(0.1),
-                          thickness: 1.5,
+                        const _MenuDivider(),
+                        _MenuTile(
+                          title: 'Notifications',
+                          onTap: () => Get.to(() => NotificationScreen()),
                         ),
-
-                        const SizedBox(height: 30),
-                        InkWell(
-                          onTap: () {
-                            Get.to(() => NotificationScreen());
-                          },
-                          child: CustomTextfield.textWithStyles700(
-                            'Notifications',
-                          ),
+                        const _MenuDivider(),
+                        _MenuTile(
+                          title: 'Settings',
+                          onTap: () => Get.to(() => const SettingsScreen()),
                         ),
-                        const SizedBox(height: 20),
-                        Divider(
-                          color: AppColors.dividerColor.withOpacity(0.1),
-                          thickness: 1.5,
-                        ),
-                        const SizedBox(height: 30),
-
-                        // 🔴 NEW: Shared Booking toggle
-                        // Row(
-                        //   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        //   children: [
-                        //     CustomTextfield.textWithStyles700('Shared Booking'),
-                        //     Obx(() => Switch(
-                        //       value: sharedCtrl.isSharedEnabled.value,
-                        //       onChanged: sharedCtrl.isLoading.value ? null : sharedCtrl.setSharedEnabled,
-                        //       activeColor: AppColors.drkGreen,
-                        //     )),
-                        //   ],
-                        // ),
-                        //
-                        // const SizedBox(height: 20),
-                        // Divider(
-                        //   color: AppColors.dividerColor.withOpacity(0.1),
-                        //   thickness: 1.5,
-                        // ),
-                        // const SizedBox(height: 20),
-
-                        // 🔴 NEW: Shared Booking toggle
-                        InkWell(
-                          onTap: () => _showLogoutDialog(context),
-                          child: Row(
+                        const _MenuDivider(),
+                        const SizedBox(height: 10),
+                        Obx(() {
+                          final loading = sharedCtrl.isLoading.value;
+                          return Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              CustomTextfield.textWithStyles700('Log out'),
-                              const Icon(
-                                Icons.logout,
-                                color: Colors.red,
-                                size: 22,
+                              const Text(
+                                'Shared Booking',
+                                style: TextStyle(
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF111827),
+                                ),
+                              ),
+                              Switch(
+                                value: sharedCtrl.isSharedEnabled.value,
+                                onChanged: loading
+                                    ? null
+                                    : (value) async {
+                                        await HapticFeedback.selectionClick();
+                                        await sharedCtrl.setSharedEnabled(value);
+                                      },
+                                activeThumbColor: AppColors.drkGreen,
+                              ),
+                            ],
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                  child: Obx(() {
+                    final profile = getDetails.userProfile.value;
+                    return Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(26),
+                          child: _ProfileImage(profile?.profilePic),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _drawerName(profile?.firstName, profile?.lastName),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF111827),
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.star_rounded,
+                                          size: 15,
+                                          color: Color(0xFF16A34A),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          (profile?.DriverStarRating?.isNotEmpty ?? false)
+                                              ? profile!.DriverStarRating!
+                                              : '0.0',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${profile?.countryCode ?? ''} ${profile?.mobileNumber ?? 'Loading...'}'.trim(),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF667085),
+                                ),
                               ),
                             ],
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                ),
-                Divider(color: AppColors.dividerColor1, thickness: 2),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 15,
-                    vertical: 5,
-                  ),
-                  child: Obx(() {
-                    final profile = getDetails.userProfile.value;
-
-                    return Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(50),
-                          child:
-                              profile?.profilePic != null
-                                  ? Image.network(
-                                    profile?.profilePic.toString() ?? '',
-                                    height: 45,
-                                    width: 45,
-                                    fit: BoxFit.cover,
-                                  )
-                                  : const Icon(Icons.people, size: 20),
-                        ),
-                        const SizedBox(width: 15),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                CustomTextfield.textWithStyles600(
-                                  fontSize: 20,
-                                  '${profile?.firstName ?? "Guest User"} ',
-                                ),
-                                const SizedBox(width: 15),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.commonWhite,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Image.asset(
-                                        AppImages.star,
-                                        height: 15,
-                                        color: AppColors.drkGreen,
-                                      ),
-                                      const SizedBox(width: 5),
-                                      CustomTextfield.textWithStyles600(
-                                        fontSize: 15,
-                                        profile?.DriverStarRating.toString() ??
-                                            '0',
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            CustomTextfield.textWithStylesSmall(
-                              '${profile?.countryCode ?? ""} ${profile?.mobileNumber ?? "Loading..."}',
-                            ),
-                          ],
-                        ),
-                      ],
                     );
                   }),
                 ),
-                Divider(color: AppColors.dividerColor1, thickness: 2),
-                const SizedBox(height: 30),
               ],
             ),
           ),
@@ -261,399 +211,114 @@ class _DrawerScreenState extends State<DrawerScreen> {
       ),
     );
   }
+}
 
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: AppColors.commonWhite,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Icon
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.logout, color: Colors.red, size: 28),
-                ),
+class _CircleButton extends StatelessWidget {
+  const _CircleButton({required this.icon, required this.onTap});
 
-                const SizedBox(height: 16),
+  final IconData icon;
+  final VoidCallback onTap;
 
-                // Title
-                const Text(
-                  'Log out',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-
-                const SizedBox(height: 8),
-
-                // Message
-                const Text(
-                  'Do you want to log out?',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Colors.black54),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.pop(context); // No
-                        },
-                        style: OutlinedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text('No'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          Navigator.pop(context);
-                          _logout(context);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text('Yes'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: onTap,
+      child: Container(
+        height: 42,
+        width: 42,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Icon(icon, color: const Color(0xFF111827)),
+      ),
     );
   }
 }
 
-Future<void> _logout(BuildContext context) async {
-  final prefs = await SharedPreferences.getInstance();
+class _MenuTile extends StatelessWidget {
+  const _MenuTile({
+    required this.title,
+    required this.onTap,
+  });
 
-  await prefs.remove('token');
-  await prefs.remove('refreshToken');
-  await prefs.remove('sessionToken');
-  await prefs.remove('role');
-  await prefs.remove('contacts_synced');
+  final String title;
+  final VoidCallback onTap;
 
-  if (!context.mounted) return;
-
-  Navigator.pushAndRemoveUntil(
-    context,
-    MaterialPageRoute(builder: (_) => const GetStartedScreens()),
-    (route) => false, // ❌ removes ALL previous routes
-  );
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 25,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF111827),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-// import 'package:flutter/material.dart';
-//
-// import 'package:get/get.dart';
-// import 'package:hopper/Core/Constants/Colors.dart';
-// import 'package:hopper/Core/Utility/images.dart';
-// import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
-// import 'package:hopper/Presentation/Drawer/screens/notification_screen.dart';
-// import 'package:hopper/Presentation/Drawer/screens/ride_activity.dart';
-// import 'package:hopper/Presentation/Drawer/screens/settings_screen.dart';
-// import 'package:hopper/Presentation/Drawer/screens/wallet_screen.dart';
-// import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
-//
-// import '../../OnBoarding/controller/chooseservice_controller.dart';
-//
-// class DrawerScreen extends StatefulWidget {
-//   const DrawerScreen({super.key});
-//
-//   @override
-//   State<DrawerScreen> createState() => _DrawerScreenState();
-// }
-//
-// class _DrawerScreenState extends State<DrawerScreen> {
-//   @override
-//   void initState() {
-//     // TODO: implement initState
-//     super.initState();
-//     getDetails.getUserDetails();
-//   }
-//
-//   final ChooseServiceController getDetails = Get.put(ChooseServiceController());
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       body: Container(
-//         decoration: const BoxDecoration(
-//           gradient: LinearGradient(
-//             begin: Alignment.topCenter,
-//             end: Alignment.bottomCenter,
-//             colors: [
-//               Color(0xFFFFFD), // Top (#FFFFFD)
-//               Color(0xFFF6F7FF), // Bottom (#F6F7FF)
-//             ],
-//           ),
-//         ),
-//         child: SafeArea(
-//           child: Padding(
-//             padding: const EdgeInsets.symmetric(vertical: 5),
-//             child: Column(
-//               children: [
-//                 Expanded(
-//                   child: Padding(
-//                     padding: const EdgeInsets.symmetric(
-//                       horizontal: 20,
-//                       vertical: 20,
-//                     ),
-//                     child: Column(
-//                       crossAxisAlignment: CrossAxisAlignment.start,
-//                       children: [
-//                         Row(
-//                           children: [
-//                             InkWell(
-//                               onTap: () {
-//                                 Navigator.pushAndRemoveUntil(
-//                                   context,
-//                                   MaterialPageRoute(
-//                                     builder: (context) => DriverMainScreen(),
-//                                   ),
-//                                   (route) => false,
-//                                 );
-//                               },
-//                               child: Container(
-//                                 padding: const EdgeInsets.symmetric(
-//                                   horizontal: 10,
-//                                   vertical: 10,
-//                                 ),
-//                                 decoration: BoxDecoration(
-//                                   color: AppColors.containerColor,
-//                                   borderRadius: BorderRadius.circular(30),
-//                                 ),
-//                                 child: Image.asset(
-//                                   AppImages.closeButton,
-//                                   height: 17,
-//                                   width: 17,
-//                                 ),
-//                               ),
-//                             ),
-//                           ],
-//                         ),
-//                         const SizedBox(height: 40),
-//                         InkWell(
-//                           onTap: () {
-//                             Get.to(() => RideAndPackageHistoryScreen());
-//                           },
-//                           child: CustomTextfield.textWithStyles700(
-//                             'Ride Activity',
-//                           ),
-//                         ),
-//                         const SizedBox(height: 15),
-//                         Divider(
-//                           color: AppColors.dividerColor.withOpacity(0.1),
-//                           thickness: 1.5,
-//                         ),
-//
-//                         const SizedBox(height: 30),
-//                         InkWell(
-//                           onTap: () {
-//                             Get.to(() => WalletScreen());
-//                           },
-//                           child: CustomTextfield.textWithStyles700('Wallet'),
-//                         ),
-//                         const SizedBox(height: 15),
-//                         Divider(
-//                           color: AppColors.dividerColor.withOpacity(0.1),
-//                           thickness: 1.5,
-//                         ),
-//
-//                         const SizedBox(height: 30),
-//                         InkWell(
-//                           onTap: () {
-//                             Get.to(() => NotificationScreen());
-//                           },
-//                           child: CustomTextfield.textWithStyles700(
-//                             'Notifications',
-//                           ),
-//                         ),
-//                         const SizedBox(height: 20),
-//                         Divider(
-//                           color: AppColors.dividerColor.withOpacity(0.1),
-//                           thickness: 1.5,
-//                         ),
-//                         const SizedBox(height: 30),
-//                         // CustomTextfield.textWithStyles700('Help'),
-//                         // const SizedBox(height: 20),
-//                         // Divider(
-//                         //   color: AppColors.dividerColor.withOpacity(0.1),
-//                         //   thickness: 1.5,
-//                         // ),
-//                         // const SizedBox(height: 30),
-//                         // InkWell(
-//                         //   onTap: () {
-//                         //     Get.to(() => SettingsScreen());
-//                         //   },
-//                         //   child: CustomTextfield.textWithStyles700('Settings'),
-//                         // ),
-//                       ],
-//                     ),
-//                   ),
-//                 ),
-//                 Divider(color: AppColors.dividerColor1, thickness: 2),
-//                 Padding(
-//                   padding: const EdgeInsets.symmetric(
-//                     horizontal: 15,
-//                     vertical: 5,
-//                   ),
-//                   child: Obx(() {
-//                     final profile = getDetails.userProfile.value;
-//
-//                     return Row(
-//                       children: [
-//                         ClipRRect(
-//                           borderRadius: BorderRadius.circular(50),
-//                           child:
-//                               profile?.profilePic != null
-//                                   ? Image.network(
-//                                     profile?.profilePic.toString() ?? '',
-//                                     height: 45,
-//                                     width: 45,
-//                                     fit: BoxFit.cover,
-//                                   )
-//                                   : Icon(Icons.people, size: 20),
-//                         ),
-//                         const SizedBox(width: 15),
-//                         Column(
-//                           crossAxisAlignment: CrossAxisAlignment.start,
-//                           children: [
-//                             Row(
-//                               children: [
-//                                 CustomTextfield.textWithStyles600(
-//                                   fontSize: 20,
-//                                   '${profile?.firstName ?? "Guest User"} ',
-//                                 ),
-//                                 const SizedBox(width: 15),
-//                                 Container(
-//                                   padding: const EdgeInsets.symmetric(
-//                                     horizontal: 10,
-//                                     vertical: 2,
-//                                   ),
-//                                   decoration: BoxDecoration(
-//                                     color: AppColors.commonWhite,
-//                                     borderRadius: BorderRadius.circular(10),
-//                                   ),
-//                                   child: Row(
-//                                     children: [
-//                                       Image.asset(
-//                                         AppImages.star,
-//                                         height: 15,
-//                                         color: AppColors.drkGreen,
-//                                       ),
-//                                       const SizedBox(width: 5),
-//                                       CustomTextfield.textWithStyles600(
-//                                         fontSize: 15,
-//                                         profile?.DriverStarRating.toString() ??
-//                                             '0',
-//                                       ),
-//                                     ],
-//                                   ),
-//                                 ),
-//                               ],
-//                             ),
-//                             CustomTextfield.textWithStylesSmall(
-//                               '${profile?.countryCode ?? ""} ${profile?.mobileNumber ?? "Loading..."}',
-//                             ),
-//                           ],
-//                         ),
-//                       ],
-//                     );
-//                   }),
-//                 ),
-//
-//                 // Padding(
-//                 //   padding: const EdgeInsets.symmetric(
-//                 //     horizontal: 15,
-//                 //     vertical: 5,
-//                 //   ),
-//                 //   child: Row(
-//                 //     children: [
-//                 //       ClipRRect(
-//                 //         borderRadius: BorderRadius.circular(50),
-//                 //         child: Image.asset(
-//                 //           AppImages.dummy,
-//                 //           height: 45,
-//                 //           width: 45,
-//                 //         ),
-//                 //       ),
-//                 //       const SizedBox(width: 15),
-//                 //       Column(
-//                 //         crossAxisAlignment: CrossAxisAlignment.start,
-//                 //         children: [
-//                 //           Row(
-//                 //             children: [
-//                 //               CustomTextfield.textWithStyles600(
-//                 //                 fontSize: 20,
-//                 //                 'Michael Francis',
-//                 //               ),
-//                 //               const SizedBox(width: 15),
-//                 //               Container(
-//                 //                 padding: const EdgeInsets.symmetric(
-//                 //                   horizontal: 10,
-//                 //                   vertical: 2,
-//                 //                 ),
-//                 //                 decoration: BoxDecoration(
-//                 //                   color: AppColors.commonWhite,
-//                 //                   borderRadius: BorderRadius.circular(10),
-//                 //                 ),
-//                 //                 child: Row(
-//                 //                   children: [
-//                 //                     Image.asset(
-//                 //                       AppImages.star,
-//                 //                       height: 15,
-//                 //                       color: AppColors.drkGreen,
-//                 //                     ),
-//                 //                     const SizedBox(width: 5),
-//                 //                     CustomTextfield.textWithStyles600(
-//                 //                       fontSize: 15,
-//                 //                       '4.5',
-//                 //                     ),
-//                 //                   ],
-//                 //                 ),
-//                 //               ),
-//                 //             ],
-//                 //           ),
-//                 //           CustomTextfield.textWithStylesSmall(
-//                 //             '+234 813 789 4562',
-//                 //           ),
-//                 //         ],
-//                 //       ),
-//                 //     ],
-//                 //   ),
-//                 // ),
-//                 Divider(color: AppColors.dividerColor1, thickness: 2),
-//                 const SizedBox(height: 30),
-//               ],
-//             ),
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-// }
+class _MenuDivider extends StatelessWidget {
+  const _MenuDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 14),
+      child: Divider(color: Color(0x14000000), thickness: 1.5),
+    );
+  }
+}
+
+class _ProfileImage extends StatelessWidget {
+  const _ProfileImage(this.url);
+
+  final String? url;
+
+  @override
+  Widget build(BuildContext context) {
+    if (url != null && url!.isNotEmpty) {
+      return CachedNetworkImage(
+        imageUrl: url!,
+        height: 52,
+        width: 52,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => const SizedBox(
+          height: 52,
+          width: 52,
+          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+        errorWidget: (_, __, ___) => _fallback(),
+      );
+    }
+    return _fallback();
+  }
+
+  Widget _fallback() {
+    return Container(
+      height: 52,
+      width: 52,
+      color: const Color(0xFFE5E7EB),
+      child: const Icon(Icons.person_rounded, color: Color(0xFF667085)),
+    );
+  }
+}
+
+String _drawerName(String? firstName, String? lastName) {
+  final full = '${firstName ?? ''} ${lastName ?? ''}'.trim();
+  return full.isEmpty ? 'Guest User' : full;
+}
