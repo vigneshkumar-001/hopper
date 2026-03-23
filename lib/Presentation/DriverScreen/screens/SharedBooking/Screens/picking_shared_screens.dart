@@ -4,6 +4,7 @@ import 'package:action_slider/action_slider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -88,6 +89,8 @@ class _PickingCustomerSharedScreenState
     extends State<PickingCustomerSharedScreen>
     with TickerProviderStateMixin {
   final GlobalKey<SharedMapState> _mapKey = GlobalKey<SharedMapState>();
+
+  static const double _ARRIVED_PICKUP_RADIUS_M = 500.0;
 
   late final PickingCustomerSharedController c;
   final SharedRideController sharedRideController =
@@ -256,15 +259,6 @@ class _PickingCustomerSharedScreenState
       bookingId: rider.bookingId,
       text: text,
       delayMinutes: delayMin,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Sent: $text'),
-        backgroundColor: _C.text,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
     );
   }
 
@@ -616,25 +610,26 @@ class _PickingCustomerSharedScreenState
                       color: rightColor,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
-                        vertical: 14,
+                        vertical: 12,
                       ),
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             dir,
-                            maxLines: 2,
+                            maxLines: lane.isNotEmpty ? 1 : 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 14,
+                              fontSize: 13.5,
                               fontWeight: FontWeight.w700,
                               color: Colors.white,
-                              height: 1.2,
+                              height: 1.15,
                             ),
                           ),
                           if (lane.isNotEmpty) ...[
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 4),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 9,
@@ -964,36 +959,68 @@ class _PickingCustomerSharedScreenState
               final loading =
                   driverStatusController.arrivedLoadingBookingId.value ==
                   rider.bookingId;
-              return _PrimaryButton(
-                label: 'Arrived at Pickup Point',
-                icon: Icons.location_on_rounded,
-                color: _C.blue,
-                textColor: Colors.white,
-                loading: loading,
-                onTap:
-                    loading
-                        ? null
-                        : () async {
-                          final result = await driverStatusController
-                              .driverArrived(
-                                context,
-                                bookingId: rider.bookingId,
-                              );
-                          if (result != null && result.status == 200) {
-                            rider.arrived = true;
-                            sharedRideController.markArrived(rider.bookingId);
-                            _startNoShowTimer(rider);
-                            setState(() {});
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  result?.message ?? 'Something went wrong',
-                                ),
-                              ),
-                            );
-                          }
-                        },
+
+              final driverLoc = sharedRideController.driverLocation.value;
+              final canShowArrived =
+                  driverLoc != null &&
+                  Geolocator.distanceBetween(
+                        driverLoc.latitude,
+                        driverLoc.longitude,
+                        rider.pickupLatLng.latitude,
+                        rider.pickupLatLng.longitude,
+                      ) <=
+                      _ARRIVED_PICKUP_RADIUS_M;
+
+              return AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                child:
+                    canShowArrived
+                        ? KeyedSubtree(
+                          key: ValueKey('arrived-${rider.bookingId}'),
+                          child: _PrimaryButton(
+                            label: 'Arrived at Pickup Point',
+                            icon: Icons.location_on_rounded,
+                            color: _C.blue,
+                            textColor: Colors.white,
+                            loading: loading,
+                            onTap:
+                                loading
+                                    ? null
+                                    : () async {
+                                      final result =
+                                          await driverStatusController
+                                              .driverArrived(
+                                                context,
+                                                bookingId: rider.bookingId,
+                                              );
+                                      if (result != null &&
+                                          result.status == 200) {
+                                        rider.arrived = true;
+                                        sharedRideController.markArrived(
+                                          rider.bookingId,
+                                        );
+                                        _startNoShowTimer(rider);
+                                        setState(() {});
+                                      } else {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              result?.message ??
+                                                  'Something went wrong',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                          ),
+                        )
+                        : SizedBox.shrink(
+                          key: ValueKey('arrived-hidden-${rider.bookingId}'),
+                        ),
               );
             }),
 
@@ -1557,7 +1584,7 @@ class _PickingCustomerSharedScreenState
                     followDriver: true,
                     followBearingEnabled: false,
                     followZoom: c.followZoom.value,
-                    followTilt: 0,
+                    followTilt: 45,
                     trafficEnabled: false,
                     compassEnabled: false,
                     polylines: {
@@ -1565,7 +1592,7 @@ class _PickingCustomerSharedScreenState
                         Polyline(
                           polylineId: const PolylineId('route_to_rider_main'),
                           color: const Color(0xFF111111),
-                          width: 3,
+                          width: 2,
                           points: uiState.polyline,
                           startCap: Cap.roundCap,
                           endCap: Cap.roundCap,

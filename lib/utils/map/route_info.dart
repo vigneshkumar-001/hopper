@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 
@@ -46,11 +47,21 @@ Future<Map<String, dynamic>> getRouteInfo({
 
   final polyline = route['overview_polyline']['points'] as String;
 
-  final first = steps.isNotEmpty ? steps[0] : null;
-  final directionText = first?['html_instructions']?.toString() ?? '';
-  final distanceText = first?['distance']?['text']?.toString() ?? '';
-  final maneuver = first?['maneuver']?.toString() ?? 'straight';
-  final laneGuidance = _extractLaneGuidance(first, maneuver, directionText);
+  final distanceToDestinationMeters = _distanceMeters(origin, destination);
+  final primary = _pickNextStep(steps, origin: origin, destination: destination);
+
+  String directionText = primary?['html_instructions']?.toString() ?? '';
+  String distanceText = primary?['distance']?['text']?.toString() ?? '';
+  final rawManeuver = primary?['maneuver']?.toString() ?? '';
+  String maneuver = _normalizeManeuver(rawManeuver, directionText);
+
+  if (distanceToDestinationMeters <= 35) {
+    directionText = 'Arrived at destination';
+    distanceText = '0 m';
+    maneuver = 'arrive';
+  }
+
+  final laneGuidance = _extractLaneGuidance(primary, maneuver, directionText);
 
   return {
     "direction": directionText,
@@ -59,6 +70,7 @@ Future<Map<String, dynamic>> getRouteInfo({
     "maneuver": maneuver,
     "laneGuidance": laneGuidance,
     "routeIndex": idx,
+    "distanceToDestinationMeters": distanceToDestinationMeters,
     "raw": data,
   };
 }
@@ -99,11 +111,21 @@ class DirectionsHelper {
 
     final polyline = route['overview_polyline']['points'] as String;
 
-    final first = steps.isNotEmpty ? steps[0] : null;
-    final directionText = first?['html_instructions']?.toString() ?? '';
-    final distanceText = first?['distance']?['text']?.toString() ?? '';
-    final maneuver = first?['maneuver']?.toString() ?? 'straight';
-    final laneGuidance = _extractLaneGuidance(first, maneuver, directionText);
+    final distanceToDestinationMeters = _distanceMeters(origin, destination);
+    final primary = _pickNextStep(steps, origin: origin, destination: destination);
+
+    String directionText = primary?['html_instructions']?.toString() ?? '';
+    String distanceText = primary?['distance']?['text']?.toString() ?? '';
+    final rawManeuver = primary?['maneuver']?.toString() ?? '';
+    String maneuver = _normalizeManeuver(rawManeuver, directionText);
+
+    if (distanceToDestinationMeters <= 35) {
+      directionText = 'Arrived at destination';
+      distanceText = '0 m';
+      maneuver = 'arrive';
+    }
+
+    final laneGuidance = _extractLaneGuidance(primary, maneuver, directionText);
 
     return RouteInfo(
       polyline: polyline,
@@ -121,6 +143,131 @@ class DirectionsHelper {
 /// ✅ simple config holder
 class DirectionsConfig {
   static String apiKey = ApiConstents.googleMapApiKey;
+}
+
+Map<String, dynamic>? _pickNextStep(
+  List steps, {
+  required LatLng origin,
+  required LatLng destination,
+}) {
+  if (steps.isEmpty) return null;
+  if (_distanceMeters(origin, destination) <= 35) return null;
+
+  final idx = _closestStepIndex(steps, origin);
+  int startFrom = idx;
+
+  final current = steps[idx];
+  if (current is Map) {
+    final endLoc = _latLngFromMap(current['end_location']);
+    if (endLoc != null && _distanceMeters(origin, endLoc) <= 18) {
+      if (idx + 1 < steps.length) startFrom = idx + 1;
+    }
+  }
+
+  for (int i = startFrom; i < steps.length; i++) {
+    final step = steps[i];
+    if (step is! Map) continue;
+    if (_stepHasTurnCue(step)) return Map<String, dynamic>.from(step);
+  }
+
+  final fallback = steps[startFrom];
+  if (fallback is Map) return Map<String, dynamic>.from(fallback);
+  return null;
+}
+
+bool _stepHasTurnCue(Map step) {
+  final m = step['maneuver']?.toString().trim();
+  if (m != null && m.isNotEmpty) return true;
+
+  final html = step['html_instructions']?.toString().toLowerCase() ?? '';
+  return html.contains(' left') ||
+      html.contains(' right') ||
+      html.contains('u-turn') ||
+      html.contains('roundabout') ||
+      html.contains('exit') ||
+      html.contains('ramp') ||
+      html.contains('fork') ||
+      html.contains('merge') ||
+      html.contains('keep');
+}
+
+int _closestStepIndex(List steps, LatLng origin) {
+  double best = double.infinity;
+  int bestIdx = 0;
+
+  for (int i = 0; i < steps.length; i++) {
+    final step = steps[i];
+    if (step is! Map) continue;
+    final endLoc = _latLngFromMap(step['end_location']);
+    final startLoc = _latLngFromMap(step['start_location']);
+    final ref = endLoc ?? startLoc;
+    if (ref == null) continue;
+
+    final d = _distanceMeters(origin, ref);
+    if (d < best) {
+      best = d;
+      bestIdx = i;
+    }
+  }
+  return bestIdx.clamp(0, math.max(0, steps.length - 1));
+}
+
+LatLng? _latLngFromMap(dynamic raw) {
+  if (raw is! Map) return null;
+  final lat = raw['lat'];
+  final lng = raw['lng'];
+  if (lat is num && lng is num) {
+    return LatLng(lat.toDouble(), lng.toDouble());
+  }
+  return null;
+}
+
+double _distanceMeters(LatLng a, LatLng b) {
+  const r = 6371000.0; // earth radius meters
+  final dLat = _degToRad(b.latitude - a.latitude);
+  final dLon = _degToRad(b.longitude - a.longitude);
+  final lat1 = _degToRad(a.latitude);
+  final lat2 = _degToRad(b.latitude);
+
+  final sinDLat = math.sin(dLat / 2);
+  final sinDLon = math.sin(dLon / 2);
+  final h =
+      sinDLat * sinDLat +
+      math.cos(lat1) * math.cos(lat2) * sinDLon * sinDLon;
+  final c = 2 * math.atan2(math.sqrt(h), math.sqrt(1 - h));
+  return r * c;
+}
+
+double _degToRad(double deg) => deg * (math.pi / 180.0);
+
+String _normalizeManeuver(String rawManeuver, String directionHtml) {
+  final m = rawManeuver.toLowerCase().trim().replaceAll('_', '-');
+  if (m.isNotEmpty) return m;
+
+  final text = directionHtml.toLowerCase();
+  if (text.contains('roundabout')) {
+    if (text.contains('left')) return 'roundabout-left';
+    if (text.contains('right')) return 'roundabout-right';
+    return 'roundabout-right';
+  }
+
+  if (text.contains('u-turn') || text.contains('uturn')) {
+    if (text.contains('left')) return 'uturn-left';
+    if (text.contains('right')) return 'uturn-right';
+    return 'uturn-left';
+  }
+
+  if (text.contains('keep left') || text.contains('slight left')) {
+    return 'turn-left';
+  }
+  if (text.contains('keep right') || text.contains('slight right')) {
+    return 'turn-right';
+  }
+
+  if (text.contains(' left')) return 'turn-left';
+  if (text.contains(' right')) return 'turn-right';
+
+  return 'straight';
 }
 
 Future<Map<String, dynamic>> _fetchDirectionsRaw({

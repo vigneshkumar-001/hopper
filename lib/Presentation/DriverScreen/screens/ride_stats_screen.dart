@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/utils/map/shared_map.dart';
@@ -55,11 +56,15 @@ class RideStatsScreen extends StatelessWidget {
         'delayMinutes': eta < 0 ? 0 : eta,
         'message': msg,
       };
-      c.socketService.emitWithAck('driver-message', payload, (_) {});
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Sent: $msg')));
+      c.socketService.emitWithAck('driver-message', payload, (ack) {
+        final ok =
+            (ack is Map && (ack['success'] == true || ack['status'] == true));
+        if (ok) {
+          CustomSnackBar.showSuccess('Sent: $msg', title: 'Message');
+        } else {
+          CustomSnackBar.showError('Failed to send: $msg', title: 'Message');
+        }
+      });
     }
 
     return NoInternetOverlay(
@@ -111,7 +116,7 @@ class RideStatsScreen extends StatelessWidget {
                         Polyline(
                           polylineId: const PolylineId('route_main'),
                           color: AppColors.commonBlack,
-                          width: 5,
+                          width: 2,
                           points: c.polylinePoints,
                           startCap: Cap.roundCap,
                           endCap: Cap.roundCap,
@@ -470,6 +475,24 @@ class RideStatsScreen extends StatelessWidget {
 
                                       if (msg != null) {
                                         controller.success();
+
+                                        await Future.delayed(
+                                          const Duration(milliseconds: 300),
+                                        );
+
+                                        if (!context.mounted) return;
+
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder:
+                                                (_) => CashCollectedScreen(
+                                                  Amount: c.amount.value,
+                                                  bookingId: bookingId,
+                                                  isSharedRide: false,
+                                                ),
+                                          ),
+                                        );
                                       } else {
                                         controller.failure();
                                         ScaffoldMessenger.of(
@@ -1263,17 +1286,14 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     _lastSpeedPos = current;
     _lastSpeedAt = DateTime.now();
 
-    double targetZoom;
-    if (kmh >= 55) {
-      targetZoom = 14.1;
-    } else if (kmh >= 30) {
-      targetZoom = 14.7;
-    } else if (kmh >= 15) {
-      targetZoom = 15.4;
-    } else {
-      targetZoom = 16.0;
-    }
-    _followZoom = (_followZoom * 0.75) + (targetZoom * 0.25);
+    final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs).clamp(
+      14.6,
+      17.4,
+    );
+    _followZoom = MapMotionProfile.smoothZoom(_followZoom, targetZoom).clamp(
+      14.6,
+      17.4,
+    );
   }
 
   Future<void> _sendQuickMessage(String text, {int? delayMinutes}) async {
@@ -1286,13 +1306,18 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     };
     if (_isNetworkOffline || !socketService.connected) {
       _enqueueSocketEmit('driver-message', payload);
+      CustomSnackBar.showInfo('Queued: $text', title: 'Message');
       return;
     }
     socketService.emitWithAck('driver-message', payload, (ack) {
-      final ok = (ack is Map && ack['success'] == true);
-      if (!ok) {
-        _enqueueSocketEmit('driver-message', payload);
+      final ok =
+          (ack is Map && (ack['success'] == true || ack['status'] == true));
+      if (ok) {
+        CustomSnackBar.showSuccess('Sent: $text', title: 'Message');
+        return;
       }
+      _enqueueSocketEmit('driver-message', payload);
+      CustomSnackBar.showError('Failed, queued: $text', title: 'Message');
     });
   }
 
@@ -1499,21 +1524,21 @@ class _RideStatsScreenState extends State<RideStatsScreen>
   }
 
   String _maneuverAsset(String m) {
-    switch (m) {
-      case "turn-right":
-        return "assets/images/right-turn.png";
-      case "turn-left":
-        return "assets/images/left-turn.png"; // fixed
-      case "straight":
-      case "merge":
-        return 'assets/images/straight.png';
-      case "roundabout-left":
-        return 'assets/images/roundabout-left.png';
-      case "roundabout-right":
+    final maneuver = m.toLowerCase().trim().replaceAll('_', '-');
+    if (maneuver.contains('roundabout')) {
+      if (maneuver.contains('left')) return 'assets/images/roundabout-left.png';
+      if (maneuver.contains('right')) {
         return 'assets/images/roundabout-right.png';
-      default:
-        return 'assets/images/straight.png';
+      }
+      return 'assets/images/roundabout-right.png';
     }
+    if (maneuver.contains('uturn')) {
+      if (maneuver.contains('right')) return "assets/images/right-turn.png";
+      return "assets/images/left-turn.png";
+    }
+    if (maneuver.contains('left')) return "assets/images/left-turn.png";
+    if (maneuver.contains('right')) return "assets/images/right-turn.png";
+    return 'assets/images/straight.png';
   }
 
   Future<void> _goToCurrentLocation() async {
@@ -1619,12 +1644,16 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                   initialPosition: bookingFromLocation ?? const LatLng(0, 0),
                   markers: markers,
                   polylines: {
-                    Polyline(
-                      polylineId: const PolylineId("route"),
-                      color: AppColors.commonBlack,
-                      width: 4,
-                      points: polylinePoints,
-                    ),
+                    if (polylinePoints.length >= 2)
+                      Polyline(
+                        polylineId: const PolylineId("route"),
+                        color: AppColors.commonBlack,
+                        width: 2,
+                        points: polylinePoints,
+                        startCap: Cap.roundCap,
+                        endCap: Cap.roundCap,
+                        jointType: JointType.round,
+                      ),
                   },
                 ),
               ),
@@ -1663,10 +1692,13 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Image.asset(
-                                _maneuverAsset(maneuver),
-                                height: 32,
-                                width: 32,
+                              Icon(
+                                NavigationAssist.iconForManeuver(
+                                  maneuver,
+                                  directionText: directionText,
+                                ),
+                                size: 32,
+                                color: Colors.white,
                               ),
                               const SizedBox(height: 5),
                               CustomTextfield.textWithStyles600(

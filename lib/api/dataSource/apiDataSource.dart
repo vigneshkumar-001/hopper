@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer';
 
 import 'dart:io';
+import 'package:get/get.dart' hide Response, FormData, MultipartFile;
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/models/loginResponse.dart';
@@ -31,6 +32,7 @@ import '../../Presentation/Drawer/model/ride_history_response.dart';
 import '../../Presentation/Drawer/model/shared_booking_response.dart';
 import '../../Presentation/Drawer/model/wallet_history_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/booking_accept_model.dart';
+import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_response.dart';
 import '../../Presentation/DriverScreen/models/cash_collected_response.dart';
 import '../../Presentation/DriverScreen/models/chat_history_response.dart';
 import '../../Presentation/DriverScreen/models/driver_online_status_model.dart';
@@ -1038,6 +1040,199 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
+  // ------------------------------------------------------------
+  // Support (Customer-style tickets)
+  // ------------------------------------------------------------
+
+  Future<Either<Failure, List<Map<String, dynamic>>>> getSupportTickets() async {
+    try {
+      final url = ApiConstents.supportMyTickets;
+      final response = await Request.sendGetRequest(url, {}, 'GET', true);
+
+      if (response == null) {
+        return Left(ServerFailure(''));
+      }
+
+      final code = response.statusCode ?? 0;
+      if (code < 200 || code >= 300) {
+        final msg = (response.data is Map<String, dynamic>)
+            ? (response.data['message'] ?? response.data['error'] ?? '').toString()
+            : '';
+        return Left(
+          ServerFailure(msg),
+        );
+      }
+
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        return Left(ServerFailure(''));
+      }
+
+      if (data['success'] != true) {
+        return Left(
+          ServerFailure((data['message'] ?? data['error'] ?? '').toString()),
+        );
+      }
+
+      final dynamic payload = data['data'];
+      final List list =
+          payload is List
+              ? payload
+              : (payload is Map<String, dynamic> && payload['tickets'] is List)
+                  ? payload['tickets'] as List
+                  : <dynamic>[];
+
+      final out =
+          list
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList(growable: false);
+
+      return Right(out);
+    } catch (e, st) {
+      CommonLogger.log.e("getSupportTickets error: $e\n$st");
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, Map<String, dynamic>>> createSupportTicket({
+    required String categoryId,
+    required String subcategoryId,
+    required String priority,
+    required String subject,
+    required String detailedDescription,
+    required List<String> attachments,
+  }) async {
+    try {
+      final url = ApiConstents.supportCustomerTickets;
+      final payload = <String, dynamic>{
+        "categoryId": categoryId,
+        "subcategoryId": subcategoryId,
+        "priority": priority,
+        "subject": subject,
+        "detailedDescription": detailedDescription,
+        "attachments": attachments,
+      };
+
+      final response = await Request.sendRequest(url, payload, 'Post', true);
+
+      if (response is DioException) {
+        final dynamic raw = response.response?.data;
+        final String msg =
+            (raw is Map<String, dynamic>)
+                ? (raw['message'] ?? raw['error'] ?? '').toString()
+                : '';
+        return Left(ServerFailure(msg.isNotEmpty ? msg : (response.message ?? '')));
+      }
+
+      if (response is! Response) {
+        return Left(ServerFailure(''));
+      }
+
+      final code = response.statusCode ?? 0;
+      if (code < 200 || code >= 300) {
+        final msg = (response.data is Map<String, dynamic>)
+            ? (response.data['message'] ?? response.data['error'] ?? '').toString()
+            : '';
+        return Left(ServerFailure(msg));
+      }
+
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        return Left(ServerFailure(''));
+      }
+
+      if (data['success'] != true) {
+        final msg = (data['message'] ?? data['error'] ?? 'Failed').toString();
+        return Left(ServerFailure(msg));
+      }
+
+      final apiMessage = (data['message'] ?? '').toString().trim();
+
+      final dynamic raw = data['data'];
+      Map<String, dynamic> ticketJson = <String, dynamic>{};
+      if (raw is Map<String, dynamic>) {
+        final inner = raw['ticket'];
+        if (inner is Map<String, dynamic>) {
+          ticketJson = Map<String, dynamic>.from(inner);
+        } else {
+          ticketJson = Map<String, dynamic>.from(raw);
+        }
+      }
+
+      ticketJson['_apiMessage'] = apiMessage;
+      return Right(ticketJson);
+    } catch (e, st) {
+      CommonLogger.log.e("createSupportTicket error: $e\n$st");
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, Map<String, dynamic>>> getSupportCommonDetails() async {
+    try {
+      final url = ApiConstents.supportCommonDetails;
+      final response = await Request.sendGetRequest(url, {}, 'GET', true);
+
+      if (response == null) {
+        return Left(ServerFailure(''));
+      }
+
+      final code = response.statusCode ?? 0;
+      if (code < 200 || code >= 300) {
+        final msg = (response.data is Map<String, dynamic>)
+            ? (response.data['message'] ?? response.data['error'] ?? '').toString()
+            : '';
+        return Left(ServerFailure(msg));
+      }
+
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        return Left(ServerFailure(''));
+      }
+
+      if (data['success'] != true) {
+        final msg = (data['message'] ?? data['error'] ?? '').toString();
+        return Left(ServerFailure(msg));
+      }
+
+      final dynamic payload = data['data'];
+      if (payload is Map<String, dynamic>) {
+        return Right(payload);
+      }
+
+      return Right(<String, dynamic>{});
+    } catch (e, st) {
+      CommonLogger.log.e("getSupportCommonDetails error: $e\n$st");
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, DriverActiveBookingResponse>>
+  getDriverActiveBooking() async {
+    try {
+      final cfg = Get.find<ApiConfigController>();
+      final url =
+          cfg.isSharedEnabled.value
+              ? ApiConstents.sharedDriverActiveBooking
+              : ApiConstents.driverActiveBooking;
+
+      final response = await Request.sendGetRequest(url, {}, 'GET', true);
+
+      if (response is Response && response.statusCode == 200) {
+        return Right(DriverActiveBookingResponse.fromJson(response.data));
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
   Future<Either<Failure, BookingAcceptModel>> bookingAccept({
     required String bookingId,
     required String status,
@@ -1075,7 +1270,7 @@ class ApiDataSource extends BaseApiDataSource {
   }) async {
     try {
       String url = ApiConstents.generateOtp;
-
+CommonLogger.log.i("OTP Request URL: $url with bookingId: $bookingId");
       final response = await Request.sendRequest(
         url,
         {"bookingId": bookingId},

@@ -10,6 +10,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/api/repository/api_constents.dart';
@@ -117,7 +118,7 @@ class PickingCustomerSharedController extends GetxController {
   final RxBool isOffRouteAlert = false.obs;
   final RxBool isNetworkOffline = false.obs;
   final RxInt pendingQueueCount = 0.obs;
-  final RxDouble followZoom = 15.0.obs;
+  final RxDouble followZoom = 14.4.obs;
 
   // tracking
   StreamSubscription<Position>? _posSub;
@@ -227,9 +228,9 @@ class PickingCustomerSharedController extends GetxController {
       final ctx = Get.context;
       final dpr = (ctx != null) ? MediaQuery.of(ctx).devicePixelRatio : 2.5;
 
-      // ✅ bigger + cleaner icon (use good PNG asset 96/128px)
+      // ✅ keep marker readable (bike slightly smaller than car)
       final cfg = ImageConfiguration(
-        size: const Size(72, 72),
+        size: const Size(36, 36),
         devicePixelRatio: dpr,
       );
 
@@ -238,7 +239,13 @@ class PickingCustomerSharedController extends GetxController {
               ? AppImages.parcelBike
               : AppImages.movingCar;
 
-      final icon = await BitmapDescriptor.fromAssetImage(cfg, asset);
+      final markerHeight =
+          driverStatusController.serviceType.value == "Bike" ? 28.0 : 36.0;
+      final icon = await BitmapDescriptor.asset(
+        height: markerHeight,
+        cfg,
+        asset,
+      );
       carIcon.value = icon;
     } catch (e) {
       CommonLogger.log.e("car icon load failed: $e");
@@ -718,18 +725,14 @@ class PickingCustomerSharedController extends GetxController {
   }
 
   void _updateSmartAutoZoom(double speedMs) {
-    final kmh = speedMs * 3.6;
-    double targetZoom;
-    if (kmh >= 55) {
-      targetZoom = 13.8;
-    } else if (kmh >= 30) {
-      targetZoom = 14.2;
-    } else if (kmh >= 15) {
-      targetZoom = 14.7;
-    } else {
-      targetZoom = 15.2;
-    }
-    followZoom.value = (followZoom.value * 0.75) + (targetZoom * 0.25);
+    final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs).clamp(
+      14.6,
+      17.4,
+    );
+    followZoom.value = MapMotionProfile.smoothZoom(
+      followZoom.value,
+      targetZoom,
+    ).clamp(14.6, 17.4);
   }
 
   Future<void> sendQuickMessage({
@@ -748,14 +751,19 @@ class PickingCustomerSharedController extends GetxController {
 
     if (isNetworkOffline.value || !socketService.connected) {
       _enqueueSocketEmit('driver-message', payload);
+      CustomSnackBar.showInfo('Queued: $text', title: 'Message');
       return;
     }
 
     socketService.emitWithAck('driver-message', payload, (ack) {
-      final ok = (ack is Map && ack['success'] == true);
-      if (!ok) {
-        _enqueueSocketEmit('driver-message', payload);
+      final ok =
+          (ack is Map && (ack['success'] == true || ack['status'] == true));
+      if (ok) {
+        CustomSnackBar.showSuccess('Sent: $text', title: 'Message');
+        return;
       }
+      _enqueueSocketEmit('driver-message', payload);
+      CustomSnackBar.showError('Failed, queued: $text', title: 'Message');
     });
   }
 

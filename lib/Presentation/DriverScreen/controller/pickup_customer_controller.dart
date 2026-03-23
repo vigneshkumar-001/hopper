@@ -243,15 +243,20 @@ class PickingCustomerController extends GetxController {
 
   Future<void> _loadCarIcon() async {
     try {
-      final cfg = const ImageConfiguration(size: Size(42, 42));
       final asset =
           driverStatusController.serviceType.value == "Bike"
               ? AppImages.parcelBike
               : AppImages.movingCar;
 
-      // safest API:
-      final icon = await BitmapDescriptor.fromAssetImage(cfg, asset);
-      carIcon.value = icon;
+      // Keep bike slightly smaller than car so it doesn't look oversized on map.
+      final markerHeight =
+          driverStatusController.serviceType.value == "Bike" ? 28.0 : 36.0;
+      const cfg = ImageConfiguration(size: Size(36, 36));
+      carIcon.value = await BitmapDescriptor.asset(
+        height: markerHeight,
+        cfg,
+        asset,
+      );
     } catch (_) {
       carIcon.value = BitmapDescriptor.defaultMarker;
     }
@@ -329,10 +334,6 @@ class PickingCustomerController extends GetxController {
         );
         // handled in UI navigation (you already do)
       }
-    });
-
-    socketService.socket.onAny((event, data) {
-      CommonLogger.log.i('Pickup socket event: $event | data: $data');
     });
 
     if (!socketService.connected) {

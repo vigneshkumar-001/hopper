@@ -6,14 +6,18 @@ class MapMotionProfile {
 
   static double targetZoomFromSpeed(double speedMs) {
     final kmh = speedMs * 3.6;
-    if (kmh >= 55) return 13.8;
-    if (kmh >= 30) return 14.3;
-    if (kmh >= 15) return 14.8;
-    return 15.3;
+    // Keep the road + next turn clearly visible (avoid aggressive zoom-out).
+    // Tuned for ride apps (Ola/Uber-like follow camera).
+    if (kmh >= 70) return 14.6;
+    if (kmh >= 45) return 15.0;
+    if (kmh >= 25) return 15.4;
+    if (kmh >= 12) return 15.8;
+    return 16.2;
   }
 
   static double smoothZoom(double currentZoom, double targetZoom) {
-    return (currentZoom * 0.75) + (targetZoom * 0.25);
+    // Slow smoothing to prevent zoom "pumping" on GPS speed jitter.
+    return (currentZoom * 0.90) + (targetZoom * 0.10);
   }
 
   static bool shouldFreezeTurn({

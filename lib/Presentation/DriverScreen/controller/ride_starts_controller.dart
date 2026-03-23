@@ -101,6 +101,12 @@ class RideStatsController extends GetxController
   static const int _POLYLINE_TRIM_LOOKAHEAD_POINTS = 40;
   static const int _OFF_ROUTE_LOOKAHEAD_POINTS = 80;
 
+  /// Show "Complete Ride" when within this radius of the drop location.
+  static const double _REACHED_DESTINATION_RADIUS_M = 200.0;
+
+  /// Hysteresis so UI doesn\u0027t flicker near the boundary.
+  static const double _REACHED_DESTINATION_EXIT_RADIUS_M = 320.0;
+
   /// route refresh throttle (prevents too many API calls)
   DateTime _lastRouteRefresh = DateTime.fromMillisecondsSinceEpoch(0);
   static const double _minFollowZoom = 12.8;
@@ -157,12 +163,18 @@ class RideStatsController extends GetxController
 
   Future<void> _loadMarkerIcons() async {
     try {
-      final cfg = const ImageConfiguration(size: Size(42, 42));
+      final cfg = const ImageConfiguration(size: Size(36, 36));
       final String asset =
           driverStatusController.serviceType.value == "Bike"
               ? AppImages.parcelBike
               : AppImages.movingCar;
-      final icon = await BitmapDescriptor.asset(height: 42, cfg, asset);
+      final markerHeight =
+          driverStatusController.serviceType.value == "Bike" ? 28.0 : 36.0;
+      final icon = await BitmapDescriptor.asset(
+        height: markerHeight,
+        cfg,
+        asset,
+      );
       carIcon.value = icon;
     } catch (_) {
       carIcon.value = BitmapDescriptor.defaultMarker;
@@ -288,14 +300,6 @@ class RideStatsController extends GetxController
     socketService = SocketService();
     final cfg = Get.find<ApiConfigController>();
     socketService.initSocket(cfg.socketUrl);
-
-    socketService.on('driver-reached-destination', (data) {
-      final status = data?['status'];
-      if (status == true || status?.toString() == 'true') {
-        driverCompletedRide.value = true;
-      }
-    });
-
     socketService.on('driver-location', (data) {
       CommonLogger.log.i('driver-location : $data');
       if (data == null) return;
@@ -329,6 +333,33 @@ class RideStatsController extends GetxController
     }
   }
 
+  void _updateReachedDestinationByDistance(LatLng current) {
+    final to = bookingToLocation.value;
+    if (to == null) return;
+
+    final distanceToDropM = Geolocator.distanceBetween(
+      current.latitude,
+      current.longitude,
+      to.latitude,
+      to.longitude,
+    );
+
+    // Keep UI distance usable even if socket is delayed/offline.
+    driverStatusController.dropDistanceInMeters.value = distanceToDropM;
+
+    final reached = distanceToDropM <= _REACHED_DESTINATION_RADIUS_M;
+    final exit = distanceToDropM >= _REACHED_DESTINATION_EXIT_RADIUS_M;
+
+    if (!driverCompletedRide.value && reached) {
+      driverCompletedRide.value = true;
+      CommonLogger.log.i(
+        'Auto driverCompletedRide TRUE at ${distanceToDropM.toStringAsFixed(1)}m from drop',
+      );
+    } else if (driverCompletedRide.value && exit) {
+      driverCompletedRide.value = false;
+    }
+  }
+
   // ---------------- LOCATION STREAM ----------------
 
   void _startLocationStream() {
@@ -345,6 +376,8 @@ class RideStatsController extends GetxController
       final heading = (position.heading.isFinite) ? position.heading : -1.0;
 
       if (acc > _MAX_ACCURACY_M) return;
+
+      _updateReachedDestinationByDistance(current);
       _updateSmartAutoZoom(speed);
 
       if (_lastDriverPosition == null) {
@@ -408,15 +441,14 @@ class RideStatsController extends GetxController
 
       _trimPolylineAlongProgress(current);
 
-      if (_isOffRoute(current)) {
-        await _throttledRefreshRoute(current);
-      }
+      final offRoute = _isOffRoute(current);
+      await _throttledRefreshRoute(current, force: offRoute);
     });
   }
 
-  Future<void> _throttledRefreshRoute(LatLng from) async {
+  Future<void> _throttledRefreshRoute(LatLng from, {bool force = false}) async {
     final now = DateTime.now();
-    if (now.difference(_lastRouteRefresh).inSeconds < 8) return;
+    if (!force && now.difference(_lastRouteRefresh).inSeconds < 8) return;
     _lastRouteRefresh = now;
     await refreshRouteFrom(from);
   }
@@ -541,13 +573,18 @@ class RideStatsController extends GetxController
 
     if (autoFollowEnabled.value && mapController != null && _isMapActive) {
       final now = DateTime.now();
-      if (now.difference(_lastCameraFollowAt).inMilliseconds >= 140) {
+      if (now.difference(_lastCameraFollowAt).inMilliseconds >= 320) {
         _lastCameraFollowAt = now;
+        final followTarget = _offsetLatLng(
+          pos,
+          bearing,
+          _followZoom >= 14.6 ? 70.0 : 120.0,
+        );
         unawaited(
           _safeMoveCamera(
             CameraUpdate.newCameraPosition(
               CameraPosition(
-                target: pos,
+                target: followTarget,
                 zoom: _followZoom.clamp(_minFollowZoom, _maxFollowZoom),
                 tilt: 45,
                 bearing: bearing,
@@ -557,6 +594,28 @@ class RideStatsController extends GetxController
         );
       }
     }
+  }
+
+  LatLng _offsetLatLng(LatLng origin, double bearingDeg, double meters) {
+    const earthRadiusM = 6378137.0;
+    final bearing = bearingDeg * math.pi / 180.0;
+    final d = meters / earthRadiusM;
+
+    final lat1 = origin.latitude * math.pi / 180.0;
+    final lng1 = origin.longitude * math.pi / 180.0;
+
+    final lat2 = math.asin(
+      math.sin(lat1) * math.cos(d) +
+          math.cos(lat1) * math.sin(d) * math.cos(bearing),
+    );
+    final lng2 =
+        lng1 +
+        math.atan2(
+          math.sin(bearing) * math.sin(d) * math.cos(lat1),
+          math.cos(d) - math.sin(lat1) * math.sin(lat2),
+        );
+
+    return LatLng(lat2 * 180.0 / math.pi, lng2 * 180.0 / math.pi);
   }
 
   void _setMarkerImmediate(LatLng pos, double bearing) {

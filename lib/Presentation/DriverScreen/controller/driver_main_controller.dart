@@ -15,12 +15,19 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/sharedprefsHelper/booking_local_data.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
+import 'package:hopper/api/dataSource/apiDataSource.dart';
 import '../../../api/repository/api_config_controller.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/app_map_style.dart';
 
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_response.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/picking_shared_screens.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/share_ride_start_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/picking_customer_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/ride_stats_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
 import '../screens/SharedBooking/Controller/booking_request_controller.dart';
 
 class DriverMainController extends GetxController
@@ -70,13 +77,24 @@ class DriverMainController extends GetxController
   final RxBool followDriver = true.obs;
   Timer? cameraFollowTimer;
   double _followZoom = 15.7;
+  LatLng? _lastCameraFollowTarget;
+  double _lastCameraFollowBearing = 0;
+  DateTime _lastCameraFollowMoveAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   // Config
   final ApiConfigController cfg = Get.find<ApiConfigController>();
   Worker? _sharedToggleWorker;
+  final ApiDataSource _apiDataSource = ApiDataSource();
 
   // ✅ IMPORTANT: prevent callbacks after dispose
   bool _disposed = false;
+  bool _checkingActiveBooking = false;
+  DateTime? _lastActiveBookingCheckAt;
+  String? _lastResumedBookingId;
+  String? _lastDismissedBookingId;
+
+  final Rxn<Map<String, dynamic>> activeBookingData = Rxn<Map<String, dynamic>>();
+  final RxBool showActiveBookingCard = false.obs;
 
   // ---------------- helpers ----------------
   double safeToDouble(dynamic value) {
@@ -169,17 +187,17 @@ class DriverMainController extends GetxController
   // ---------------- icon ----------------
   Future<void> loadCustomCarIcon() async {
     try {
-      if (statusController.serviceType.value == "Car") {
-        carIcon = await BitmapDescriptor.asset(
-          const ImageConfiguration(size: Size(57, 57)),
-          AppImages.movingCar,
-        );
-      } else {
-        carIcon = await BitmapDescriptor.asset(
-          const ImageConfiguration(size: Size(57, 57)),
-          AppImages.parcelBike,
-        );
-      }
+      const cfg = ImageConfiguration(size: Size(36, 36));
+      final asset =
+          statusController.isCar ? AppImages.movingCar : AppImages.parcelBike;
+
+      // Bike marker should be a bit smaller than car.
+      final markerHeight = statusController.isCar ? 36.0 : 28.0;
+      carIcon = await BitmapDescriptor.asset(
+        height: markerHeight,
+        cfg,
+        asset,
+      );
     } catch (e) {
       if (kDebugMode) CommonLogger.log.w("Car icon load failed: $e");
       carIcon = BitmapDescriptor.defaultMarker;
@@ -300,24 +318,104 @@ class DriverMainController extends GetxController
   void startCameraFollow() {
     cameraFollowTimer?.cancel();
 
-    cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 900), (_) {
+    // Smoother follow (closer to Uber/Ola feel).
+    cameraFollowTimer = Timer.periodic(const Duration(milliseconds: 420), (_) {
       if (_disposed || isClosed) return;
       if (!followDriver.value) return;
       if (lastPosition == null) return;
       if (mapController == null) return;
 
+      final target = lastPosition!;
       final bearing = carMarker?.rotation ?? 0;
+
+      final now = DateTime.now();
+      if (now.difference(_lastCameraFollowMoveAt).inMilliseconds < 240) return;
+
+      // avoid micro updates
+      final prev = _lastCameraFollowTarget;
+      if (prev != null) {
+        final dx = (prev.latitude - target.latitude).abs();
+        final dy = (prev.longitude - target.longitude).abs();
+        final moved = (dx + dy) > 0.00002; // ~2m
+        final rotDelta = (bearing - _lastCameraFollowBearing).abs() % 360;
+        final rotOk = rotDelta > 5 && rotDelta < 355;
+        if (!moved && !rotOk) return;
+      }
+
+      _lastCameraFollowTarget = target;
+      _lastCameraFollowBearing = bearing;
+      _lastCameraFollowMoveAt = now;
+
+      // small lead so road ahead is visible
+      final leadMeters =
+          _followZoom >= 15.0 ? 70.0 : (_followZoom >= 14.3 ? 110.0 : 150.0);
+      final followTarget = _offsetLatLng(target, bearing, leadMeters);
+
       mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(
-            target: lastPosition!,
+            target: followTarget,
             zoom: _followZoom,
-            tilt: 40,
+            tilt: 35,
             bearing: bearing,
           ),
         ),
       );
     });
+  }
+
+  LatLng _offsetLatLng(LatLng origin, double bearingDeg, double meters) {
+    const earthRadiusM = 6378137.0;
+    final b = bearingDeg * (pi / 180.0);
+    final d = meters / earthRadiusM;
+
+    final lat1 = origin.latitude * (pi / 180.0);
+    final lng1 = origin.longitude * (pi / 180.0);
+
+    final lat2 = asin(
+      sin(lat1) * cos(d) + cos(lat1) * sin(d) * cos(b),
+    );
+    final lng2 =
+        lng1 +
+        atan2(
+          sin(b) * sin(d) * cos(lat1),
+          cos(d) - sin(lat1) * sin(lat2),
+        );
+
+    return LatLng(lat2 * 180.0 / pi, lng2 * 180.0 / pi);
+  }
+
+  String? _normalizeBookingId(dynamic raw) {
+    final v = (raw ?? '').toString().trim();
+    if (v.isEmpty) return null;
+    if (v.toLowerCase() == 'null') return null;
+    return v;
+  }
+
+  String? _resolveBookingIdForLocationPayload() {
+    final direct = _normalizeBookingId(currentBookingId);
+    if (direct != null) return direct;
+
+    final cached = BookingDataService().getBookingData();
+    if (cached == null) return null;
+
+    final topLevel = _normalizeBookingId(cached['bookingId']);
+    if (topLevel != null) return topLevel;
+
+    final activeList = cached['activeBookings'];
+    if (activeList is List && activeList.isNotEmpty) {
+      final first = activeList.first;
+      if (first is Map) {
+        final activeId = _normalizeBookingId(first['bookingId']);
+        if (activeId != null) return activeId;
+      }
+    }
+
+    final activeCard = activeBookingData.value;
+    final cardId = _normalizeBookingId(activeCard?['bookingId']);
+    if (cardId != null) return cardId;
+
+    return null;
   }
 
   // ---------------- location emit loop ----------------
@@ -337,13 +435,17 @@ class DriverMainController extends GetxController
 
       final speedMs = (pos.speed.isFinite && pos.speed >= 0) ? pos.speed : 0.0;
       final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs);
-      _followZoom = MapMotionProfile.smoothZoom(_followZoom, targetZoom);
+      _followZoom = MapMotionProfile.smoothZoom(
+        _followZoom,
+        targetZoom.clamp(14.6, 17.4),
+      ).clamp(14.6, 17.4);
 
+      final bookingIdForPayload = _resolveBookingIdForLocationPayload();
       latestLocationPayload = {
         'userId': driverId,
         'latitude': pos.latitude,
         'longitude': pos.longitude,
-        if (currentBookingId != null) 'bookingId': currentBookingId,
+        if (bookingIdForPayload != null) 'bookingId': bookingIdForPayload,
       };
 
       updateCarMarker(LatLng(pos.latitude, pos.longitude));
@@ -453,6 +555,290 @@ class DriverMainController extends GetxController
       );
       startCountdown();
     });
+  }
+
+  LatLng? _extractLatLngFrom(
+    Map<String, dynamic> data, {
+    required String mapKey,
+    required String latKey,
+    required String lngKey,
+  }) {
+    final nested = data[mapKey];
+    if (nested is Map) {
+      final lat = nested['latitude'];
+      final lng = nested['longitude'];
+      if (lat is num && lng is num) return LatLng(lat.toDouble(), lng.toDouble());
+      final latD = double.tryParse(lat?.toString() ?? '');
+      final lngD = double.tryParse(lng?.toString() ?? '');
+      if (latD != null && lngD != null) return LatLng(latD, lngD);
+    }
+
+    final lat = data[latKey];
+    final lng = data[lngKey];
+    if (lat is num && lng is num) return LatLng(lat.toDouble(), lng.toDouble());
+    final latD = double.tryParse(lat?.toString() ?? '');
+    final lngD = double.tryParse(lng?.toString() ?? '');
+    if (latD != null && lngD != null) return LatLng(latD, lngD);
+    return null;
+  }
+
+  bool _asBool(dynamic v) {
+    if (v == true) return true;
+    final s = v?.toString().toLowerCase().trim();
+    return s == 'true' || s == '1' || s == 'yes';
+  }
+
+  bool _statusHas(String status, List<String> needles) {
+    final s = status.toLowerCase();
+    for (final n in needles) {
+      if (s.contains(n)) return true;
+    }
+    return false;
+  }
+
+  Future<void> checkAndResumeActiveBooking({bool force = false}) async {
+    if (_disposed || isClosed) return;
+    if (_checkingActiveBooking) return;
+
+    final now = DateTime.now();
+    final last = _lastActiveBookingCheckAt;
+    if (!force && last != null && now.difference(last) < const Duration(seconds: 8)) {
+      return;
+    }
+    _lastActiveBookingCheckAt = now;
+
+    _checkingActiveBooking = true;
+    try {
+      final result = await _apiDataSource.getDriverActiveBooking();
+      if (_disposed || isClosed) return;
+
+      await result.fold(
+        (_) async {},
+        (DriverActiveBookingResponse response) async {
+          if (!response.hasBooking) {
+            activeBookingData.value = null;
+            _lastDismissedBookingId = null;
+            showActiveBookingCard.value = false;
+            return;
+          }
+          final data = response.data;
+          if (data == null) {
+            activeBookingData.value = null;
+            showActiveBookingCard.value = false;
+            return;
+          }
+
+          final bookingId = (data['bookingId'] ?? '').toString().trim();
+          if (bookingId.isEmpty) return;
+          currentBookingId = bookingId;
+
+          final did = driverId;
+          if (did != null && did.trim().isNotEmpty) {
+            socketService.registerDriver(did, bookingId: bookingId);
+            socketService.joinBooking(bookingId, userId: did);
+          }
+
+          final status = (data['status'] ?? '').toString();
+          final cancelled =
+              _asBool(data['cancelled']) || _statusHas(status, ['cancel']);
+          final completed =
+              _asBool(data['destinationReached']) ||
+              _statusHas(status, ['complete', 'completed', 'finished']);
+          if (cancelled || completed) {
+            activeBookingData.value = null;
+            _lastDismissedBookingId = null;
+            showActiveBookingCard.value = false;
+            return;
+          }
+
+          activeBookingData.value = Map<String, dynamic>.from(data);
+
+          if (_lastDismissedBookingId == bookingId) {
+            showActiveBookingCard.value = false;
+          } else {
+            showActiveBookingCard.value = true;
+          }
+        },
+      );
+    } finally {
+      _checkingActiveBooking = false;
+    }
+  }
+
+  void dismissActiveBookingCard() {
+    final id = activeBookingData.value?['bookingId']?.toString();
+    if (id != null && id.trim().isNotEmpty) {
+      _lastDismissedBookingId = id;
+    }
+    showActiveBookingCard.value = false;
+  }
+
+  LatLng? _pickupFromActiveBooking(Map<String, dynamic> data) {
+    final fromPickup = _extractLatLngFrom(
+      data,
+      mapKey: 'pickupLocation',
+      latKey: 'fromLatitude',
+      lngKey: 'fromLongitude',
+    );
+    if (fromPickup != null) return fromPickup;
+    return _extractLatLngFrom(
+      data,
+      mapKey: 'customerLocation',
+      latKey: 'fromLatitude',
+      lngKey: 'fromLongitude',
+    );
+  }
+
+  LatLng? _driverFromActiveBooking(Map<String, dynamic> data) {
+    final live = data['driverLiveTracking'];
+    if (live is Map) {
+      final lat = live['currentLatitude'];
+      final lng = live['currentLongitude'];
+      if (lat is num && lng is num) return LatLng(lat.toDouble(), lng.toDouble());
+      final latD = double.tryParse(lat?.toString() ?? '');
+      final lngD = double.tryParse(lng?.toString() ?? '');
+      if (latD != null && lngD != null) return LatLng(latD, lngD);
+    }
+    final driverLoc = data['driverLocation'];
+    if (driverLoc is Map) {
+      final lat = driverLoc['latitude'];
+      final lng = driverLoc['longitude'];
+      if (lat is num && lng is num) return LatLng(lat.toDouble(), lng.toDouble());
+      final latD = double.tryParse(lat?.toString() ?? '');
+      final lngD = double.tryParse(lng?.toString() ?? '');
+      if (latD != null && lngD != null) return LatLng(latD, lngD);
+    }
+    return null;
+  }
+
+  Future<void> resumeActiveBooking() async {
+    if (_disposed || isClosed) return;
+    final data = activeBookingData.value;
+    if (data == null) return;
+
+    final bookingId = (data['bookingId'] ?? '').toString().trim();
+    if (bookingId.isEmpty) return;
+    if (_lastResumedBookingId == bookingId) return;
+
+    final status = (data['status'] ?? '').toString();
+    final cancelled =
+        _asBool(data['cancelled']) || _statusHas(status, ['cancel']);
+    final completed =
+        _asBool(data['destinationReached']) ||
+        _statusHas(status, ['complete', 'completed', 'finished']);
+    if (cancelled || completed) return;
+
+    final live = data['driverLiveTracking'];
+    final isShared =
+        _asBool(data['sharedBooking']) ||
+        _asBool(data['isShared']) ||
+        _asBool(data['shared']) ||
+        (live is Map && _asBool(live['sharedBooking']));
+
+    final pickup = _pickupFromActiveBooking(data);
+    if (pickup == null) return;
+
+    final driverLoc =
+        _driverFromActiveBooking(data) ??
+        lastPosition ??
+        currentPosition.value ??
+        pickup;
+
+    final pickupAddress =
+        (data['pickupAddress'] ?? data['pickupLocationAddress'] ?? '')
+            .toString();
+    final dropAddress =
+        (data['dropAddress'] ?? data['dropLocationAddress'] ?? '')
+            .toString();
+
+    final rideStarted =
+        _asBool(data['rideStarted']) ||
+        _asBool(data['rideStart']) ||
+        _statusHas(status, [
+          'ride_in_progress',
+          'ride in progress',
+          'ride_started',
+          'ride started',
+          'started',
+          'in_progress',
+        ]);
+
+    final did = driverId;
+    if (did != null && did.trim().isNotEmpty) {
+      currentBookingId = bookingId;
+      socketService.registerDriver(did, bookingId: bookingId);
+      socketService.joinBooking(bookingId, userId: did);
+    }
+
+    _lastResumedBookingId = bookingId;
+    showActiveBookingCard.value = false;
+
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (_disposed || isClosed) return;
+
+    if (isShared) {
+      if (rideStarted) {
+        Get.off(
+          () => ShareRideStartScreen(
+            pickupLocation: pickup,
+            driverLocation: driverLoc,
+            bookingId: bookingId,
+          ),
+        );
+        return;
+      }
+
+      Get.off(
+        () => PickingCustomerSharedScreen(
+          pickupLocation: pickup,
+          driverLocation: driverLoc,
+          bookingId: bookingId,
+          pickupLocationAddress: pickupAddress,
+          dropLocationAddress: dropAddress,
+        ),
+      );
+      return;
+    }
+
+    if (rideStarted) {
+      Get.off(
+        () => RideStatsScreen(
+          bookingId: bookingId,
+          pickupAddress: pickupAddress,
+          dropAddress: dropAddress,
+        ),
+      );
+      return;
+    }
+
+    final arrived =
+        _asBool(data['driverArrived']) || _statusHas(status, ['arrived']);
+    final otpVerified = _asBool(data['otpVerified']);
+    final custName =
+        (data['custName'] ?? data['customerName'] ?? data['name'] ?? '')
+            .toString();
+
+    if (arrived && !otpVerified && custName.trim().isNotEmpty) {
+      Get.off(
+        () => VerifyRiderScreen(
+          bookingId: bookingId,
+          custName: custName,
+          pickupAddress: pickupAddress,
+          dropAddress: dropAddress,
+        ),
+      );
+      return;
+    }
+
+    Get.off(
+      () => PickingCustomerScreen(
+        pickupLocation: pickup,
+        driverLocation: driverLoc,
+        bookingId: bookingId,
+        pickupLocationAddress: pickupAddress,
+        dropLocationAddress: dropAddress,
+      ),
+    );
   }
 
   Future<void> initSocketAndLocation() async {
@@ -610,6 +996,7 @@ class DriverMainController extends GetxController
 
       _listenSharedToggle();
       await initSocketAndLocation();
+      await checkAndResumeActiveBooking();
     } catch (e) {
       CommonLogger.log.e("prepare error: $e");
       ready.value = true;

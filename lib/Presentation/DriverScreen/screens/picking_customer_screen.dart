@@ -777,6 +777,7 @@ class PickingCustomerScreen extends StatelessWidget {
     if (distanceText.trim().isNotEmpty) return distanceText;
     final meters = driverStatusController.pickupDistanceInMeters.value;
     if (meters <= 0) return '--';
+    if (meters < 1) return '<1 m';
     if (meters >= 1000) return '${(meters / 1000).toStringAsFixed(1)} km';
     return '${meters.round()} m';
   }
@@ -787,7 +788,7 @@ class PickingCustomerScreen extends StatelessWidget {
   ) {
     if (directionText.trim().isNotEmpty) return directionText;
     final eta = driverStatusController.pickupDurationInMin.value;
-    if (eta > 0) return 'ETA  min';
+    if (eta > 0) return 'ETA ${eta.round()} min';
     return 'Route to pickup';
   }
 
@@ -833,13 +834,30 @@ class PickingCustomerScreen extends StatelessWidget {
       ),
       subtitle: Center(
         child: Obx(
-          () => CustomTextfield.textWithStylesSmall(
-            c.customerName.value.trim().isEmpty
-                ? 'Picking up Rider'
-                : 'Picking up ${c.customerName.value.trim()}',
-            fontSize: 14,
-            colors: AppColors.textColorGrey,
-          ),
+          () {
+            final nameLine =
+                c.customerName.value.trim().isEmpty
+                    ? 'Picking up Rider'
+                    : 'Picking up ${c.customerName.value.trim()}';
+            final distLine = _routeDistanceText(driverStatusController, '');
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CustomTextfield.textWithStylesSmall(
+                  nameLine,
+                  fontSize: 14,
+                  colors: AppColors.textColorGrey,
+                ),
+                const SizedBox(height: 2),
+                CustomTextfield.textWithStylesSmall(
+                  distLine,
+                  fontSize: 12,
+                  colors: AppColors.textColorGrey,
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1458,6 +1476,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   static const double _HEADING_TRUST_MS =
       2.0; // only trust device heading if ≥2 m/s
   static const double _MIN_TURN_DEG = 10.0; // ignore tiny turns when slow
+  static const double _ARRIVED_PICKUP_RADIUS_M = 500.0;
 
   void _startDriverTracking() {
     positionStream = Geolocator.getPositionStream(
@@ -1478,6 +1497,21 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 
       // 1) ignore very inaccurate fixes
       if (acc > _MAX_ACCURACY_M) return;
+
+      // Show "Arrived" button only when within 500m of pickup.
+      if (!driverReached) {
+        final distanceToPickup = Geolocator.distanceBetween(
+          current.latitude,
+          current.longitude,
+          widget.pickupLocation.latitude,
+          widget.pickupLocation.longitude,
+        );
+        if (distanceToPickup <= _ARRIVED_PICKUP_RADIUS_M) {
+          setState(() {
+            driverReached = true;
+          });
+        }
+      }
 
       if (lastPosition == null) {
         lastPosition = current;
@@ -2250,11 +2284,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                         horizontal: 15,
                                       ),
                                       child: GestureDetector(
-                                        onTap: () {
-                                          setState(() {
-                                            driverReached = !driverReached;
-                                          });
-                                        },
+                                        onTap: null,
                                         child: Row(
                                           children: [
                                             CachedNetworkImage(

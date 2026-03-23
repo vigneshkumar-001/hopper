@@ -58,6 +58,18 @@ class SharedRideController extends GetxController {
   /// Latest driver location
   final Rxn<LatLng> driverLocation = Rxn<LatLng>();
 
+  // -------------------- radius gates (UI only) --------------------
+  static const double _ARRIVED_PICKUP_RADIUS_M = 500.0;
+  static const double _ARRIVED_PICKUP_EXIT_RADIUS_M = 650.0; // hysteresis
+  static const double _COMPLETE_DROP_RADIUS_M = 200.0;
+  static const double _COMPLETE_DROP_EXIT_RADIUS_M = 320.0; // hysteresis
+
+  /// Show Arrived CTA only when driver is near active pickup.
+  final RxBool canArriveAtActivePickup = false.obs;
+
+  /// Show Complete Stop CTA only when driver is near active drop.
+  final RxBool canCompleteActiveDrop = false.obs;
+
   // -------------------- helpers --------------------
 
   double _safeToDouble(dynamic v) {
@@ -175,6 +187,7 @@ class SharedRideController extends GetxController {
     if (idx == -1) return;
     riders[idx].arrived = true;
     riders.refresh();
+    _recomputeRadiusGates(driverLocation.value);
   }
 
   void markOnboard(String bookingId) {
@@ -186,6 +199,7 @@ class SharedRideController extends GetxController {
 
     activeTarget.value = riders[idx];
     riders.refresh();
+    _recomputeRadiusGates(driverLocation.value);
   }
 
   void markDropped(String bookingId) {
@@ -201,6 +215,7 @@ class SharedRideController extends GetxController {
 
     riders.refresh();
     recomputeNextTarget();
+    _recomputeRadiusGates(driverLocation.value);
   }
 
   void setActiveTarget(String bookingId, SharedRiderStage stage) {
@@ -210,18 +225,74 @@ class SharedRideController extends GetxController {
     riders[idx].stage = stage;
     activeTarget.value = riders[idx];
     riders.refresh();
+    _recomputeRadiusGates(driverLocation.value);
   }
 
   void updateDriverLocation(LatLng loc) {
     driverLocation.value = loc;
+    _recomputeRadiusGates(loc);
+  }
+
+  void _recomputeRadiusGates(LatLng? loc) {
+    final active = activeTarget.value;
+    if (loc == null || active == null) {
+      canArriveAtActivePickup.value = false;
+      canCompleteActiveDrop.value = false;
+      return;
+    }
+
+    if (active.stage == SharedRiderStage.waitingPickup) {
+      final d = Geolocator.distanceBetween(
+        loc.latitude,
+        loc.longitude,
+        active.pickupLatLng.latitude,
+        active.pickupLatLng.longitude,
+      );
+
+      // hysteresis: avoid flicker near boundary
+      final show = d <= _ARRIVED_PICKUP_RADIUS_M;
+      final hide = d >= _ARRIVED_PICKUP_EXIT_RADIUS_M;
+      if (!canArriveAtActivePickup.value && show) {
+        canArriveAtActivePickup.value = true;
+      } else if (canArriveAtActivePickup.value && hide) {
+        canArriveAtActivePickup.value = false;
+      }
+
+      canCompleteActiveDrop.value = false;
+      return;
+    }
+
+    if (active.stage == SharedRiderStage.onboardDrop) {
+      final d = Geolocator.distanceBetween(
+        loc.latitude,
+        loc.longitude,
+        active.dropLatLng.latitude,
+        active.dropLatLng.longitude,
+      );
+
+      final show = d <= _COMPLETE_DROP_RADIUS_M;
+      final hide = d >= _COMPLETE_DROP_EXIT_RADIUS_M;
+      if (!canCompleteActiveDrop.value && show) {
+        canCompleteActiveDrop.value = true;
+      } else if (canCompleteActiveDrop.value && hide) {
+        canCompleteActiveDrop.value = false;
+      }
+
+      canArriveAtActivePickup.value = false;
+      return;
+    }
+
+    // dropped
+    canArriveAtActivePickup.value = false;
+    canCompleteActiveDrop.value = false;
   }
 
   // -------------------- HELPERS --------------------
 
   bool hasPendingOrOnboard() {
     return riders.any(
-          (r) =>
-      r.stage == SharedRiderStage.waitingPickup ||
+      (r) =>
+          r.stage == SharedRiderStage.waitingPickup ||
           r.stage == SharedRiderStage.onboardDrop,
     );
   }
@@ -258,31 +329,34 @@ class SharedRideController extends GetxController {
   SharedRiderItem? recomputeNextTarget() {
     if (!hasPendingOrOnboard()) {
       activeTarget.value = null;
+      _recomputeRadiusGates(driverLocation.value);
       return null;
     }
 
     final onboard = riders.firstWhereOrNull(
-          (r) => r.stage == SharedRiderStage.onboardDrop,
+      (r) => r.stage == SharedRiderStage.onboardDrop,
     );
     if (onboard != null) {
       activeTarget.value = onboard;
+      _recomputeRadiusGates(driverLocation.value);
       return onboard;
     }
 
     final nearestPickup = getNearestPickup();
     if (nearestPickup != null) {
       activeTarget.value = nearestPickup;
+      _recomputeRadiusGates(driverLocation.value);
       return nearestPickup;
     }
 
     final any = riders.firstWhereOrNull(
-          (r) => r.stage != SharedRiderStage.dropped,
+      (r) => r.stage != SharedRiderStage.dropped,
     );
     activeTarget.value = any;
+    _recomputeRadiusGates(driverLocation.value);
     return any;
   }
 }
-
 
 // // lib/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart
 //

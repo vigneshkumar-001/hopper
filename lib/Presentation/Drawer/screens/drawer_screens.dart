@@ -8,8 +8,10 @@ import 'package:hopper/Presentation/Drawer/screens/notification_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/ride_activity.dart';
 import 'package:hopper/Presentation/Drawer/screens/settings_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/wallet_screen.dart';
+import 'package:hopper/Presentation/CustomerSupport/screens/customer_support_list_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_analytics_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 
 class DrawerScreen extends StatefulWidget {
@@ -25,6 +27,7 @@ class _DrawerScreenState extends State<DrawerScreen> {
     NotificationController(),
     permanent: true,
   );
+  late final DriverStatusController statusController;
 
   @override
   void initState() {
@@ -32,6 +35,11 @@ class _DrawerScreenState extends State<DrawerScreen> {
     getDetails = Get.isRegistered<ChooseServiceController>()
         ? Get.find<ChooseServiceController>()
         : Get.put(ChooseServiceController());
+
+    statusController =
+        Get.isRegistered<DriverStatusController>()
+            ? Get.find<DriverStatusController>()
+            : Get.put(DriverStatusController());
   }
 
   @override
@@ -53,8 +61,8 @@ class _DrawerScreenState extends State<DrawerScreen> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: ListView(
+                      padding: EdgeInsets.zero,
                       children: [
                         Row(
                           children: [
@@ -92,34 +100,71 @@ class _DrawerScreenState extends State<DrawerScreen> {
                         ),
                         const _MenuDivider(),
                         _MenuTile(
+                          title: 'Support',
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const CustomerSupportListScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        const _MenuDivider(),
+                        _MenuTile(
                           title: 'Settings',
                           onTap: () => Get.to(() => const SettingsScreen()),
                         ),
                         const _MenuDivider(),
                         const SizedBox(height: 10),
                         Obx(() {
+                          final profileServiceType =
+                              (getDetails.userProfile.value?.serviceType ?? '')
+                                  .toString()
+                                  .trim()
+                                  .toLowerCase();
+
+                          final isBike =
+                              profileServiceType == 'bike' ||
+                              statusController.isBike;
+                          final isCar =
+                              profileServiceType == 'car' ||
+                              statusController.isCar;
+
+                          if (isBike || !isCar) {
+                            return const SizedBox.shrink();
+                          }
                           final loading = sharedCtrl.isLoading.value;
-                          return Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          return Column(
                             children: [
-                              const Text(
-                                'Shared Booking',
-                                style: TextStyle(
-                                  fontSize: 25,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF111827),
-                                ),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Shared Booking',
+                                    style: TextStyle(
+                                      fontSize: 25,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF111827),
+                                    ),
+                                  ),
+                                  Switch(
+                                    value: sharedCtrl.isSharedEnabled.value,
+                                    onChanged:
+                                        loading
+                                            ? null
+                                            : (value) async {
+                                              await HapticFeedback
+                                                  .selectionClick();
+                                              await sharedCtrl.setSharedEnabled(
+                                                value,
+                                              );
+                                            },
+                                    activeThumbColor: AppColors.drkGreen,
+                                  ),
+                                ],
                               ),
-                              Switch(
-                                value: sharedCtrl.isSharedEnabled.value,
-                                onChanged: loading
-                                    ? null
-                                    : (value) async {
-                                        await HapticFeedback.selectionClick();
-                                        await sharedCtrl.setSharedEnabled(value);
-                                      },
-                                activeThumbColor: AppColors.drkGreen,
-                              ),
+                              const SizedBox(height: 8),
                             ],
                           );
                         }),

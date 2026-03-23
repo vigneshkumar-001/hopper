@@ -123,7 +123,9 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
   }
 
   Color _paymentStatusColor(String value) {
-    return value.toUpperCase() == 'PAID' ? const Color(0xFF1E8E5A) : const Color(0xFFD93025);
+    return value.toUpperCase() == 'PAID'
+        ? const Color(0xFF1E8E5A)
+        : const Color(0xFFD93025);
   }
 
   Widget _buildAvatar(String imageUrl) {
@@ -136,7 +138,11 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
           color: const Color(0xFFF2F4F7),
           border: Border.all(color: const Color(0xFFE4E7EC)),
         ),
-        child: const Icon(Icons.person_rounded, size: 44, color: Color(0xFF667085)),
+        child: const Icon(
+          Icons.person_rounded,
+          size: 44,
+          color: Color(0xFF667085),
+        ),
       );
     }
 
@@ -177,7 +183,11 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
               color: const Color(0xFFF2F4F7),
               border: Border.all(color: const Color(0xFFE4E7EC)),
             ),
-            child: const Icon(Icons.person_rounded, size: 44, color: Color(0xFF667085)),
+            child: const Icon(
+              Icons.person_rounded,
+              size: 44,
+              color: Color(0xFF667085),
+            ),
           ),
     );
   }
@@ -185,233 +195,285 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
   @override
   Widget build(BuildContext context) {
     return NoInternetOverlay(
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF8F9FB),
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                GestureDetector(
-                  onTap: () async {
-                    if (widget.isSharedRide) {
-                      await _finishSharedAndPop(success: false);
-                    } else if (Navigator.of(context).canPop()) {
-                      Navigator.pop(context);
-                    }
-                  },
-                  child: Container(
-                    height: 42,
-                    width: 42,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x12000000),
-                          blurRadius: 16,
-                          offset: Offset(0, 8),
+      child: WillPopScope(
+        onWillPop: () async {
+          return false;
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF8F9FB),
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () async {
+                      if (widget.isSharedRide) {
+                        await _finishSharedAndPop(success: false);
+                      } else if (Navigator.of(context).canPop()) {
+                        Navigator.pop(context);
+                      }
+                    },
+                    child: Container(
+                      height: 42,
+                      width: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x12000000),
+                            blurRadius: 16,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: Image.asset(
+                          AppImages.backButton,
+                          height: 18,
+                          width: 18,
                         ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Image.asset(
-                        AppImages.backButton,
-                        height: 18,
-                        width: 18,
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 18),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Obx(() {
-                      final liveProfile = getDetails.userProfile.value?.profilePic ?? '';
-                      final imageUrl = (widget.imageUrl?.toString().trim().isNotEmpty ?? false)
-                          ? widget.imageUrl!.toString().trim()
-                          : liveProfile;
-                      final paymentType = driverStatusController.paymentType.value;
-                      final paymentStatus = driverStatusController.paymentStatus.value;
-                      final riderName = _displayName();
+                  const SizedBox(height: 18),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Obx(() {
+                        final liveProfile =
+                            getDetails.userProfile.value?.profilePic ?? '';
+                        final imageUrl =
+                            (widget.imageUrl?.toString().trim().isNotEmpty ??
+                                    false)
+                                ? widget.imageUrl!.toString().trim()
+                                : liveProfile;
+                        final paymentType =
+                            driverStatusController.paymentType.value;
+                        final paymentStatus =
+                            driverStatusController.paymentStatus.value;
+                        final riderName = _displayName();
 
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [Color(0xFF101828), Color(0xFF1D2939)],
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.fromLTRB(
+                                20,
+                                24,
+                                20,
+                                20,
                               ),
-                              borderRadius: BorderRadius.circular(28),
-                            ),
-                            child: Column(
-                              children: [
-                                _buildAvatar(imageUrl),
-                                const SizedBox(height: 16),
-                                CustomTextfield.textWithStylesSmall(
-                                  'Collect cash from $riderName',
-                                  colors: const Color(0xFFD0D5DD),
-                                  fontSize: 14,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Color(0xFF101828),
+                                    Color(0xFF1D2939),
+                                  ],
                                 ),
-                                const SizedBox(height: 10),
-                                Text(
-                                  _displayAmount(),
-                                  style: const TextStyle(
-                                    fontSize: 34,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
+                                borderRadius: BorderRadius.circular(28),
+                              ),
+                              child: Column(
+                                children: [
+                                  _buildAvatar(imageUrl),
+                                  const SizedBox(height: 16),
+                                  CustomTextfield.textWithStylesSmall(
+                                    'Collect cash from $riderName',
+                                    colors: const Color(0xFFD0D5DD),
+                                    fontSize: 14,
                                   ),
-                                ),
-                                const SizedBox(height: 18),
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.08),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    _displayAmount(),
+                                    style: const TextStyle(
+                                      fontSize: 34,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
                                   ),
-                                  child: Column(
-                                    children: [
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.payments_outlined, color: Colors.white, size: 18),
-                                          const SizedBox(width: 10),
-                                          const Expanded(
-                                            child: Text(
-                                              'Payment type',
-                                              style: TextStyle(
-                                                color: Color(0xFFD0D5DD),
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ),
-                                          Text(
-                                            paymentType.isEmpty ? 'Cash' : paymentType,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ],
+                                  const SizedBox(height: 18),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.08,
                                       ),
-                                      const SizedBox(height: 14),
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.verified_outlined, color: Colors.white, size: 18),
-                                          const SizedBox(width: 10),
-                                          const Expanded(
-                                            child: Text(
-                                              'Payment status',
-                                              style: TextStyle(
-                                                color: Color(0xFFD0D5DD),
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w500,
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.12,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.payments_outlined,
+                                              color: Colors.white,
+                                              size: 18,
+                                            ),
+                                            const SizedBox(width: 10),
+                                            const Expanded(
+                                              child: Text(
+                                                'Payment type',
+                                                style: TextStyle(
+                                                  color: Color(0xFFD0D5DD),
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                            decoration: BoxDecoration(
-                                              color: _paymentStatusColor(paymentStatus).withValues(alpha: 0.18),
-                                              borderRadius: BorderRadius.circular(999),
-                                            ),
-                                            child: Text(
-                                              paymentStatus.isEmpty ? 'Pending' : paymentStatus,
-                                              style: TextStyle(
-                                                color: _paymentStatusColor(paymentStatus),
-                                                fontSize: 12,
+                                            Text(
+                                              paymentType.isEmpty
+                                                  ? 'Cash'
+                                                  : paymentType,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 14,
                                                 fontWeight: FontWeight.w700,
                                               ),
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFF7ED),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: const Color(0xFFFED7AA)),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  height: 36,
-                                  width: 36,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFEDD5),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Center(
-                                    child: Image.asset(
-                                      AppImages.exclamationCircle,
-                                      width: 18,
-                                      height: 18,
-                                      color: const Color(0xFFEA580C),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 14),
+                                        Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.verified_outlined,
+                                              color: Colors.white,
+                                              size: 18,
+                                            ),
+                                            const SizedBox(width: 10),
+                                            const Expanded(
+                                              child: Text(
+                                                'Payment status',
+                                                style: TextStyle(
+                                                  color: Color(0xFFD0D5DD),
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 6,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: _paymentStatusColor(
+                                                  paymentStatus,
+                                                ).withValues(alpha: 0.18),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                              ),
+                                              child: Text(
+                                                paymentStatus.isEmpty
+                                                    ? 'Pending'
+                                                    : paymentStatus,
+                                                style: TextStyle(
+                                                  color: _paymentStatusColor(
+                                                    paymentStatus,
+                                                  ),
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ),
                                   ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF7ED),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: const Color(0xFFFED7AA),
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: CustomTextfield.textWithStylesSmall(
-                                    'If the rider does not have change, ask for a whole amount. Any extra collected amount will be credited to the rider account.',
-                                    colors: const Color(0xFF9A3412),
-                                    fontWeight: FontWeight.w500,
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    height: 36,
+                                    width: 36,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFEDD5),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Center(
+                                      child: Image.asset(
+                                        AppImages.exclamationCircle,
+                                        width: 18,
+                                        height: 18,
+                                        color: const Color(0xFFEA580C),
+                                      ),
+                                    ),
                                   ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: CustomTextfield.textWithStylesSmall(
+                                      'If the rider does not have change, ask for a whole amount. Any extra collected amount will be credited to the rider account.',
+                                      colors: const Color(0xFF9A3412),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SafeArea(
+                    top: false,
+                    child: Buttons.button(
+                      borderRadius: 18,
+                      buttonColor: AppColors.commonBlack,
+                      onTap: _isSubmittingCash ? null : _submitCashCollected,
+                      text:
+                          _isSubmittingCash
+                              ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
                                 ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    }),
+                              )
+                              : const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.check_circle_outline_rounded,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text('Cash Collected'),
+                                ],
+                              ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                SafeArea(
-                  top: false,
-                  child: Buttons.button(
-                    borderRadius: 18,
-                    buttonColor: AppColors.commonBlack,
-                    onTap: _isSubmittingCash ? null : _submitCashCollected,
-                    text: _isSubmittingCash
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.check_circle_outline_rounded, size: 18, color: Colors.white),
-                              SizedBox(width: 8),
-                              Text('Cash Collected'),
-                            ],
-                          ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -483,21 +545,35 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                         children: List.generate(5, (index) {
                           final active = index < selectedRating;
                           return GestureDetector(
-                            onTap: () => setModalState(() => selectedRating = index + 1),
+                            onTap:
+                                () => setModalState(
+                                  () => selectedRating = index + 1,
+                                ),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 180),
                               height: 54,
                               width: 54,
                               decoration: BoxDecoration(
-                                color: active ? const Color(0xFFFFF4E5) : const Color(0xFFF5F6F8),
+                                color:
+                                    active
+                                        ? const Color(0xFFFFF4E5)
+                                        : const Color(0xFFF5F6F8),
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
-                                  color: active ? const Color(0xFFF59E0B) : const Color(0xFFE4E7EC),
+                                  color:
+                                      active
+                                          ? const Color(0xFFF59E0B)
+                                          : const Color(0xFFE4E7EC),
                                 ),
                               ),
                               child: Icon(
-                                active ? Icons.star_rounded : Icons.star_border_rounded,
-                                color: active ? const Color(0xFFF59E0B) : const Color(0xFF98A2B3),
+                                active
+                                    ? Icons.star_rounded
+                                    : Icons.star_border_rounded,
+                                color:
+                                    active
+                                        ? const Color(0xFFF59E0B)
+                                        : const Color(0xFF98A2B3),
                                 size: 30,
                               ),
                             ),
@@ -520,7 +596,9 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                 } else {
                                   Navigator.pushReplacement(
                                     pageContext,
-                                    MaterialPageRoute(builder: (_) => DriverMainScreen()),
+                                    MaterialPageRoute(
+                                      builder: (_) => DriverMainScreen(),
+                                    ),
                                   );
                                 }
                               },
@@ -532,42 +610,55 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                             child: Buttons.button(
                               borderRadius: 16,
                               buttonColor: AppColors.commonBlack,
-                              onTap: isSubmittingRating
-                                  ? null
-                                  : () async {
-                                      _timer?.cancel();
-                                      final sheetNavigator = Navigator.of(sheetContext);
-                                      setModalState(() => isSubmittingRating = true);
+                              onTap:
+                                  isSubmittingRating
+                                      ? null
+                                      : () async {
+                                        _timer?.cancel();
+                                        final sheetNavigator = Navigator.of(
+                                          sheetContext,
+                                        );
+                                        setModalState(
+                                          () => isSubmittingRating = true,
+                                        );
 
-                                      await driverStatusController.driverRatingToCustomer(
-                                        context: pageContext,
-                                        rating: selectedRating,
-                                        bookingId: widget.bookingId.toString(),
-                                        goToMainOnSuccess: !widget.isSharedRide,
-                                      );
+                                        await driverStatusController
+                                            .driverRatingToCustomer(
+                                              context: pageContext,
+                                              rating: selectedRating,
+                                              bookingId:
+                                                  widget.bookingId.toString(),
+                                              goToMainOnSuccess:
+                                                  !widget.isSharedRide,
+                                            );
 
-                                      CommonLogger.log.i('Selected Rating: ');
+                                        CommonLogger.log.i('Selected Rating: ');
 
-                                      if (widget.isSharedRide && mounted) {
-                                        sheetNavigator.pop();
-                                        await _finishSharedAndPop(success: true);
-                                        return;
-                                      }
+                                        if (widget.isSharedRide && mounted) {
+                                          sheetNavigator.pop();
+                                          await _finishSharedAndPop(
+                                            success: true,
+                                          );
+                                          return;
+                                        }
 
-                                      if (sheetNavigator.canPop()) {
-                                        setModalState(() => isSubmittingRating = false);
-                                      }
-                                    },
-                              text: isSubmittingRating
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text('Submit Rating'),
+                                        if (sheetNavigator.canPop()) {
+                                          setModalState(
+                                            () => isSubmittingRating = false,
+                                          );
+                                        }
+                                      },
+                              text:
+                                  isSubmittingRating
+                                      ? const SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                      : const Text('Submit Rating'),
                             ),
                           ),
                         ],
@@ -583,8 +674,3 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
     );
   }
 }
-
-
-
-
-

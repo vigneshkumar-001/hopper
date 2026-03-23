@@ -32,7 +32,7 @@ class SharedMap extends StatefulWidget {
     this.polylines = const <Polyline>{},
     this.myLocationEnabled = true,
     this.fitToBounds = true,
-    this.trafficEnabled = true,
+    this.trafficEnabled = false,
     this.compassEnabled = true,
     this.onMapCreated,
     this.onCameraMoveStarted,
@@ -61,6 +61,7 @@ class SharedMapState extends State<SharedMap> {
   Timer? _programmaticCameraTimer;
   LatLng? _lastFollowTarget;
   double _lastFollowBearing = 0;
+  DateTime _lastFollowMoveAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _followPausedUntil = DateTime.fromMillisecondsSinceEpoch(0);
   bool _isProgrammaticCameraMove = false;
 
@@ -208,7 +209,7 @@ class SharedMapState extends State<SharedMap> {
     _markProgrammaticCameraMove();
     await _mapController!.animateCamera(
       CameraUpdate.newCameraPosition(
-        CameraPosition(target: widget.pickupPosition!, zoom: 15.8),
+        CameraPosition(target: widget.pickupPosition!, zoom: 15.2),
       ),
     );
   }
@@ -293,7 +294,7 @@ class SharedMapState extends State<SharedMap> {
     // avoid micro-updates
     if (_lastFollowTarget != null) {
       final d = _distanceMeters(_lastFollowTarget!, target);
-      if (d < 2.0 && (_angleDelta(_lastFollowBearing, bearing) < 3.0)) return;
+      if (d < 0.75 && (_angleDelta(_lastFollowBearing, bearing) < 2.0)) return;
     }
 
     _lastFollowTarget = target;
@@ -304,12 +305,25 @@ class SharedMapState extends State<SharedMap> {
       if (!mounted || _mapController == null) return;
 
       try {
+        final now = DateTime.now();
+        if (now.difference(_lastFollowMoveAt).inMilliseconds < 220) return;
+        _lastFollowMoveAt = now;
+
+        final zoom = widget.followZoom.clamp(11.5, 17.8);
+        final leadMeters =
+            zoom >= 15.0
+                ? 70.0
+                : zoom >= 14.3
+                ? 110.0
+                : 150.0;
+        final followTarget = _offsetLatLng(target, bearing, leadMeters);
+
         _markProgrammaticCameraMove();
-        await _mapController!.moveCamera(
+        await _mapController!.animateCamera(
           CameraUpdate.newCameraPosition(
             CameraPosition(
-              target: target,
-              zoom: widget.followZoom,
+              target: followTarget,
+              zoom: zoom,
               bearing: widget.followBearingEnabled ? bearing : 0,
               tilt: widget.followTilt,
             ),
@@ -365,6 +379,28 @@ class SharedMapState extends State<SharedMap> {
     );
   }
 
+  static LatLng _offsetLatLng(LatLng origin, double bearingDeg, double meters) {
+    const earthRadiusM = 6378137.0;
+    final bearing = bearingDeg * math.pi / 180.0;
+    final d = meters / earthRadiusM;
+
+    final lat1 = origin.latitude * math.pi / 180.0;
+    final lng1 = origin.longitude * math.pi / 180.0;
+
+    final lat2 = math.asin(
+      math.sin(lat1) * math.cos(d) +
+          math.cos(lat1) * math.sin(d) * math.cos(bearing),
+    );
+    final lng2 =
+        lng1 +
+        math.atan2(
+          math.sin(bearing) * math.sin(d) * math.cos(lat1),
+          math.cos(d) - math.sin(lat1) * math.sin(lat2),
+        );
+
+    return LatLng(lat2 * 180.0 / math.pi, lng2 * 180.0 / math.pi);
+  }
+
   @override
   Widget build(BuildContext context) {
     // If followDriver enabled, we follow the driver marker (markerId 'driver')
@@ -394,7 +430,7 @@ class SharedMapState extends State<SharedMap> {
       myLocationEnabled: widget.myLocationEnabled,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
-      minMaxZoomPreference: const MinMaxZoomPreference(12.0, 18.0),
+      minMaxZoomPreference: const MinMaxZoomPreference(11.0, 18.0),
       compassEnabled: widget.compassEnabled,
       buildingsEnabled: false,
       indoorViewEnabled: false,

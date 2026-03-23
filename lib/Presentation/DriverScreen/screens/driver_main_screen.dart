@@ -27,12 +27,14 @@ class DriverMainScreen extends StatefulWidget {
   State<DriverMainScreen> createState() => _DriverMainScreenState();
 }
 
-class _DriverMainScreenState extends State<DriverMainScreen> {
+class _DriverMainScreenState extends State<DriverMainScreen>
+    with WidgetsBindingObserver {
   late final DriverMainController c;
   late final ChooseServiceController profileController;
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     // ✅ create once (or reuse if already exists)
     if (Get.isRegistered<DriverMainController>()) {
@@ -47,6 +49,23 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
 
     // Home owns profile refresh; drawer should only read cached data.
     profileController.getUserDetails();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      c.checkAndResumeActiveBooking();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      c.checkAndResumeActiveBooking();
+    }
   }
 
   @override
@@ -94,11 +113,11 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                               child: GoogleMap(
                                 mapType: MapType.normal,
                                 compassEnabled: false,
-                                myLocationEnabled: false,
-                                myLocationButtonEnabled: false,
-                                zoomControlsEnabled: false,
-                                buildingsEnabled: true,
-                                trafficEnabled: false,
+                                 myLocationEnabled: false,
+                                 myLocationButtonEnabled: false,
+                                 zoomControlsEnabled: false,
+                                 buildingsEnabled: false,
+                                 trafficEnabled: false,
                                 tiltGesturesEnabled: true,
                                 rotateGesturesEnabled: true,
                                 scrollGesturesEnabled: true,
@@ -130,6 +149,152 @@ class _DriverMainScreenState extends State<DriverMainScreen> {
                               ),
                             );
                           },
+                        ),
+
+                        // Active booking resume card (do NOT auto-navigate)
+                        Positioned(
+                          top: 14,
+                          left: 12,
+                          right: 12,
+                          child: Obx(() {
+                            final visible = c.showActiveBookingCard.value;
+                            final data = c.activeBookingData.value;
+                            if (!visible || data == null) {
+                              return const SizedBox.shrink();
+                            }
+
+                            final bookingId =
+                                (data['bookingId'] ?? '').toString();
+                            final status =
+                                (data['status'] ?? '').toString().replaceAll(
+                                  '_',
+                                  ' ',
+                                );
+                            final pickup =
+                                (data['pickupAddress'] ?? '').toString();
+                            final drop = (data['dropAddress'] ?? '').toString();
+
+                            return Material(
+                              color: Colors.transparent,
+                              child: Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: Colors.black.withOpacity(0.08),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.10),
+                                      blurRadius: 18,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            'Resume ride?',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          bookingId.isEmpty
+                                              ? ''
+                                              : '#$bookingId',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.black.withOpacity(
+                                              0.55,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    if (status.trim().isNotEmpty)
+                                      Text(
+                                        status,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.black.withOpacity(0.60),
+                                        ),
+                                      ),
+                                    const SizedBox(height: 10),
+                                    if (pickup.trim().isNotEmpty)
+                                      Text(
+                                        'Pickup: $pickup',
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 12.5),
+                                      ),
+                                    if (drop.trim().isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 6),
+                                        child: Text(
+                                          'Drop: $drop',
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style:
+                                              const TextStyle(fontSize: 12.5),
+                                        ),
+                                      ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: ElevatedButton(
+                                            onPressed: c.resumeActiveBooking,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  AppColors.commonBlack,
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 12,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                            ),
+                                            child: const Text(
+                                              'Resume',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        TextButton(
+                                          onPressed:
+                                              c.dismissActiveBookingCard,
+                                          child: Text(
+                                            'Not now',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.black.withOpacity(
+                                                0.55,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
                         ),
 
                         // Follow button
@@ -229,6 +394,9 @@ class _GlassHeader extends StatelessWidget {
             child: Obx(() {
               final isOnline = statusController.isOnline.value;
               final isLoading = statusController.isLoading.value;
+              final vehicleAsset = statusController.isCar
+                  ? AppImages.offlineCar
+                  : AppImages.bike;
 
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
@@ -268,7 +436,7 @@ class _GlassHeader extends StatelessWidget {
                           shape: BoxShape.circle,
                         ),
                         child: Image.asset(
-                          AppImages.offlineCar,
+                          vehicleAsset,
                           width: 18,
                           height: 18,
                           color: AppColors.nBlue,
@@ -282,7 +450,7 @@ class _GlassHeader extends StatelessWidget {
                           shape: BoxShape.circle,
                         ),
                         child: Image.asset(
-                          AppImages.offlineCar,
+                          vehicleAsset,
                           width: 18,
                           height: 18,
                           color: Colors.black,
@@ -337,7 +505,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
   final DraggableScrollableController _sheetCtrl =
       DraggableScrollableController();
 
-  static const List<double> _snaps = [0.22, 0.65, 0.98];
+  static const List<double> _snaps = [0.45, 0.65, 0.98];
   double _currentSize = _snaps[1];
   bool _isSnapping = false;
   Timer? _snapDebounce;
@@ -391,7 +559,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      final serviceType = widget.statusController.serviceType.value;
+      final isCar = widget.statusController.isCar;
 
       return NotificationListener<DraggableScrollableNotification>(
         onNotification: (n) {
@@ -426,7 +594,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                 onRefresh: () async {
                   await Get.find<ChooseServiceController>().getUserDetails();
                   await widget.statusController.weeklyChallenges();
-                  if (serviceType == 'Car') {
+                  if (isCar) {
                     await widget.statusController.todayActivity();
                   } else {
                     await widget.statusController.todayPackageActivity();
@@ -451,7 +619,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                     ),
                     const SizedBox(height: 10),
 
-                    if (serviceType == 'Car') ...[
+                    if (isCar) ...[
                       Center(
                         child: CustomTextfield.textWithStyles700(
                           'Hoppr Car',
@@ -511,15 +679,29 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                         );
                       }),
                     ] else ...[
-                      Center(
-                        child: Opacity(
-                          opacity: 0.65,
-                          child: Image.asset(
-                            AppImages.hopprPackage,
-                            height: 26,
+                      // Show service header only when there is no incoming request card.
+                      // (Prevents the "Hoppr Package" row looking duplicated.)
+                      Obx(() {
+                        final data =
+                            widget.bookingController.bookingRequestData.value;
+                        if (data != null) return const SizedBox.shrink();
+
+                        return Center(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Opacity(
+                                opacity: 0.65,
+                                child: Image.asset(
+                                  AppImages.hopprPackage,
+                                  height: 26,
+                                ),
+                              ),
+                             
+                            ],
                           ),
-                        ),
-                      ),
+                        );
+                      }),
                       const SizedBox(height: 10),
                       Obx(() {
                         final data =
@@ -694,12 +876,12 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                           const SizedBox(height: 18),
 
                           CustomTextfield.textWithStyles700(
-                            "Today's Activity",
+                            isCar ? "Today's Activity" : "Today's Package Activity",
                             fontSize: 16,
                           ),
                           const SizedBox(height: 10),
 
-                          if (serviceType == 'Car')
+                          if (isCar)
                             _TodayActivityCar(
                               statusController: widget.statusController,
                             )

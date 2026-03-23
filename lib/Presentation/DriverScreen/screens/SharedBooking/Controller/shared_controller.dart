@@ -196,8 +196,15 @@ class SharedController extends GetxController {
           return '';
         },
         (response) {
+          final serverBookingId = response.data?.bookingId;
+          final resolvedBookingId =
+              serverBookingId != null &&
+                      serverBookingId.trim().isNotEmpty &&
+                      serverBookingId.trim().toLowerCase() != 'null'
+                  ? serverBookingId
+                  : bookingId;
           final bookingData = {
-            'bookingId': response.data?.bookingId,
+            'bookingId': resolvedBookingId,
             'userId': response.data?.driverId,
             'userType': 'driver',
           };
@@ -218,11 +225,17 @@ class SharedController extends GetxController {
 
           CommonLogger.log.i(response.data);
 
+          if (resolvedBookingId.trim().isEmpty ||
+              resolvedBookingId.trim().toLowerCase() == 'null') {
+            CustomSnackBar.showError('Booking id missing. Please retry.');
+            isLoading.value = false;
+            return '';
+          }
           Get.to(
             () => PickingCustomerSharedScreen(
               pickupLocation: pickupLocation,
               driverLocation: driverLocation,
-              bookingId: bookingId,
+              bookingId: resolvedBookingId,
               pickupLocationAddress: pickupLocationAddress,
               dropLocationAddress: dropLocationAddress,
             ),

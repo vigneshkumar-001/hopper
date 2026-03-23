@@ -15,6 +15,7 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_controller.dart';
@@ -206,7 +207,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   bool _isNetworkOffline = false;
   bool _isOffRouteAlert = false;
   int _pendingQueueCount = 0;
-  double _followZoom = 15.0;
+  double _followZoom = 14.4;
   bool _isDisposing = false;
 
   late final _MarkerAnimator _markerAnimator;
@@ -526,8 +527,14 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     _lastSpeedPos = current;
     _lastSpeedAt = DateTime.now();
 
-    final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs);
-    _followZoom = MapMotionProfile.smoothZoom(_followZoom, targetZoom);
+    final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs).clamp(
+      14.6,
+      17.4,
+    );
+    _followZoom = MapMotionProfile.smoothZoom(_followZoom, targetZoom).clamp(
+      14.6,
+      17.4,
+    );
   }
 
   String _formatDistance(double meters) {
@@ -546,14 +553,6 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   // Ã¢â€â‚¬Ã¢â€â‚¬ Socket Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   Future<void> _initSocket() async {
     socketService = SocketService();
-
-    socketService.on('driver-reached-destination', (data) {
-      if (!mounted || _isDisposing) return;
-      final status = data?['status'];
-      if (status == true || status?.toString() == 'true') {
-        setState(() => driverCompletedRide = true);
-      }
-    });
 
     socketService.on('joined-booking', (data) async {
       try {
@@ -784,7 +783,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
 
   Future<void> _loadMarkerIcons() async {
     try {
-      final icon = await _bitmapFromAsset(AppImages.movingCar, width: 74);
+      final icon = await _bitmapFromAsset(AppImages.movingCar, width: 52);
       if (!mounted || _isDisposing) return;
       setState(() => carIcon = icon);
     } catch (_) {
@@ -808,11 +807,18 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     };
     if (_isNetworkOffline || !socketService.connected) {
       _enqueueSocketEmit('driver-message', payload);
+      CustomSnackBar.showInfo('Queued: $text', title: 'Message');
       return;
     }
     socketService.emitWithAck('driver-message', payload, (ack) {
-      final ok = (ack is Map && ack['success'] == true);
-      if (!ok) _enqueueSocketEmit('driver-message', payload);
+      final ok =
+          (ack is Map && (ack['success'] == true || ack['status'] == true));
+      if (ok) {
+        CustomSnackBar.showSuccess('Sent: $text', title: 'Message');
+        return;
+      }
+      _enqueueSocketEmit('driver-message', payload);
+      CustomSnackBar.showError('Failed, queued: $text', title: 'Message');
     });
   }
 
@@ -897,7 +903,8 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   // Ã¢â€â‚¬Ã¢â€â‚¬ Direction header Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   Widget _buildDirectionHeader() {
     final dist = distance.isEmpty ? '--' : distance;
-    final dir = directionText.isEmpty ? 'Searching best route...' : directionText;
+    final dir =
+        directionText.isEmpty ? 'Searching best route...' : directionText;
     final lane = laneGuidance.trim();
     final man = maneuver.toLowerCase();
     final isTurnAlert =
@@ -969,25 +976,26 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                   color: rightColor,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 14,
+                    vertical: 12,
                   ),
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         dir,
-                        maxLines: 2,
+                        maxLines: lane.isNotEmpty ? 1 : 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 14,
+                          fontSize: 13.5,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
-                          height: 1.2,
+                          height: 1.15,
                         ),
                       ),
                       if (lane.isNotEmpty) ...[
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 4),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 9,
@@ -1538,100 +1546,125 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         inCard
             ? const EdgeInsets.only(top: 2)
             : const EdgeInsets.fromLTRB(16, 14, 16, 0);
-    final isArrivedSubmitting =
-        _arrivedSubmittingBookingId == active.bookingId;
+    final isArrivedSubmitting = _arrivedSubmittingBookingId == active.bookingId;
     // Arrived button
     if (active.stage == SharedRiderStage.waitingPickup && !active.arrived) {
-      return Padding(
-        padding: areaPadding,
-        child: GestureDetector(
-          onTap:
-              isArrivedSubmitting
-                  ? null
-                  : () async {
-                    try {
-                      setState(() {
-                        _arrivedSubmittingBookingId = active.bookingId;
-                      });
-                      final result = await driverStatusController.driverArrived(
-                        context,
-                        bookingId: active.bookingId,
-                      );
-                      if (!mounted || _isDisposing) return;
-                      if (result != null && result.status == 200) {
-                        sharedRideController.markArrived(active.bookingId);
-                        if (!mounted || _isDisposing) return;
-                        setState(() {
-                          _arrivedSubmittingBookingId = null;
-                        });
-                      } else {
-                        setState(() {
-                          _arrivedSubmittingBookingId = null;
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(result?.message ?? 'Something went wrong'),
-                          ),
-                        );
-                      }
-                    } catch (_) {
-                      if (!mounted || _isDisposing) return;
-                      setState(() {
-                        _arrivedSubmittingBookingId = null;
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Unable to mark as arrived, please retry'),
+      return Obx(() {
+        final canShow = sharedRideController.canArriveAtActivePickup.value;
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          child:
+              canShow
+                  ? Padding(
+                    key: ValueKey('arrived-${active.bookingId}'),
+                    padding: areaPadding,
+                    child: GestureDetector(
+                      onTap:
+                          isArrivedSubmitting
+                              ? null
+                              : () async {
+                                try {
+                                  setState(() {
+                                    _arrivedSubmittingBookingId =
+                                        active.bookingId;
+                                  });
+                                  final result = await driverStatusController
+                                      .driverArrived(
+                                        context,
+                                        bookingId: active.bookingId,
+                                      );
+                                  if (!mounted || _isDisposing) return;
+                                  if (result != null && result.status == 200) {
+                                    sharedRideController.markArrived(
+                                      active.bookingId,
+                                    );
+                                    if (!mounted || _isDisposing) return;
+                                    setState(() {
+                                      _arrivedSubmittingBookingId = null;
+                                    });
+                                  } else {
+                                    setState(() {
+                                      _arrivedSubmittingBookingId = null;
+                                    });
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          result?.message ??
+                                              'Something went wrong',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                } catch (_) {
+                                  if (!mounted || _isDisposing) return;
+                                  setState(() {
+                                    _arrivedSubmittingBookingId = null;
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Unable to mark as arrived, please retry',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color:
+                              isArrivedSubmitting
+                                  ? _C.blue.withOpacity(0.82)
+                                  : _C.blue,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _C.blue.withOpacity(0.25),
+                              blurRadius: 14,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
                         ),
-                      );
-                    }
-                  },
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              color: isArrivedSubmitting ? _C.blue.withOpacity(0.82) : _C.blue,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: _C.blue.withOpacity(0.25),
-                  blurRadius: 14,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (isArrivedSubmitting)
-                  const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (isArrivedSubmitting)
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                            else
+                              const Icon(
+                                Icons.location_on_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Arrived at pickup for ${active.name}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   )
-                else
-                  const Icon(
-                    Icons.location_on_rounded,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                const SizedBox(width: 8),
-                Text(
-                  'Arrived at pickup for ${active.name}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+                  : const SizedBox.shrink(key: ValueKey('arrived-hidden')),
+        );
+      });
     }
 
     // Swipe to start
@@ -1654,9 +1687,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
           child: ClipRRect(
             borderRadius: BorderRadius.circular(15),
             child: ActionSlider.standard(
-              key: ValueKey(
-                'start---',
-              ),
+              key: ValueKey('start---'),
               controller: riderCtrl,
               height: 56,
               backgroundColor: _C.green,
@@ -1736,76 +1767,108 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     // Complete current stop
     if (active.stage == SharedRiderStage.onboardDrop) {
       final riderSlider = active.sliderController as ActionSliderController;
-      return Padding(
-        padding: areaPadding,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _C.green.withOpacity(0.3), width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: _C.green.withOpacity(0.1),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(15),
-            child: ActionSlider.standard(
-              key: ValueKey('complete-${active.bookingId}-${active.stage}'),
-              controller: riderSlider,
-              height: 56,
-              backgroundColor: _C.green,
-              toggleColor: Colors.white,
-              icon: const Icon(Icons.check_rounded, color: _C.green, size: 24),
-              child: Text(
-                'Swipe to Complete Stop - ${active.name}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-              action: (controller) async {
-                try {
-                  controller.loading();
-                  await Future.delayed(const Duration(milliseconds: 200));
-                  final msg = await driverStatusController.completeRideRequest(
-                    context,
-                    Amount: active.amount,
-                    bookingId: active.bookingId,
-                    navigateToCashScreen: false,
-                    isSharedRide: true,
-                  );
-                  if (!mounted || _isDisposing) return;
-                  if (msg != null) {
-                    controller.success();
-                    await _onCurrentLegCompleted(active);
-                  } else {
-                    controller.failure();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Failed to complete stop')),
-                    );
-                    await Future.delayed(const Duration(milliseconds: 700));
-                    controller.reset();
-                  }
-                } catch (_) {
-                  if (!mounted || _isDisposing) return;
-                  controller.failure();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Something went wrong, please try again'),
+      return Obx(() {
+        final canShow = sharedRideController.canCompleteActiveDrop.value;
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          child:
+              canShow
+                  ? Padding(
+                    key: ValueKey('complete-${active.bookingId}'),
+                    padding: areaPadding,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: _C.green.withOpacity(0.3),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _C.green.withOpacity(0.1),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(15),
+                        child: ActionSlider.standard(
+                          key: ValueKey(
+                            'complete-${active.bookingId}-${active.stage}',
+                          ),
+                          controller: riderSlider,
+                          height: 56,
+                          backgroundColor: _C.green,
+                          toggleColor: Colors.white,
+                          icon: const Icon(
+                            Icons.check_rounded,
+                            color: _C.green,
+                            size: 24,
+                          ),
+                          child: Text(
+                            'Swipe to Complete Stop - ${active.name}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          action: (controller) async {
+                            try {
+                              controller.loading();
+                              await Future.delayed(
+                                const Duration(milliseconds: 200),
+                              );
+                              final msg = await driverStatusController
+                                  .completeRideRequest(
+                                    context,
+                                    Amount: active.amount,
+                                    bookingId: active.bookingId,
+                                    navigateToCashScreen: false,
+                                    isSharedRide: true,
+                                  );
+                              if (!mounted || _isDisposing) return;
+                              if (msg != null) {
+                                controller.success();
+                                await _onCurrentLegCompleted(active);
+                              } else {
+                                controller.failure();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Failed to complete stop'),
+                                  ),
+                                );
+                                await Future.delayed(
+                                  const Duration(milliseconds: 700),
+                                );
+                                controller.reset();
+                              }
+                            } catch (_) {
+                              if (!mounted || _isDisposing) return;
+                              controller.failure();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Something went wrong, please try again',
+                                  ),
+                                ),
+                              );
+                              await Future.delayed(
+                                const Duration(milliseconds: 700),
+                              );
+                              controller.reset();
+                            }
+                          },
+                        ),
+                      ),
                     ),
-                  );
-                  await Future.delayed(const Duration(milliseconds: 700));
-                  controller.reset();
-                }
-              },
-            ),
-          ),
-        ),
-      );
+                  )
+                  : const SizedBox.shrink(key: ValueKey('complete-hidden')),
+        );
+      });
     }
 
     return const SizedBox.shrink();
@@ -2245,29 +2308,29 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
               SizedBox(
                 height: 560,
                 width: double.infinity,
-                child: SharedMap(
-                  key: _mapKey,
-                  followDriver: true,
-                  followZoom: _followZoom,
-                  followTilt: 0,
-                  initialPosition: targetPos,
-                  pickupPosition: targetPos,
-                  markers: markers,
-                  polylines: {
-                    if (polylinePoints.length >= 2)
-                      Polyline(
+                  child: SharedMap(
+                    key: _mapKey,
+                    followDriver: true,
+                    followZoom: _followZoom,
+                    followTilt: 45,
+                    initialPosition: targetPos,
+                    pickupPosition: targetPos,
+                   markers: markers,
+                   polylines: {
+                     if (polylinePoints.length >= 2)
+                       Polyline(
                         polylineId: const PolylineId('route_main'),
                         color: const Color(0xFF111111),
-                        width: 5,
+                        width: 2,
                         points: polylinePoints,
                         startCap: Cap.roundCap,
                         endCap: Cap.roundCap,
                         jointType: JointType.round,
                       ),
-                  },
-                  myLocationEnabled: true,
-                  fitToBounds: true,
-                ),
+                   },
+                   myLocationEnabled: true,
+                   fitToBounds: true,
+                 ),
               ),
 
               // Direction header
@@ -4329,4 +4392,3 @@ Widget _addrLine(IconData icon, Color color, String text) => Row(
 //     );
 //   }
 // }
-

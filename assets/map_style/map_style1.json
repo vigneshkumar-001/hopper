@@ -17,7 +17,7 @@
   {
     "featureType": "administrative",
     "elementType": "labels.text.fill",
-    "stylers": [{ "color": "#7a808a" }]
+    "stylers": [{ "color": "#6b7280" }]
   },
   {
     "featureType": "administrative.land_parcel",
@@ -30,14 +30,19 @@
     "stylers": [{ "visibility": "off" }]
   },
   {
+    "featureType": "poi.park",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#eaf7ef" }]
+  },
+  {
     "featureType": "landscape",
     "elementType": "geometry",
-    "stylers": [{ "color": "#eef1f5" }]
+    "stylers": [{ "color": "#f6f7fa" }]
   },
   {
     "featureType": "water",
     "elementType": "geometry",
-    "stylers": [{ "color": "#d5e7ff" }]
+    "stylers": [{ "color": "#d7e9ff" }]
   },
   {
     "featureType": "road",
@@ -47,17 +52,17 @@
   {
     "featureType": "road",
     "elementType": "geometry.stroke",
-    "stylers": [{ "color": "#d7dde5" }]
+    "stylers": [{ "color": "#cbd2dc" }]
   },
   {
     "featureType": "road",
     "elementType": "labels.text.fill",
-    "stylers": [{ "color": "#5f6672" }]
+    "stylers": [{ "color": "#374151" }]
   },
   {
     "featureType": "road",
     "elementType": "labels.text.stroke",
-    "stylers": [{ "color": "#eef1f5" }]
+    "stylers": [{ "color": "#f6f7fa" }]
   },
   {
     "featureType": "road.local",
@@ -67,21 +72,26 @@
   {
     "featureType": "road.arterial",
     "elementType": "geometry",
-    "stylers": [{ "color": "#fbfcfe" }]
+    "stylers": [{ "color": "#ffffff" }]
+  },
+  {
+    "featureType": "road.arterial",
+    "elementType": "geometry.stroke",
+    "stylers": [{ "color": "#cdd4df" }]
   },
   {
     "featureType": "road.highway",
     "elementType": "geometry",
-    "stylers": [{ "color": "#ffe6ab" }]
+    "stylers": [{ "color": "#f4f6f8" }]
   },
   {
     "featureType": "road.highway",
     "elementType": "geometry.stroke",
-    "stylers": [{ "color": "#f3ca72" }]
+    "stylers": [{ "color": "#b7bec9" }]
   },
   {
     "featureType": "road.highway",
     "elementType": "labels.text.fill",
-    "stylers": [{ "color": "#4f5766" }]
+    "stylers": [{ "color": "#374151" }]
   }
 ]

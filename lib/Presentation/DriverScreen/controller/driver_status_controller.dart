@@ -49,6 +49,19 @@ class DriverStatusController extends GetxController {
     todayPackageActivity();
   }
 
+  String get normalizedServiceType => serviceType.value.trim();
+  bool get isCar => normalizedServiceType.toLowerCase() == 'car';
+  bool get isBike => normalizedServiceType.toLowerCase() == 'bike';
+
+  String _normalizeServiceType(dynamic raw) {
+    final v = (raw ?? '').toString().trim();
+    if (v.isEmpty) return '';
+    final lower = v.toLowerCase();
+    if (lower == 'car') return 'Car';
+    if (lower == 'bike') return 'Bike';
+    return v;
+  }
+
   void toggleStatus() {
     isOnline.value = !isOnline.value;
   }
@@ -79,8 +92,15 @@ class DriverStatusController extends GetxController {
         },
         (response) {
           Get.find<DriverAnalyticsController>().trackAccept();
+          final serverBookingId = response.data?.bookingId;
+          final resolvedBookingId =
+              serverBookingId != null &&
+                      serverBookingId.trim().isNotEmpty &&
+                      serverBookingId.trim().toLowerCase() != 'null'
+                  ? serverBookingId
+                  : bookingId;
           final bookingData = {
-            'bookingId': response.data?.bookingId,
+            'bookingId': resolvedBookingId,
             'userId': response.data?.driverId,
             'userType': 'driver',
           };
@@ -102,11 +122,17 @@ class DriverStatusController extends GetxController {
           CommonLogger.log.i(response.data);
 
           if (navigateToPickup) {
+            if (resolvedBookingId.trim().isEmpty ||
+                resolvedBookingId.trim().toLowerCase() == 'null') {
+              CustomSnackBar.showError('Booking id missing. Please retry.');
+              isLoading.value = false;
+              return '';
+            }
             Get.to(
               () => PickingCustomerScreen(
                 pickupLocation: pickupLocation,
                 driverLocation: driverLocation,
-                bookingId: bookingId,
+                bookingId: resolvedBookingId,
                 pickupLocationAddress: pickupLocationAddress,
                 dropLocationAddress: dropLocationAddress,
               ),
@@ -162,8 +188,15 @@ class DriverStatusController extends GetxController {
         },
         (response) {
           Get.find<DriverAnalyticsController>().trackAccept();
+          final serverBookingId = response.data?.bookingId;
+          final resolvedBookingId =
+              serverBookingId != null &&
+                      serverBookingId.trim().isNotEmpty &&
+                      serverBookingId.trim().toLowerCase() != 'null'
+                  ? serverBookingId
+                  : bookingId;
           final bookingData = {
-            'bookingId': response.data?.bookingId,
+            'bookingId': resolvedBookingId,
             'userId': response.data?.driverId,
             'userType': 'driver',
           };
@@ -185,11 +218,17 @@ class DriverStatusController extends GetxController {
           CommonLogger.log.i(response.data);
 
           if (navigateToPickup) {
+            if (resolvedBookingId.trim().isEmpty ||
+                resolvedBookingId.trim().toLowerCase() == 'null') {
+              CustomSnackBar.showError('Booking id missing. Please retry.');
+              isLoading.value = false;
+              return '';
+            }
             Get.to(
               () => PickingCustomerSharedScreen(
                 pickupLocation: pickupLocation,
                 driverLocation: driverLocation,
-                bookingId: bookingId,
+                bookingId: resolvedBookingId,
                 pickupLocationAddress: pickupLocationAddress,
                 dropLocationAddress: dropLocationAddress,
               ),
@@ -633,7 +672,7 @@ class DriverStatusController extends GetxController {
           CommonLogger.log.i("Response: ${response.data}");
 
           isOnline.value = response.data.onlineStatus;
-          serviceType.value = response.data.serviceType;
+          serviceType.value = _normalizeServiceType(response.data.serviceType);
           CommonLogger.log.i(isOnline.value);
         },
       );
@@ -722,19 +761,19 @@ class DriverStatusController extends GetxController {
           if (isSharedRide) return;
 
           // ✅ Single ride -> go to cash screen if needed
-          if (navigateToCashScreen) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder:
-                    (_) => CashCollectedScreen(
-                      Amount: Amount,
-                      bookingId: bookingId,
-                      isSharedRide: false,
-                    ),
-              ),
-            );
-          }
+          // if (navigateToCashScreen) {
+          //   Navigator.push(
+          //     context,
+          //     MaterialPageRoute(
+          //       builder:
+          //           (_) => CashCollectedScreen(
+          //             Amount: Amount,
+          //             bookingId: bookingId,
+          //             isSharedRide: false,
+          //           ),
+          //     ),
+          //   );
+          // }
         },
       );
 

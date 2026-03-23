@@ -76,7 +76,7 @@ class Request {
           );
 
       CommonLogger.log.i(
-        "RESPONSE \n API: $url \n token : $token \n RESPONSE: ${response.toString()}",
+        "RESPONSE \n API: $url \n body : $body \n token : $token \n RESPONSE: ${response.toString()}",
       );
       CommonLogger.log.i("$token");
       CommonLogger.log.i("$body");

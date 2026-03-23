@@ -30,6 +30,12 @@ class ApiConstents {
   /// ✅ helper
   static String _u(String path) => '$baseUrl$path';
 
+  /// ✅ helper for non-`/api` endpoints
+  static String get rootBaseUrl {
+    // Our `baseUrl` is like `https://host.tld/api`. Some endpoints live outside `/api`.
+    return baseUrl.replaceFirst(RegExp(r'/api/?$'), '');
+  }
+
   // ✅ Now keep same variable names but convert to getters
   static String get chatHistory => _u('/customer/chat-history');
   static String get notification => _u('/users/notifications');
@@ -57,9 +63,16 @@ class ApiConstents {
   static String get driverAccept => _u('/users/driver-response');
   static String get stopNewRequests => _u('/users/stopNewRequests');
   static String get driverStatus => _u('/users/status');
+  static String get driverActiveBooking => _u('/users/active-booking');
+  static String get sharedDriverActiveBooking => _u('/shared/driver/active-booking');
 
   static String userImageUpload =
      _u('/upload/image');
+
+  // Support
+  static String get supportCustomerTickets => _u('/support/driver/tickets');
+  static String get supportCommonDetails => _u('/support/common-details');
+  static String get supportMyTickets => _u('/support/my/tickets');
 
   // ✅ These already functions - just use _u()
   static String driverOnlineStatus({required String driverId}) {

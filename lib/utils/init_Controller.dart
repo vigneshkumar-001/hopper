@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
+import 'package:hopper/Presentation/CustomerSupport/controller/customer_support_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/booking_request_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
 import '../Presentation/Authentication/controller/authController.dart';
@@ -49,6 +50,7 @@ Future<void> initController() async {
   Get.lazyPut(() => DriverStatusController());
   Get.lazyPut(() => RideHistoryController());
   Get.lazyPut(() => NotificationController());
+  Get.lazyPut(() => CustomerSupportController());
   Get.put(BookingRequestController(), permanent: true);
 
   // Get.lazyPut(() => BookingRequestController(), fenix: true);
