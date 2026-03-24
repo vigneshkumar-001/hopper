@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,6 +10,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_response.dart';
+import 'package:hopper/api/dataSource/apiDataSource.dart';
 import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/api/repository/api_constents.dart';
 import 'package:hopper/utils/map/route_info.dart';
@@ -17,6 +19,7 @@ import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
+import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 
 class RideStatsController extends GetxController
@@ -32,10 +35,14 @@ class RideStatsController extends GetxController
   final String? dropAddress;
 
   /// ---- external controllers ----
-  final DriverStatusController driverStatusController =
-      Get.find<DriverStatusController>();
+  late final DriverStatusController driverStatusController =
+      Get.isRegistered<DriverStatusController>()
+          ? Get.find<DriverStatusController>()
+          : Get.put(DriverStatusController(), permanent: true);
 
   late final SocketService socketService;
+  final ApiDataSource _apiDataSource = ApiDataSource();
+  bool _activeBookingSnapshotFetched = false;
 
   /// ---- map state ----
   GoogleMapController? mapController;
@@ -81,6 +88,7 @@ class RideStatsController extends GetxController
 
   /// icon
   final Rxn<BitmapDescriptor> carIcon = Rxn<BitmapDescriptor>();
+  Worker? _serviceTypeWorker;
 
   /// streams + animation
   StreamSubscription<Position>? _positionStream;
@@ -109,9 +117,9 @@ class RideStatsController extends GetxController
 
   /// route refresh throttle (prevents too many API calls)
   DateTime _lastRouteRefresh = DateTime.fromMillisecondsSinceEpoch(0);
-  static const double _minFollowZoom = 12.8;
-  static const double _maxFollowZoom = 14.4;
-  double _followZoom = 14.0;
+  static const double _minFollowZoom = 15.2;
+  static const double _maxFollowZoom = 17.8;
+  double _followZoom = 16.6;
 
   double get followZoom => _followZoom;
 
@@ -131,8 +139,10 @@ class RideStatsController extends GetxController
     _markerController.addListener(_onMarkerAnimTick);
 
     _loadMarkerIcons();
+    _listenServiceTypeForIcon();
     _hydrateFromJoinedData();
     _wireSocketEvents();
+    unawaited(_fetchActiveBookingSnapshotIfNeeded());
     unawaited(_primeDriverLocationAndRoute());
     _startLocationStream();
   }
@@ -142,6 +152,7 @@ class RideStatsController extends GetxController
     _positionStream?.cancel();
     _autoFollowTimer?.cancel();
     _routeRetryTimer?.cancel();
+    _serviceTypeWorker?.dispose();
     _isMapActive = false;
     try {
       mapController?.dispose();
@@ -152,6 +163,7 @@ class RideStatsController extends GetxController
     try {
       socketService.socket.off('driver-reached-destination');
       socketService.socket.off('driver-location');
+      socketService.socket.off('joined-booking');
       socketService.socket.off('driver-cancelled');
       socketService.socket.off('customer-cancelled');
     } catch (_) {}
@@ -165,11 +177,10 @@ class RideStatsController extends GetxController
     try {
       final cfg = const ImageConfiguration(size: Size(36, 36));
       final String asset =
-          driverStatusController.serviceType.value == "Bike"
+          driverStatusController.isBike
               ? AppImages.parcelBike
               : AppImages.movingCar;
-      final markerHeight =
-          driverStatusController.serviceType.value == "Bike" ? 28.0 : 36.0;
+      final markerHeight = driverStatusController.isBike ? 32.0 : 36.0;
       final icon = await BitmapDescriptor.asset(
         height: markerHeight,
         cfg,
@@ -181,37 +192,141 @@ class RideStatsController extends GetxController
     }
   }
 
+  void _listenServiceTypeForIcon() {
+    _serviceTypeWorker?.dispose();
+    _serviceTypeWorker = ever<String>(
+      driverStatusController.serviceType,
+      (_) async => _loadMarkerIcons(),
+    );
+  }
+
   // ---------------- HYDRATE ----------------
+  double? _asDouble(dynamic v) {
+    if (v is num) return v.toDouble();
+    return double.tryParse(v?.toString() ?? '');
+  }
+
+  LatLng? _latLngFrom(dynamic lat, dynamic lng) {
+    final latD = _asDouble(lat);
+    final lngD = _asDouble(lng);
+    if (latD == null || lngD == null) return null;
+    return LatLng(latD, lngD);
+  }
+
+  LatLng? _extractLatLng(
+    Map<String, dynamic> data, {
+    required String latKey,
+    required String lngKey,
+  }) {
+    return _latLngFrom(data[latKey], data[lngKey]);
+  }
+
+  LatLng? _extractNestedLatLng(
+    Map<String, dynamic> data,
+    String key, {
+    String latKey = 'latitude',
+    String lngKey = 'longitude',
+  }) {
+    final raw = data[key];
+    if (raw is! Map) return null;
+    final m = Map<String, dynamic>.from(raw as Map);
+    return _latLngFrom(m[latKey], m[lngKey]);
+  }
+
+  Future<void> _applyBookingSnapshot(Map<String, dynamic> joined) async {
+    try {
+      driverStatusController.setServiceTypeFrom(
+        joined['rideType'] ?? joined['serviceType'],
+      );
+
+      final pickup =
+          _extractNestedLatLng(joined, 'pickupLocation') ??
+          _extractLatLng(joined, latKey: 'fromLatitude', lngKey: 'fromLongitude') ??
+          (() {
+            final raw = joined['customerLocation'];
+            if (raw is! Map) return null;
+            final cl = Map<String, dynamic>.from(raw as Map);
+            return _latLngFrom(
+                  cl['fromLatitude'] ?? cl['latitude'],
+                  cl['fromLongitude'] ?? cl['longitude'],
+                );
+          })();
+
+      final drop =
+          _extractNestedLatLng(joined, 'dropLocation') ??
+          _extractLatLng(joined, latKey: 'toLatitude', lngKey: 'toLongitude') ??
+          (() {
+            final raw = joined['customerLocation'];
+            if (raw is! Map) return null;
+            final cl = Map<String, dynamic>.from(raw as Map);
+            return _latLngFrom(cl['toLatitude'], cl['toLongitude']);
+          })();
+
+      if (pickup != null) bookingFromLocation.value = pickup;
+      if (drop != null) bookingToLocation.value = drop;
+
+      custName.value =
+          (joined['custName'] ?? joined['customerName'] ?? '').toString();
+      profilePic.value =
+          (joined['customerProfilePic'] ?? joined['profilePic'] ?? '').toString();
+      amount.value = (joined['amount'] ?? '').toString();
+
+      if ((pickupAddress ?? '').trim().isNotEmpty) {
+        customerFrom.value = pickupAddress!.trim();
+      } else if (pickup != null) {
+        customerFrom.value = await _reverseGeocode(
+          pickup.latitude,
+          pickup.longitude,
+        );
+      }
+
+      if ((dropAddress ?? '').trim().isNotEmpty) {
+        customerTo.value = dropAddress!.trim();
+      } else if (drop != null) {
+        customerTo.value = await _reverseGeocode(drop.latitude, drop.longitude);
+      }
+
+      final from = driverLocation.value ?? _lastDriverPosition ?? pickup;
+      if (from != null && drop != null) {
+        _setDirectFallbackRoute(from);
+        unawaited(loadFullRoute());
+      }
+    } catch (e) {
+      CommonLogger.log.e('applyBookingSnapshot error: $e');
+    }
+  }
 
   Future<void> _hydrateFromJoinedData() async {
     final joined = JoinedBookingData().getData();
     if (joined == null) return;
-
-    try {
-      final customerLoc = joined['customerLocation'];
-      final fromLat = (customerLoc['fromLatitude'] as num).toDouble();
-      final fromLng = (customerLoc['fromLongitude'] as num).toDouble();
-      final toLat = (customerLoc['toLatitude'] as num).toDouble();
-      final toLng = (customerLoc['toLongitude'] as num).toDouble();
-
-      bookingFromLocation.value = LatLng(fromLat, fromLng);
-      bookingToLocation.value = LatLng(toLat, toLng);
-
-      custName.value = (joined['customerName'] ?? '').toString();
-      profilePic.value = (joined['customerProfilePic'] ?? '').toString();
-      amount.value = (joined['amount'] ?? '').toString();
-
-      // reverse geocode (optional)
-      customerFrom.value = await _reverseGeocode(fromLat, fromLng);
-      customerTo.value = await _reverseGeocode(toLat, toLng);
-
-      // initial route (from pickup->drop)
-      await loadFullRoute();
-    } catch (e) {
-      CommonLogger.log.e("hydrate error: $e");
-    }
+    await _applyBookingSnapshot(joined);
   }
 
+  Future<void> _fetchActiveBookingSnapshotIfNeeded() async {
+    if (_activeBookingSnapshotFetched) return;
+    if (bookingToLocation.value != null && custName.value.trim().isNotEmpty) {
+      return;
+    }
+
+    _activeBookingSnapshotFetched = true;
+    try {
+      final result = await _apiDataSource.getDriverActiveBooking();
+      await result.fold(
+        (_) async {},
+        (DriverActiveBookingResponse response) async {
+          if (!response.hasBooking) return;
+          final data = response.data;
+          if (data == null) return;
+
+          final snapshot = Map<String, dynamic>.from(data);
+          JoinedBookingData().setData(snapshot);
+          await _applyBookingSnapshot(snapshot);
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.e('fetchActiveBookingSnapshot error: $e');
+    }
+  }
   Future<void> _primeDriverLocationAndRoute() async {
     try {
       final pos = await Geolocator.getCurrentPosition(
@@ -300,6 +415,16 @@ class RideStatsController extends GetxController
     socketService = SocketService();
     final cfg = Get.find<ApiConfigController>();
     socketService.initSocket(cfg.socketUrl);
+
+    socketService.on('joined-booking', (data) {
+      if (data is! Map) return;
+      final joined = Map<String, dynamic>.from(data as Map);
+      JoinedBookingData().setData(joined);
+      unawaited(_applyBookingSnapshot(joined));
+    });
+
+    unawaited(_joinBookingRoom());
+    socketService.onConnect(() => unawaited(_joinBookingRoom()));
     socketService.on('driver-location', (data) {
       CommonLogger.log.i('driver-location : $data');
       if (data == null) return;
@@ -331,6 +456,17 @@ class RideStatsController extends GetxController
       socketService.connect();
       socketService.onConnect(() => CommonLogger.log.i('Socket connected'));
     }
+  }
+
+
+  Future<void> _joinBookingRoom() async {
+    final did = (await SharedPrefHelper.getDriverId())?.toString().trim() ?? '';
+    if (did.isNotEmpty) {
+      socketService.registerDriver(did, bookingId: bookingId);
+      socketService.joinBooking(bookingId, userId: did);
+      return;
+    }
+    socketService.joinBooking(bookingId);
   }
 
   void _updateReachedDestinationByDistance(LatLng current) {
@@ -586,7 +722,7 @@ class RideStatsController extends GetxController
               CameraPosition(
                 target: followTarget,
                 zoom: _followZoom.clamp(_minFollowZoom, _maxFollowZoom),
-                tilt: 45,
+                tilt: 0,
                 bearing: bearing,
               ),
             ),
@@ -709,6 +845,15 @@ class RideStatsController extends GetxController
   }
 
   // ---------------- MAP UX ----------------
+  Future<void> setDriverFocused(bool focused) async {
+    isDriverFocused.value = focused;
+    autoFollowEnabled.value = focused;
+    _autoFollowTimer?.cancel();
+    if (!focused) {
+      await fitBoundsToRoute(force: true);
+    }
+  }
+
   Future<void> attachMap(GoogleMapController controller) async {
     mapController = controller;
     _isMapActive = true;
@@ -749,15 +894,21 @@ class RideStatsController extends GetxController
     } finally {
       _didInitialRouteFit = true;
       _autoFollowTimer = Timer(const Duration(seconds: 2), () {
-        autoFollowEnabled.value = true;
+        if (isClosed) return;
+        if (isDriverFocused.value) {
+          autoFollowEnabled.value = true;
+        }
       });
     }
   }
 
   void onUserMapMoveStarted() {
+    isDriverFocused.value = false;
     autoFollowEnabled.value = false;
     _autoFollowTimer?.cancel();
     _autoFollowTimer = Timer(const Duration(seconds: 10), () {
+      if (isClosed) return;
+      isDriverFocused.value = true;
       autoFollowEnabled.value = true;
     });
   }
@@ -794,7 +945,27 @@ class RideStatsController extends GetxController
         CameraPosition(
           target: latLng,
           zoom: _followZoom.clamp(_minFollowZoom, _maxFollowZoom),
-          tilt: 45,
+          tilt: 0,
+          bearing: currentBearing.value,
+        ),
+      ),
+    );
+  }
+
+  Future<void> focusDriverMarker({double? zoom}) async {
+    final pos = driverLocation.value ?? _lastDriverPosition;
+    if (pos == null) return;
+
+    isDriverFocused.value = true;
+    autoFollowEnabled.value = true;
+
+    final z = (zoom ?? _followZoom).clamp(_minFollowZoom, _maxFollowZoom);
+    await _safeAnimateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: pos,
+          zoom: z,
+          tilt: 0,
           bearing: currentBearing.value,
         ),
       ),
@@ -915,3 +1086,9 @@ class RideStatsController extends GetxController
     return 10.0;
   }
 }
+
+
+
+
+
+

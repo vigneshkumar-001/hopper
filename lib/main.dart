@@ -10,12 +10,20 @@ import 'Core/Constants/log.dart';
 import 'Core/Firebase/firebase_service.dart';
 import 'splash_screen.dart';
 import 'utils/init_Controller.dart';
+import 'utils/map/route_info.dart';
+import 'api/repository/api_constents.dart';
+import 'Presentation/DriverScreen/screens/background_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // ✅ init GetX controllers first (your code)
   await initController();
+
+  DirectionsConfig.apiKey = ApiConstents.googleMapApiKey;
+
+  // ✅ Configure (do not start) background tracking service
+  await initializeBackgroundService();
 
   // ✅ Firebase init must be before messaging handlers
   await Firebase.initializeApp();

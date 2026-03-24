@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Constants/log.dart';
@@ -62,11 +62,18 @@ class DriverStatusController extends GetxController {
     return v;
   }
 
+
+  void setServiceTypeFrom(dynamic raw) {
+    final next = _normalizeServiceType(raw);
+    if (next.isEmpty) return;
+    if (serviceType.value == next) return;
+    serviceType.value = next;
+  }
   void toggleStatus() {
     isOnline.value = !isOnline.value;
   }
 
-  // 🔹 booking accept
+  // ðŸ”¹ booking accept
   Future<String?> bookingAccept(
     BuildContext context, {
     required String bookingId,
@@ -105,16 +112,16 @@ class DriverStatusController extends GetxController {
             'userType': 'driver',
           };
 
-          CommonLogger.log.i("📤 Join booking data: $bookingData");
+          CommonLogger.log.i("ðŸ“¤ Join booking data: $bookingData");
 
           if (socketService.connected) {
             socketService.emit('join-booking', bookingData);
             CommonLogger.log.i(
-              "✅ Socket already connected, emitted join-booking",
+              "âœ… Socket already connected, emitted join-booking",
             );
           } else {
             socketService.onConnect(() {
-              CommonLogger.log.i("✅ Socket connected, emitting join-booking");
+              CommonLogger.log.i("âœ… Socket connected, emitting join-booking");
               socketService.emit('join-booking', bookingData);
             });
           }
@@ -148,7 +155,7 @@ class DriverStatusController extends GetxController {
             // );
           } else {
             CommonLogger.log.i(
-              "🚗 [SHARED] bookingAccept called with navigateToPickup = false → staying on current screen",
+              "ðŸš— [SHARED] bookingAccept called with navigateToPickup = false â†’ staying on current screen",
             );
           }
 
@@ -162,7 +169,7 @@ class DriverStatusController extends GetxController {
     }
   }
 
-  // 🔹 booking accept
+  // ðŸ”¹ booking accept
   Future<String?> bookingAcceptForSharedRide(
     BuildContext context, {
     required String bookingId,
@@ -201,16 +208,16 @@ class DriverStatusController extends GetxController {
             'userType': 'driver',
           };
 
-          CommonLogger.log.i("📤 Join booking data: $bookingData");
+          CommonLogger.log.i("ðŸ“¤ Join booking data: $bookingData");
 
           if (socketService.connected) {
             socketService.emit('join-booking', bookingData);
             CommonLogger.log.i(
-              "✅ Socket already connected, emitted join-booking",
+              "âœ… Socket already connected, emitted join-booking",
             );
           } else {
             socketService.onConnect(() {
-              CommonLogger.log.i("✅ Socket connected, emitting join-booking");
+              CommonLogger.log.i("âœ… Socket connected, emitting join-booking");
               socketService.emit('join-booking', bookingData);
             });
           }
@@ -235,7 +242,7 @@ class DriverStatusController extends GetxController {
             );
           } else {
             CommonLogger.log.i(
-              "🚗 [SHARED] bookingAccept called with navigateToPickup = false → staying on current screen",
+              "ðŸš— [SHARED] bookingAccept called with navigateToPickup = false â†’ staying on current screen",
             );
           }
 
@@ -279,7 +286,7 @@ class DriverStatusController extends GetxController {
     }
   }
 
-  // 🔹 complete ride – used for single ride & shared
+  // ðŸ”¹ complete ride â€“ used for single ride & shared
   /*
   Future<String?> completeRideRequest(
       BuildContext context, {
@@ -562,8 +569,8 @@ class DriverStatusController extends GetxController {
     BuildContext context, {
     required String reason,
     required String bookingId,
-    bool silent = true, // ✅ default true (avoid ticker crash)
-    bool navigate = true, // ✅ default true
+    bool silent = true, // âœ… default true (avoid ticker crash)
+    bool navigate = true, // âœ… default true
   }) async
   {
     try {
@@ -589,13 +596,13 @@ class DriverStatusController extends GetxController {
 
       isLoading.value = false;
 
-      // ✅ show snackbar only if NOT navigating away
+      // âœ… show snackbar only if NOT navigating away
       if (!silent && !navigate && (msg ?? '').isNotEmpty) {
         CustomSnackBar.showSuccess(msg!);
       }
 
       if (navigate) {
-        // ✅ close overlays safely
+        // âœ… close overlays safely
         try {
           Get.closeAllSnackbars();
         } catch (e) {
@@ -757,10 +764,10 @@ class DriverStatusController extends GetxController {
           Get.find<DriverAnalyticsController>().trackEarning(Amount ?? 0);
           Get.find<DriverAnalyticsController>().trackComplete();
 
-          // ✅ Shared ride -> DON'T navigate from controller
+          // âœ… Shared ride -> DON'T navigate from controller
           if (isSharedRide) return;
 
-          // ✅ Single ride -> go to cash screen if needed
+          // âœ… Single ride -> go to cash screen if needed
           // if (navigateToCashScreen) {
           //   Navigator.push(
           //     context,
@@ -821,6 +828,7 @@ class DriverStatusController extends GetxController {
     }
   }
 }
+
 
 
 

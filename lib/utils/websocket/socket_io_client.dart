@@ -269,6 +269,14 @@ class SocketService {
   // ---------------------------------------------------------
   void emit(String event, dynamic data) {
     _socket?.emit(event, data);
+
+    // Reference logs for tracking location updates (easy to filter in Logcat).
+    if (kDebugMode && event == 'updateLocation') {
+      final id = _socket?.id;
+      CommonLogger.log.i(
+        '📍 [SOCKET_EMIT] updateLocation url=$_socketUrl id=$id connected=$connected data=$data',
+      );
+    }
   }
 
   // ---------------------------------------------------------

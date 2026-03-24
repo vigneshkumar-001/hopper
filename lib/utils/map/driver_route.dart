@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'route_info.dart';
+import 'polyline_snap.dart';
 
 class DriverRouteUpdate {
   final LatLng driverLocation;
@@ -35,6 +36,7 @@ class DriverRouteController {
     required LatLng destination,
     required this.onRouteUpdate,
     this.onCameraUpdate,
+    this.initialLocation,
   }) : _destination = destination;
 
   LatLng _destination;
@@ -42,6 +44,7 @@ class DriverRouteController {
 
   final void Function(DriverRouteUpdate update) onRouteUpdate;
   final void Function(CameraPosition position)? onCameraUpdate;
+  final LatLng? initialLocation;
 
   // Raw GPS
   LatLng? _currentRaw;
@@ -81,6 +84,7 @@ class DriverRouteController {
   static const double _MIN_SPEED_MS = 1.0;
   static const double _HEADING_TRUST_SPEED_MS = 2.0;
   static const double _MIN_TURN_DEG = 8.0;
+  static const double _SNAP_TOLERANCE_M = 35.0;
 
   // Route refresh throttles
   static const int _ROUTE_REFRESH_MIN_SEC = 10;
@@ -99,7 +103,19 @@ class DriverRouteController {
 
   Future<void> start() async {
     final hasPermission = await _ensureLocationPermission();
-    if (!hasPermission) return;
+    if (!hasPermission) {
+      final fallbackStart = initialLocation;
+      if (fallbackStart == null) return;
+
+      _currentRaw = fallbackStart;
+      _lastRaw = fallbackStart;
+      _displayLoc = fallbackStart;
+      _displayBearing = 0.0;
+
+      await _fetchRoute(fallbackStart, _destination, force: true);
+      _emitUpdate();
+      return;
+    }
 
     final pos = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
@@ -167,11 +183,12 @@ class DriverRouteController {
     final acc = position.accuracy.isFinite ? position.accuracy : 9999.0;
     if (acc > _MAX_ACCURACY_M) return;
 
-    final newLoc = LatLng(position.latitude, position.longitude);
+    final rawLoc = LatLng(position.latitude, position.longitude);
+    final newLoc = _maybeSnapToRoute(rawLoc);
 
     if (_lastRaw == null) {
-      _lastRaw = newLoc;
-      _currentRaw = newLoc;
+      _lastRaw = rawLoc;
+      _currentRaw = rawLoc;
       _displayLoc ??= newLoc;
       return;
     }
@@ -179,8 +196,8 @@ class DriverRouteController {
     final moved = Geolocator.distanceBetween(
       _lastRaw!.latitude,
       _lastRaw!.longitude,
-      newLoc.latitude,
-      newLoc.longitude,
+      rawLoc.latitude,
+      rawLoc.longitude,
     );
 
     if (moved < _MIN_MOVE_METERS) return;
@@ -190,8 +207,8 @@ class DriverRouteController {
 
     // Keep orientation stable when almost stationary (GPS drift only).
     if (speed < _MIN_SPEED_MS && moved < _STATIONARY_DRIFT_M) {
-      _currentRaw = newLoc;
-      _lastRaw = newLoc;
+      _currentRaw = rawLoc;
+      _lastRaw = rawLoc;
       _displayLoc = newLoc;
       _emitUpdate();
       return;
@@ -220,7 +237,7 @@ class DriverRouteController {
       _BEARING_SMOOTH_ALPHA,
     );
 
-    _currentRaw = newLoc;
+    _currentRaw = rawLoc;
 
     // ✅ Update animation target (from current display → new gps)
     _setAnimationTarget(
@@ -232,15 +249,25 @@ class DriverRouteController {
       movedMeters: moved,
     );
 
-    _lastRaw = newLoc;
+    _lastRaw = rawLoc;
 
     // Update remaining polyline cheaply (no API)
     _trimPolylineToCurrent(newLoc);
 
     // If off-route, fetch new route (throttled)
-    if (_shouldRefetchRoute(newLoc)) {
-      await _fetchRoute(newLoc, _destination);
+    if (_shouldRefetchRoute(rawLoc)) {
+      await _fetchRoute(rawLoc, _destination);
     }
+  }
+
+  LatLng _maybeSnapToRoute(LatLng raw) {
+    if (_polyline.length < 6) return raw;
+    final snap = snapToPolyline(
+      raw,
+      _polyline,
+      maxSegments: _OFF_ROUTE_LOOKAHEAD_POINTS,
+    );
+    return snap.distanceMeters <= _SNAP_TOLERANCE_M ? snap.point : raw;
   }
 
   void _setAnimationTarget({
@@ -343,13 +370,26 @@ class DriverRouteController {
 
     _lastRouteFetchAt = now;
 
-    final result = await getRouteInfo(origin: origin, destination: dest);
+    try {
+      final result = await getRouteInfo(origin: origin, destination: dest);
 
-    _directionText = _parseHtmlString(result['direction']);
-    _distanceText = result['distance'];
-    _maneuver = result['maneuver'] ?? '';
-    _laneGuidance = (result['laneGuidance'] ?? '').toString();
-    _polyline = decodePolyline(result['polyline']);
+      _directionText = _parseHtmlString(result['direction']);
+      _distanceText = (result['distance'] ?? '').toString();
+      _maneuver = (result['maneuver'] ?? '').toString();
+      _laneGuidance = (result['laneGuidance'] ?? '').toString();
+      _polyline = decodePolyline((result['polyline'] ?? '').toString());
+    } catch (_) {
+      // Never crash the route loop; fall back to a straight line.
+      _directionText = '';
+      _distanceText = '';
+      _maneuver = '';
+      _laneGuidance = '';
+      if (origin.latitude == dest.latitude && origin.longitude == dest.longitude) {
+        _polyline = <LatLng>[origin];
+      } else {
+        _polyline = <LatLng>[origin, dest];
+      }
+    }
 
     if (_polyline.length >= 2) {
       _nextPoint = _polyline[1];
@@ -435,16 +475,14 @@ class DriverRouteController {
   }
 
   bool _isOffRoute(LatLng currentLocation) {
-    if (_polyline.isEmpty) return true;
+    if (_polyline.length < 6) return _polyline.isEmpty;
 
-    final limit = math.min(_polyline.length, _OFF_ROUTE_LOOKAHEAD_POINTS);
-
-    for (int i = 0; i < limit; i++) {
-      final point = _polyline[i];
-      final d = _distanceToPoint(currentLocation, point);
-      if (d < _OFFROUTE_THRESHOLD_M) return false;
-    }
-    return true;
+    final snap = snapToPolyline(
+      currentLocation,
+      _polyline,
+      maxSegments: _OFF_ROUTE_LOOKAHEAD_POINTS,
+    );
+    return snap.distanceMeters > _OFFROUTE_THRESHOLD_M;
   }
 
   double _distanceToPoint(LatLng from, LatLng to) {

@@ -47,9 +47,24 @@ class _TermsScreenState extends State<TermsScreen> {
 
   bool isChecked = false;
   bool isNextClicked = false;
+
+  void _handleBack() {
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+      return;
+    }
+    Get.offAll(() => const GetStartedScreens());
+  }
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: true,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
@@ -93,7 +108,7 @@ class _TermsScreenState extends State<TermsScreen> {
       ),
       bottomNavigationBar: CommonBottomNavigationBar(
         height: 120.h,
-        onBackPressed: () =>   Get.offAll(() => GetStartedScreens()),
+        onBackPressed: _handleBack,
 
         onNextPressed: () {
           if (isChecked && !isNextClicked) {
@@ -131,6 +146,7 @@ class _TermsScreenState extends State<TermsScreen> {
             isChecked = value ?? false;
           });
         },
+      ),
       ),
     );
   }

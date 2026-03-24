@@ -116,7 +116,7 @@ class RideStatsScreen extends StatelessWidget {
                         Polyline(
                           polylineId: const PolylineId('route_main'),
                           color: AppColors.commonBlack,
-                          width: 2,
+                          width: 3,
                           points: c.polylinePoints,
                           startCap: Cap.roundCap,
                           endCap: Cap.roundCap,
@@ -139,6 +139,7 @@ class RideStatsScreen extends StatelessWidget {
                             NavigationVoiceService.instance.mutedNotifier,
                         builder: (context, muted, _) {
                           return FloatingActionButton(
+                            heroTag: null,
                             mini: true,
                             backgroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
@@ -160,6 +161,7 @@ class RideStatsScreen extends StatelessWidget {
                       const SizedBox(height: 8),
                       Obx(
                         () => FloatingActionButton(
+                          heroTag: null,
                           mini: true,
                           backgroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
@@ -170,11 +172,17 @@ class RideStatsScreen extends StatelessWidget {
                             if (ms == null) return;
                             ms.pauseAutoFollow(const Duration(seconds: 4));
                             if (c.isDriverFocused.value) {
-                              ms.fitRouteBounds();
+                              final pts = c.polylinePoints.toList();
+                              if (pts.length >= 2) {
+                                ms.fitPolylineBounds(pts);
+                              } else {
+                                ms.fitRouteBounds();
+                              }
+                              c.setDriverFocused(false);
                             } else {
-                              ms.focusPickup();
+                              c.focusDriverMarker(zoom: 17.2);
+                              c.setDriverFocused(true);
                             }
-                            c.isDriverFocused.value = !c.isDriverFocused.value;
                           },
                           child: Icon(
                             c.isDriverFocused.value
@@ -826,6 +834,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
   final DriverStatusController driverStatusController = Get.put(
     DriverStatusController(),
   );
+  Worker? _serviceTypeWorker;
   late SocketService socketService;
   bool driverCompletedRide = false;
   bool _isNetworkOffline = false;
@@ -911,6 +920,11 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     );
 
     _loadMarkerIcons();
+    _serviceTypeWorker?.dispose();
+    _serviceTypeWorker = ever<String>(
+      driverStatusController.serviceType,
+      (_) async => _loadMarkerIcons(),
+    );
     _hydrateFromJoinedData();
     _wireSocketEvents();
     _initConnectivityWatchdog();
@@ -924,6 +938,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     _connectivitySub?.cancel();
     _autoFollowTimer?.cancel();
     _routeRetryTimer?.cancel();
+    _serviceTypeWorker?.dispose();
     _markerController.dispose();
     try {
       // remove ONLY listeners; keep socket alive if singleton in app
@@ -980,11 +995,12 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     try {
       final cfg = const ImageConfiguration(size: Size(52, 52));
       final String asset =
-          driverStatusController.serviceType.value == "Bike"
+          driverStatusController.isBike
               ? AppImages.parcelBike
               : AppImages.movingCar;
 
-      final icon = await BitmapDescriptor.asset(height: 60, cfg, asset);
+      final height = driverStatusController.isBike ? 66.0 : 60.0;
+      final icon = await BitmapDescriptor.asset(height: height, cfg, asset);
       if (!mounted) return;
       setState(() {
         carIcon = icon;
@@ -1287,12 +1303,12 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     _lastSpeedAt = DateTime.now();
 
     final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs).clamp(
-      14.6,
-      17.4,
+      15.2,
+      17.8,
     );
     _followZoom = MapMotionProfile.smoothZoom(_followZoom, targetZoom).clamp(
-      14.6,
-      17.4,
+      15.2,
+      17.8,
     );
   }
 
@@ -1648,7 +1664,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                       Polyline(
                         polylineId: const PolylineId("route"),
                         color: AppColors.commonBlack,
-                        width: 2,
+                        width: 3,
                         points: polylinePoints,
                         startCap: Cap.roundCap,
                         endCap: Cap.roundCap,
@@ -1663,6 +1679,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                 top: driverCompletedRide ? 550 : 450,
                 right: 10,
                 child: FloatingActionButton(
+                  heroTag: null,
                   mini: true,
                   backgroundColor: Colors.white,
                   shape: RoundedRectangleBorder(

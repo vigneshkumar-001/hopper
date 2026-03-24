@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -36,7 +36,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // ✅ create once (or reuse if already exists)
+    // âœ… create once (or reuse if already exists)
     if (Get.isRegistered<DriverMainController>()) {
       c = Get.find<DriverMainController>();
     } else {
@@ -100,7 +100,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                   Expanded(
                     child: Stack(
                       children: [
-                        // ✅ Map rebuilt only by GetBuilder(id: 'map')
+                        // âœ… Map rebuilt only by GetBuilder(id: 'map')
                         GetBuilder<DriverMainController>(
                           id: 'map',
                           builder: (_) {
@@ -353,7 +353,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
 }
 
 // ==========================================================
-// ✅ Glass Header widget (same UI)
+// âœ… Glass Header widget (same UI)
 // ==========================================================
 class _GlassHeader extends StatelessWidget {
   const _GlassHeader({
@@ -394,7 +394,10 @@ class _GlassHeader extends StatelessWidget {
             child: Obx(() {
               final isOnline = statusController.isOnline.value;
               final isLoading = statusController.isLoading.value;
-              final vehicleAsset = statusController.isCar
+              // IMPORTANT: read serviceType inside Obx so the icon updates immediately.
+              final serviceType = statusController.serviceType.value;
+              final isCar = serviceType.trim().toLowerCase() == 'car';
+              final vehicleAsset = isCar
                   ? AppImages.offlineCar
                   : AppImages.bike;
 
@@ -559,7 +562,9 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      final isCar = widget.statusController.isCar;
+      // IMPORTANT: read serviceType inside Obx so the UI reacts to changes.
+      final serviceType = widget.statusController.serviceType.value;
+      final isCar = serviceType.trim().toLowerCase() == 'car';
 
       return NotificationListener<DraggableScrollableNotification>(
         onNotification: (n) {
@@ -906,7 +911,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
 }
 
 /// ==========================================================
-/// ✅ CAR Booking Card UI (kept, only safe null guards)
+/// âœ… CAR Booking Card UI (kept, only safe null guards)
 /// ==========================================================
 class _CarBookingCardUI extends StatelessWidget {
   const _CarBookingCardUI({
@@ -956,7 +961,7 @@ class _CarBookingCardUI extends StatelessWidget {
                     Image.asset(AppImages.notification, height: 25, width: 25),
                     const SizedBox(width: 10),
                     CustomTextfield.textWithStyles600(
-                      data['rideType'] == 'Bike'
+                      (data['rideType'] ?? '').toString().toLowerCase() == 'bike'
                           ? 'New Package Request'
                           : 'New Ride Request',
                       color: AppColors.commonWhite,
@@ -1739,7 +1744,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //     _locationSub = Geolocator.getPositionStream(
 //       locationSettings: const LocationSettings(
 //         accuracy: LocationAccuracy.high,
-//         distanceFilter: 8, // ✅ smoother & less spam than 0/5
+//         distanceFilter: 8, // âœ… smoother & less spam than 0/5
 //       ),
 //     ).listen((pos) {
 //       _latestLocationPayload = {
@@ -1891,7 +1896,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //
 //     _animCtrl = AnimationController(
 //       vsync: this,
-//       duration: const Duration(milliseconds: 650), // ✅ smoother
+//       duration: const Duration(milliseconds: 650), // âœ… smoother
 //     );
 //
 //     _anim = CurvedAnimation(parent: _animCtrl!, curve: Curves.easeOutCubic)
@@ -1986,7 +1991,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                         Expanded(
 //                           child: Stack(
 //                             children: [
-//                               // ✅ Map NEVER depends on Obx => no rebuild => smooth
+//                               // âœ… Map NEVER depends on Obx => no rebuild => smooth
 //                               RepaintBoundary(
 //                                 child: GoogleMap(
 //                                   mapType: MapType.normal,
@@ -2015,7 +2020,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                                       _carMarker != null ? {_carMarker!} : {},
 //
 //                                   onCameraMoveStarted: () {
-//                                     // ✅ stop follow when user touches map
+//                                     // âœ… stop follow when user touches map
 //                                     followDriver.value = false;
 //                                   },
 //
@@ -2036,7 +2041,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                                 ),
 //                               ),
 //
-//                               // ✅ Follow button (Uber)
+//                               // âœ… Follow button (Uber)
 //                               Positioned(
 //                                 top: 190,
 //                                 right: 12,
@@ -2058,7 +2063,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                                 }),
 //                               ),
 //
-//                               // ✅ Bottom sheet only rebuilds on online / service type etc
+//                               // âœ… Bottom sheet only rebuilds on online / service type etc
 //                               Obx(() {
 //                                 final isOnline =
 //                                     statusController.isOnline.value;
@@ -2092,7 +2097,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // // ==========================================================
-// // ✅ Glass Header widget (UI polish)
+// // âœ… Glass Header widget (UI polish)
 // // ==========================================================
 // class _GlassHeader extends StatelessWidget {
 //   const _GlassHeader({
@@ -2243,7 +2248,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //   final DraggableScrollableController _sheetCtrl =
 //       DraggableScrollableController();
 //
-//   // ✅ Uber-like snap points (collapsed, mid, full)
+//   // âœ… Uber-like snap points (collapsed, mid, full)
 //   static const List<double> _snaps = [0.22, 0.65, 0.98];
 //
 //   double _currentSize = _snaps[1];
@@ -2300,7 +2305,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //
 //   @override
 //   Widget build(BuildContext context) {
-//     // ✅ IMPORTANT: read serviceType inside Obx, otherwise it won’t update instantly
+//     // âœ… IMPORTANT: read serviceType inside Obx, otherwise it wonâ€™t update instantly
 //     return Obx(() {
 //       final serviceType = widget.statusController.serviceType.value;
 //
@@ -2308,7 +2313,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //         onNotification: (n) {
 //           _currentSize = n.extent;
 //
-//           // ✅ Snap when user stops dragging (debounced)
+//           // âœ… Snap when user stops dragging (debounced)
 //           if (n.extent <= _snaps.last && n.extent >= _snaps.first) {
 //             _scheduleSnap();
 //           }
@@ -2365,7 +2370,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                     const SizedBox(height: 10),
 //
 //                     // =========================
-//                     // ✅ Booking Request Area
+//                     // âœ… Booking Request Area
 //                     // =========================
 //                     if (serviceType == 'Car') ...[
 //                       Center(
@@ -2487,7 +2492,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                     ],
 //
 //                     // =========================
-//                     // ✅ Offline banner (keep)
+//                     // âœ… Offline banner (keep)
 //                     // =========================
 //                     Obx(() {
 //                       if (widget.statusController.isOnline.value)
@@ -2517,7 +2522,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                     const SizedBox(height: 18),
 //
 //                     // =========================
-//                     // ✅ Weekly + Today (FULL)
+//                     // âœ… Weekly + Today (FULL)
 //                     // =========================
 //                     Padding(
 //                       padding: const EdgeInsets.symmetric(horizontal: 17),
@@ -2531,7 +2536,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                           ),
 //                           const SizedBox(height: 10),
 //
-//                           // ✅ Weekly widget (FULL)
+//                           // âœ… Weekly widget (FULL)
 //                           Container(
 //                             decoration: BoxDecoration(
 //                               borderRadius: BorderRadius.circular(12),
@@ -2611,7 +2616,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //
 //                           const SizedBox(height: 18),
 //
-//                           // ✅ Today Activity (FULL)
+//                           // âœ… Today Activity (FULL)
 //                           CustomTextfield.textWithStyles700(
 //                             "Today's Activity",
 //                             fontSize: 16,
@@ -2643,7 +2648,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// ✅ CAR Booking Card UI (your UI, optimized)
+// /// âœ… CAR Booking Card UI (your UI, optimized)
 // /// ==========================================================
 // class _CarBookingCardUI extends StatelessWidget {
 //   const _CarBookingCardUI({
@@ -2694,7 +2699,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                     Image.asset(AppImages.notification, height: 25, width: 25),
 //                     const SizedBox(width: 10),
 //                     CustomTextfield.textWithStyles600(
-//                       data['rideType'] == 'Bike'
+//                       (data['rideType'] ?? '').toString().toLowerCase() == 'bike'
 //                           ? 'New Package Request'
 //                           : 'New Ride Request',
 //                       color: AppColors.commonWhite,
@@ -2890,7 +2895,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// ✅ Parcel card - keep same UI (if you want different, modify here)
+// /// âœ… Parcel card - keep same UI (if you want different, modify here)
 // /// ==========================================================
 // class _ParcelBookingCardUI extends StatelessWidget {
 //   const _ParcelBookingCardUI({
@@ -2927,7 +2932,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// ✅ Today Activity - CAR
+// /// âœ… Today Activity - CAR
 // /// ==========================================================
 // class _TodayActivityCar extends StatelessWidget {
 //   const _TodayActivityCar({required this.statusController});
@@ -3011,7 +3016,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// ✅ Today Activity - PARCEL
+// /// âœ… Today Activity - PARCEL
 // /// ==========================================================
 // class _TodayActivityParcel extends StatelessWidget {
 //   const _TodayActivityParcel({required this.statusController});
@@ -3140,4 +3145,5 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 //
+
 

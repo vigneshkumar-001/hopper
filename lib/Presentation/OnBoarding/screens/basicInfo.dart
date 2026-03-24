@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hopper/Presentation/Authentication/controller/otp_controller.dart';
+import 'package:hopper/Presentation/Authentication/screens/Landing_Screens.dart';
 import 'package:hopper/Presentation/Authentication/screens/Otp_Screens.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
 import 'package:flutter/services.dart';
@@ -64,13 +65,30 @@ class _BasicInfoState extends State<BasicInfo> {
     authController.countryCodeController.text = '+234';
   }
 
+  void _handleBack() {
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+      return;
+    }
+    nav.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LandingScreens()),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isFromGoogleSignIn = widget.type == 'googleSignIn';
-    return Scaffold(
-
-      body: SafeArea(
-        child: SingleChildScrollView(
+    return PopScope(
+      canPop: true,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 25),
             child: Form(
@@ -78,7 +96,10 @@ class _BasicInfoState extends State<BasicInfo> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Buttons.backButton(context: context),
+                  GestureDetector(
+                    onTap: _handleBack,
+                    child: Image.asset(AppImages.backButton, height: 18),
+                  ),
                   SizedBox(height: 24),
 
                   CustomLinearProgress.linearProgressIndicator(value: 0.1),
@@ -479,6 +500,7 @@ class _BasicInfoState extends State<BasicInfo> {
             // );
           },
         ),
+      ),
       ),
     );
   }

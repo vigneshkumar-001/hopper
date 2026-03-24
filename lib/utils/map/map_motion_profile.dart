@@ -8,11 +8,13 @@ class MapMotionProfile {
     final kmh = speedMs * 3.6;
     // Keep the road + next turn clearly visible (avoid aggressive zoom-out).
     // Tuned for ride apps (Ola/Uber-like follow camera).
-    if (kmh >= 70) return 14.6;
-    if (kmh >= 45) return 15.0;
-    if (kmh >= 25) return 15.4;
-    if (kmh >= 12) return 15.8;
-    return 16.2;
+    //
+    // Updated: slightly more zoom-in so the vehicle + road are clearer.
+    if (kmh >= 70) return 15.2;
+    if (kmh >= 45) return 15.7;
+    if (kmh >= 25) return 16.2;
+    if (kmh >= 12) return 16.6;
+    return 17.0;
   }
 
   static double smoothZoom(double currentZoom, double targetZoom) {

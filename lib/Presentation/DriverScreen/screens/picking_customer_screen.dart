@@ -108,12 +108,16 @@ class PickingCustomerScreen extends StatelessWidget {
                           myLocationEnabled: false,
                           initialPosition: pickupLocation,
                           markers: markers,
-                          polylines: {
+                           followDriver: c.isDriverFocused.value,
+                           followBearingEnabled: false,
+                           followZoom: c.followZoom.value,
+                           followTilt: c.isDriverFocused.value ? 45 : 0,
+                           polylines: {
                             if (routePoints.length >= 2)
                               Polyline(
                                 polylineId: const PolylineId("route"),
                                 color: AppColors.commonBlack,
-                                width: 5,
+                                width: 3,
                                 startCap: Cap.roundCap,
                                 endCap: Cap.roundCap,
                                 jointType: JointType.round,
@@ -173,11 +177,12 @@ class PickingCustomerScreen extends StatelessWidget {
                             if (ms == null) return;
                             ms.pauseAutoFollow(const Duration(seconds: 4));
                             if (c.isDriverFocused.value) {
-                              ms.fitRouteBounds();
+                              ms.fitPolylineBounds(routePoints);
+                              c.isDriverFocused.value = false;
                             } else {
-                              ms.focusPickup();
+                              c.focusDriverMarker(zoom: 17.2);
+                              c.isDriverFocused.value = true;
                             }
-                            c.isDriverFocused.value = !c.isDriverFocused.value;
                           },
                         ),
                       ),
@@ -191,7 +196,12 @@ class PickingCustomerScreen extends StatelessWidget {
                   left: 12,
                   right: 12,
                   child: GestureDetector(
-                    onTap: c.focusRouteOverview,
+                    onTap: () {
+                      final ms = _mapKey.currentState;
+                      if (ms == null) return;
+                      ms.pauseAutoFollow(const Duration(seconds: 4));
+                      ms.fitPolylineBounds(routePoints);
+                    },
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(18),
@@ -1117,6 +1127,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   final DriverStatusController driverStatusController = Get.put(
     DriverStatusController(),
   );
+  Worker? _serviceTypeWorker;
 
   String directionText = '';
   BitmapDescriptor? carIcon;
@@ -1145,11 +1156,12 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     try {
       final cfg = const ImageConfiguration(size: Size(52, 52));
       final String asset =
-          driverStatusController.serviceType.value == "Bike"
+          driverStatusController.isBike
               ? AppImages.parcelBike
               : AppImages.movingCar;
 
-      final icon = await BitmapDescriptor.asset(height: 60, cfg, asset);
+      final height = driverStatusController.isBike ? 66.0 : 60.0;
+      final icon = await BitmapDescriptor.asset(height: height, cfg, asset);
       if (!mounted) return;
       setState(() {
         carIcon = icon;
@@ -1352,6 +1364,11 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
     );
     _initSocketAndLocation();
     _loadMarkerIcons();
+    _serviceTypeWorker?.dispose();
+    _serviceTypeWorker = ever<String>(
+      driverStatusController.serviceType,
+      (_) async => _loadMarkerIcons(),
+    );
     _getInitialDriverLocation();
   }
 
@@ -1365,6 +1382,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   void dispose() {
     positionStream?.cancel();
     _timer?.cancel();
+    _serviceTypeWorker?.dispose();
 
     try {
       // use the underlying IO.Socket
@@ -1415,15 +1433,8 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
   }
 
   Future<bool> _ensureLocationPermission() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return false;
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    return permission == LocationPermission.always ||
-        permission == LocationPermission.whileInUse;
+    if (!Get.isRegistered<LocationPermissionGuard>()) return false;
+    return Get.find<LocationPermissionGuard>().ensureReady(showDialog: true);
   }
 
   Future<void> loadRoute() async {

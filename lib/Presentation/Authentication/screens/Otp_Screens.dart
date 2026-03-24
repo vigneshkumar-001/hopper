@@ -8,6 +8,7 @@ import '../../../Core/Constants/log.dart';
 import '../../../Core/Utility/Buttons.dart';
 import '../../../Core/Utility/images.dart';
 import '../controller/otp_controller.dart';
+import 'GetStarted_Screens.dart';
 import 'Terms_Screen.dart';
 import '../widgets/bottomNavigation.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
@@ -42,6 +43,15 @@ class _OtpScreensState extends State<OtpScreens> {
   StreamController<ErrorAnimationType>? errorController;
   late FocusNode otpFocusNode;
 
+  void _handleBack() {
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+      return;
+    }
+    Get.offAll(() => const GetStartedScreens());
+  }
+
   @override
   void initState() {
     super.initState();
@@ -61,28 +71,34 @@ class _OtpScreensState extends State<OtpScreens> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Obx(
-          () =>
-              controller.isLoading.value
-                  ? Center(
-                    child: Image.asset(
-                      AppImages.animation,
-                      height: 100,
-                      width: 100,
-                    ),
-                  )
-                  : SingleChildScrollView(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 20,
+    return PopScope(
+      canPop: true,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Obx(
+            () =>
+                controller.isLoading.value
+                    ? Center(
+                      child: Image.asset(
+                        AppImages.animation,
+                        height: 100,
+                        width: 100,
                       ),
-                      child: Column(
-                        spacing: 32,
-                        children: [
-                          Image.asset(AppImages.chat, height: 80, width: 80),
+                    )
+                    : SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 20,
+                        ),
+                        child: Column(
+                          spacing: 32,
+                          children: [
+                            Image.asset(AppImages.chat, height: 80, width: 80),
 
                           Text(
                             textAlign: TextAlign.center,
@@ -213,7 +229,7 @@ class _OtpScreensState extends State<OtpScreens> {
                               foregroundColor: Colors.black,
                             ),
                             onPressed: () {
-                              Navigator.pop(context);
+                              _handleBack();
                             },
                             child:
                                 widget.type == "basicInfo"
@@ -240,7 +256,7 @@ class _OtpScreensState extends State<OtpScreens> {
           controller.isLoading.value
               ? null
               : CommonBottomNavigationBar(
-                onBackPressed: () => Navigator.pop(context),
+                onBackPressed: _handleBack,
                 // onNextPressed: () async {
                 //   if (formKey.currentState!.validate()) {
                 //     await controller.verifyOtp(context, verifyCode);
@@ -296,6 +312,7 @@ class _OtpScreensState extends State<OtpScreens> {
                 backButtonImage: AppImages.backButton,
                 rightButtonImage: AppImages.rightButton,
               ),
+      ),
     );
   }
 }

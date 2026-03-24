@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 
 class BookingRequestController extends GetxController {
+  static const int requestPopupSeconds = 25;
   // null => no popup
   final Rxn<Map<String, dynamic>> bookingRequestData =
   Rxn<Map<String, dynamic>>();
@@ -32,7 +33,7 @@ class BookingRequestController extends GetxController {
 
     bookingRequestData.value = data;
     Get.find<DriverAnalyticsController>().trackOffer();
-    _startTimer(15);
+    _startTimer(requestPopupSeconds);
   }
 
   void _startTimer(int seconds) {

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:flutter/material.dart';
+import 'package:hopper/Presentation/Authentication/screens/Landing_Screens.dart';
 import 'package:hopper/Presentation/Authentication/screens/Otp_Screens.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/ConsentForms.dart';
@@ -221,9 +222,14 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        return true;
+    return PopScope(
+      canPop: true,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LandingScreens()),
+          (route) => false,
+        );
       },
       child: Scaffold(
         body: SafeArea(

@@ -1584,7 +1584,7 @@ class _PickingCustomerSharedScreenState
                     followDriver: true,
                     followBearingEnabled: false,
                     followZoom: c.followZoom.value,
-                    followTilt: 45,
+                    followTilt: 0,
                     trafficEnabled: false,
                     compassEnabled: false,
                     polylines: {
@@ -1592,7 +1592,7 @@ class _PickingCustomerSharedScreenState
                         Polyline(
                           polylineId: const PolylineId('route_to_rider_main'),
                           color: const Color(0xFF111111),
-                          width: 2,
+                          width: 3,
                           points: uiState.polyline,
                           startCap: Cap.roundCap,
                           endCap: Cap.roundCap,

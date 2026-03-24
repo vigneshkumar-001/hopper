@@ -38,7 +38,7 @@ class SharedMap extends StatefulWidget {
     this.onCameraMoveStarted,
     this.followDriver = false,
     this.followBearingEnabled = true,
-    this.followZoom = 15.2,
+    this.followZoom = 16.2,
     this.followTilt = 0,
   });
 
@@ -165,9 +165,9 @@ class SharedMapState extends State<SharedMap> {
         CameraUpdate.newLatLngBounds(bounds, padding),
       );
       final z = await _mapController!.getZoomLevel();
-      if (z > 16.2) {
+      if (z > 17.2) {
         _markProgrammaticCameraMove();
-        await _mapController!.animateCamera(CameraUpdate.zoomTo(16.2));
+        await _mapController!.animateCamera(CameraUpdate.zoomTo(17.2));
       }
     } catch (_) {}
   }
@@ -209,7 +209,7 @@ class SharedMapState extends State<SharedMap> {
     _markProgrammaticCameraMove();
     await _mapController!.animateCamera(
       CameraUpdate.newCameraPosition(
-        CameraPosition(target: widget.pickupPosition!, zoom: 15.2),
+        CameraPosition(target: widget.pickupPosition!, zoom: 16.2),
       ),
     );
   }

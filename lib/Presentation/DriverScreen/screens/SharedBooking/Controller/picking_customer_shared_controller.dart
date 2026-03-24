@@ -88,8 +88,10 @@ class PickingCustomerSharedController extends GetxController {
   });
 
   // deps
-  final DriverStatusController driverStatusController =
-      Get.find<DriverStatusController>();
+  late final DriverStatusController driverStatusController =
+      Get.isRegistered<DriverStatusController>()
+          ? Get.find<DriverStatusController>()
+          : Get.put(DriverStatusController(), permanent: true);
 
   final SharedRideController sharedRideController =
       Get.find<SharedRideController>();
@@ -99,6 +101,7 @@ class PickingCustomerSharedController extends GetxController {
 
   // map icon
   final Rxn<BitmapDescriptor> carIcon = Rxn<BitmapDescriptor>();
+  Worker? _serviceTypeWorker;
 
   // UI state
   late final Rx<SharedRouteUiState> routeUi;
@@ -118,7 +121,7 @@ class PickingCustomerSharedController extends GetxController {
   final RxBool isOffRouteAlert = false.obs;
   final RxBool isNetworkOffline = false.obs;
   final RxInt pendingQueueCount = 0.obs;
-  final RxDouble followZoom = 14.4.obs;
+  final RxDouble followZoom = 17.0.obs;
 
   // tracking
   StreamSubscription<Position>? _posSub;
@@ -171,6 +174,7 @@ class PickingCustomerSharedController extends GetxController {
     _initConnectivityWatchdog();
     _loadDriverId();
     _loadCarIcon();
+    _listenServiceTypeForIcon();
     _initSocket();
     _startTracking();
     _fetchRoute(force: true);
@@ -181,6 +185,7 @@ class PickingCustomerSharedController extends GetxController {
     _posSub?.cancel();
     _connectivitySub?.cancel();
     _routeRetryTimer?.cancel();
+    _serviceTypeWorker?.dispose();
     try {
       socketService.socket.off('joined-booking');
       socketService.socket.off('driver-location');
@@ -235,12 +240,9 @@ class PickingCustomerSharedController extends GetxController {
       );
 
       final asset =
-          driverStatusController.serviceType.value == "Bike"
-              ? AppImages.parcelBike
-              : AppImages.movingCar;
+          driverStatusController.isBike ? AppImages.parcelBike : AppImages.movingCar;
 
-      final markerHeight =
-          driverStatusController.serviceType.value == "Bike" ? 28.0 : 36.0;
+      final markerHeight = driverStatusController.isBike ? 32.0 : 36.0;
       final icon = await BitmapDescriptor.asset(
         height: markerHeight,
         cfg,
@@ -251,6 +253,14 @@ class PickingCustomerSharedController extends GetxController {
       CommonLogger.log.e("car icon load failed: $e");
       carIcon.value = BitmapDescriptor.defaultMarker;
     }
+  }
+
+  void _listenServiceTypeForIcon() {
+    _serviceTypeWorker?.dispose();
+    _serviceTypeWorker = ever<String>(
+      driverStatusController.serviceType,
+      (_) async => _loadCarIcon(),
+    );
   }
 
   // ---------------- SOCKET ----------------
@@ -726,13 +736,13 @@ class PickingCustomerSharedController extends GetxController {
 
   void _updateSmartAutoZoom(double speedMs) {
     final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs).clamp(
-      14.6,
-      17.4,
+      15.2,
+      17.8,
     );
     followZoom.value = MapMotionProfile.smoothZoom(
       followZoom.value,
       targetZoom,
-    ).clamp(14.6, 17.4);
+    ).clamp(15.2, 17.8);
   }
 
   Future<void> sendQuickMessage({

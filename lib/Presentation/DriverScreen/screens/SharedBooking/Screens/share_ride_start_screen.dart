@@ -25,6 +25,8 @@ import 'package:hopper/Presentation/DriverScreen/screens/cash_collected_screen.d
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
 import 'package:hopper/utils/map/driver_route.dart';
+import 'package:hopper/utils/map/route_info.dart';
+import 'package:hopper/api/repository/api_constents.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/shared_map.dart';
@@ -179,9 +181,10 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   late final DriverRouteController _routeController;
 
   final SharedController sharedController = Get.put(SharedController());
-  final DriverStatusController driverStatusController = Get.put(
-    DriverStatusController(),
-  );
+  late final DriverStatusController driverStatusController =
+      Get.isRegistered<DriverStatusController>()
+          ? Get.find<DriverStatusController>()
+          : Get.put(DriverStatusController(), permanent: true);
   final BookingRequestController bookingController =
       Get.find<BookingRequestController>();
   final SharedRideController sharedRideController =
@@ -273,6 +276,10 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   void initState() {
     super.initState();
 
+    // IMPORTANT: needed for polyline/directions fetching when this screen is opened
+    // directly from Resume (no other controller may have set it yet).
+    DirectionsConfig.apiKey = ApiConstents.googleMapApiKey;
+
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
@@ -309,8 +316,13 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                 ? initialTarget.pickupLatLng
                 : initialTarget.dropLatLng);
 
+    // Show an immediate fallback route so UI doesn't look blank while waiting for API.
+    polylinePoints = _buildFallbackRoute(widget.driverLocation, initialDestination);
+    _lastPolyline = polylinePoints;
+
     _routeController = DriverRouteController(
       destination: initialDestination,
+      initialLocation: widget.driverLocation,
       onRouteUpdate: (update) {
         if (!mounted || _isDisposing) return;
         _markerAnimator.animateTo(update.driverLocation, update.bearing);
@@ -528,12 +540,12 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     _lastSpeedAt = DateTime.now();
 
     final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs).clamp(
-      14.6,
-      17.4,
+      15.2,
+      17.8,
     );
     _followZoom = MapMotionProfile.smoothZoom(_followZoom, targetZoom).clamp(
-      14.6,
-      17.4,
+      15.2,
+      17.8,
     );
   }
 
@@ -2328,10 +2340,13 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                         jointType: JointType.round,
                       ),
                    },
-                   myLocationEnabled: true,
-                   fitToBounds: true,
-                 ),
-              ),
+                   // Avoid GoogleMap my-location layer blocking map render when
+                   // permission/service is off. Driver marker already represents
+                   // the current position.
+                   myLocationEnabled: false,
+                    fitToBounds: true,
+                  ),
+               ),
 
               // Direction header
               Positioned(
