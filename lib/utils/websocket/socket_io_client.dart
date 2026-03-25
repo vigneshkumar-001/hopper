@@ -259,7 +259,6 @@ class SocketService {
       // Normal payload without ack
       callback(incoming, null);
     };
-
     _socket?.off(event);
     _socket?.on(event, _callbacks[event]!);
   }

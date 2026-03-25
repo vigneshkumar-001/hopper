@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Presentation/Authentication/screens/GetStarted_Screens.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
+import 'package:hopper/utils/session/logout_cleanup.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/Drawer/controller/notification_controller.dart';
@@ -926,6 +927,7 @@ class _VehicleDetailsScreen extends StatelessWidget {
 
 Future<void> _settingsLogout(BuildContext context) async {
   final prefs = await SharedPreferences.getInstance();
+  await performLogoutCleanup();
   await prefs.clear();
   if (Get.isRegistered<DriverAnalyticsController>()) {
     await Get.find<DriverAnalyticsController>().reset(clearPersisted: false);

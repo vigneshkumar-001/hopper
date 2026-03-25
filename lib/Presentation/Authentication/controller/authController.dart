@@ -11,6 +11,7 @@ import 'package:hopper/api/dataSource/apiDataSource.dart';
 import 'package:hopper/api/repository/failure.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
+import 'package:hopper/utils/session/logout_cleanup.dart';
 
 var getMobileNumber = '';
 var countryCodes = '';
@@ -142,6 +143,7 @@ class AuthController extends GetxController {
   Future<void> logout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
 
+    await performLogoutCleanup();
     await prefs.clear();
     if (Get.isRegistered<DriverAnalyticsController>()) {
       await Get.find<DriverAnalyticsController>().reset(clearPersisted: false);
@@ -150,6 +152,7 @@ class AuthController extends GetxController {
 
     CustomSnackBar.showSuccess("Logged out successfully");
 
+    if (!context.mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => LandingScreens()),

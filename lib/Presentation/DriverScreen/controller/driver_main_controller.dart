@@ -178,37 +178,61 @@ class DriverMainController extends GetxController
 
   // ---------------- map style ----------------
   // ---------------- map style ----------------
-  Future<void> loadMapStyle(BuildContext context) async {
+  Future<void> loadMapStyle() async {
     try {
       final style = await AppMapStyle.loadUberLight();
       mapStyle = style;
-      if (mapController != null) {
-        await mapController!.setMapStyle(style);
-      }
+      update(['map']);
     } catch (e) {
       if (kDebugMode) CommonLogger.log.w("Map style load failed: $e");
     }
   }
 
   // ---------------- icon ----------------
-  Future<void> loadCustomCarIcon() async {
-    try {
-      const cfg = ImageConfiguration(size: Size(36, 36));
-      final asset =
-          statusController.isCar ? AppImages.movingCar : AppImages.parcelBike;
+  // Future<void> loadCustomCarIcon() async {
+  //   try {
+  //     const cfg = ImageConfiguration(size: Size(52, 52));
+  //     final asset =
+  //         statusController.isCar ? AppImages.movingCar : AppImages.parcelBike;
 
-      // Bike marker should be a bit smaller than car (but still readable).
-      final markerHeight = statusController.isCar ? 36.0 : 36.0;
-      carIcon = await BitmapDescriptor.asset(
-        height: markerHeight,
-        cfg,
-        asset,
-      );
-    } catch (e) {
-      if (kDebugMode) CommonLogger.log.w("Car icon load failed: $e");
-      carIcon = BitmapDescriptor.defaultMarker;
+  //     // Bike marker should be a bit smaller than car (but still readable).
+  //     final markerHeight = statusController.isCar ? 36.0 : 52.0;
+  //     carIcon = await BitmapDescriptor.asset(
+  //       height: markerHeight,
+  //       cfg,
+  //       asset,
+  //     );
+  //   } catch (e) {
+  //     if (kDebugMode) CommonLogger.log.w("Car icon load failed: $e");
+  //     carIcon = BitmapDescriptor.defaultMarker;
+  //   }
+  // }
+Future<void> loadCustomCarIcon() async {
+  try {
+    final bool isCar = statusController.isCar;
+    final String asset =
+        isCar ? AppImages.movingCar : AppImages.parcelBike;
+
+    final double markerHeight = isCar ? 52.0 : 52.0;
+    final double markerWidth = isCar ? 27.0 : 32.0;
+
+    final ImageConfiguration cfg = ImageConfiguration(
+      size: Size(markerWidth, markerHeight),
+    );
+
+    carIcon = await BitmapDescriptor.asset(
+      cfg,
+      asset,
+      width: markerWidth,
+      height: markerHeight,
+    );
+  } catch (e) {
+    if (kDebugMode) {
+      CommonLogger.log.w("Car icon load failed: $e");
     }
+    carIcon = BitmapDescriptor.defaultMarker;
   }
+}
 
   // ---------------- marker update (animated) ----------------
   void updateCarMarker(LatLng newPos) {
@@ -910,8 +934,56 @@ class DriverMainController extends GetxController
     socketService.initSocket(cfg.socketUrl);
     _bindSocketListeners();
 
+    // ✅ IMPORTANT: if the socket is already connected (singleton reused),
+    // the 'connect' callback won't fire again. Register immediately so switching
+    // Car -> Logout -> Bike works without app restart.
+    final did = driverId?.trim() ?? '';
+    if (did.isNotEmpty) {
+      socketService.registerDriver(did, bookingId: currentBookingId);
+      if (socketService.connected) {
+        await startEmitLoop();
+      }
+    }
+
     await initLocation();
     startCameraFollow();
+
+    // ✅ If server says driver is already online (fresh login / app reopen),
+    // ensure background tracking is running so screen-lock/app-close still sends location.
+    if (statusController.isOnline.value) {
+      CommonLogger.log.i('🟢 [DRIVER] Online on init → ensure BG tracking');
+      unawaited(
+        bg.ensureDriverTrackingServiceRunning(
+          driverId: driverId,
+          bookingId: _resolveBookingIdForLocationPayload(),
+        ),
+      );
+    }
+  }
+
+  Future<void> onAppResumed() async {
+    if (_disposed || isClosed) return;
+
+    driverId ??= await SharedPrefHelper.getDriverId();
+    final did = driverId?.trim() ?? '';
+    if (did.isEmpty) return;
+
+    // Ensure socket is connected & registered after background/resume cycles.
+    socketService.connect();
+    socketService.registerDriver(did, bookingId: currentBookingId);
+    if (socketService.connected) {
+      await startEmitLoop();
+    }
+
+    if (statusController.isOnline.value) {
+      CommonLogger.log.i('🔁 [DRIVER] Resumed while online → ensure BG tracking');
+      unawaited(
+        bg.ensureDriverTrackingServiceRunning(
+          driverId: did,
+          bookingId: _resolveBookingIdForLocationPayload(),
+        ),
+      );
+    }
   }
 
   // ---------------- âœ… listen shared toggle ----------------
@@ -964,9 +1036,29 @@ class DriverMainController extends GetxController
       await loadCustomCarIcon();
       if (_disposed || isClosed) return;
 
+      _refreshMarkerIcon();
+
       final pos = lastPosition ?? currentPosition.value;
       if (pos != null) updateCarMarker(pos);
     });
+  }
+
+  void _refreshMarkerIcon() {
+    if (_disposed || isClosed) return;
+    final icon = carIcon;
+    final marker = carMarker;
+    if (icon == null || marker == null) return;
+
+    carMarker = Marker(
+      markerId: marker.markerId,
+      position: marker.position,
+      icon: icon,
+      rotation: marker.rotation,
+      anchor: marker.anchor,
+      flat: marker.flat,
+    );
+
+    update(['map']);
   }
 
   // ---------------- toggle online ----------------
@@ -1118,6 +1210,10 @@ class DriverMainController extends GetxController
       await statusController.getDriverStatus();
       if (_disposed || isClosed) return;
 
+      // ✅ Preload map style BEFORE first paint to avoid "color jumps" on first zoom.
+      await loadMapStyle();
+      if (_disposed || isClosed) return;
+
       await loadCustomCarIcon();
       if (_disposed || isClosed) return;
 
@@ -1125,9 +1221,6 @@ class DriverMainController extends GetxController
 
       SchedulerBinding.instance.addPostFrameCallback((_) async {
         if (_disposed || isClosed) return;
-        final ctx = Get.context;
-        if (ctx != null) await loadMapStyle(ctx);
-
         statusController.weeklyChallenges();
         statusController.todayActivity();
         statusController.todayPackageActivity();
@@ -1147,6 +1240,11 @@ class DriverMainController extends GetxController
     // âœ… FIRST: block any future callbacks
     _disposed = true;
 
+    // Unbind socket listeners (avoid retaining this controller via closures).
+    socketService.off('connect');
+    socketService.off('registered');
+    socketService.off('booking-request');
+
     _sharedToggleWorker?.dispose();
     _serviceTypeWorker?.dispose();
 
@@ -1155,6 +1253,11 @@ class DriverMainController extends GetxController
     cameraFollowTimer?.cancel();
 
     locationSub?.cancel();
+
+    try {
+      mapController?.dispose();
+    } catch (_) {}
+    mapController = null;
 
     // âœ… stop animation safely
     try {

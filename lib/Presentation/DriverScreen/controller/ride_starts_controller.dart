@@ -416,6 +416,11 @@ class RideStatsController extends GetxController
     final cfg = Get.find<ApiConfigController>();
     socketService.initSocket(cfg.socketUrl);
 
+    // Prevent duplicate listeners if controller is recreated for the same booking.
+    try {
+      socketService.socket.off('driver-reached-destination');
+    } catch (_) {}
+
     socketService.on('joined-booking', (data) {
       if (data is! Map) return;
       final joined = Map<String, dynamic>.from(data as Map);
@@ -434,6 +439,37 @@ class RideStatsController extends GetxController
       driverStatusController.dropDistanceInMeters.value = dropM;
       driverStatusController.dropDurationInMin.value = dropMin;
       Get.find<DriverAnalyticsController>().setSlaFromEtaMinutes(dropMin);
+
+      // ✅ Fallback: if server is already sending drop-distance updates, use them
+      // to toggle the Complete Ride UI even if the explicit `driver-reached-destination`
+      // event listener was overridden elsewhere.
+      final reached = dropM <= _REACHED_DESTINATION_RADIUS_M;
+      final exit = dropM >= _REACHED_DESTINATION_EXIT_RADIUS_M;
+      if (!driverCompletedRide.value && reached) {
+        driverCompletedRide.value = true;
+      } else if (driverCompletedRide.value && exit) {
+        driverCompletedRide.value = false;
+      }
+    });
+
+    socketService.on('driver-reached-destination', (data) {
+      if (data is! Map) return;
+      final m = Map<String, dynamic>.from(data as Map);
+
+      final incomingBookingId = (m['bookingId'] ?? m['booking'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      final currentId = bookingId.trim().toLowerCase();
+      if (incomingBookingId.isNotEmpty && incomingBookingId != currentId) return;
+
+      final rawStatus = m['status'];
+      final reached =
+          rawStatus == true ||
+          rawStatus == 1 ||
+          rawStatus?.toString().trim().toLowerCase() == 'true' ||
+          rawStatus?.toString().trim() == '1';
+      if (reached) driverCompletedRide.value = true;
     });
 
     socketService.on('driver-cancelled', (data) {

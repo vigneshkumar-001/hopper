@@ -82,6 +82,9 @@ Future<void> ensureDriverTrackingServiceRunning({
   final running = await service.isRunning();
   if (!running) {
     try {
+      if (kDebugMode) {
+        CommonLogger.log.i('🟢 [BG_SERVICE] Starting driver tracking service');
+      }
       await service.startService();
     } catch (e) {
       CommonLogger.log.e('❌ [BG_SERVICE] startService failed: $e');
@@ -100,6 +103,9 @@ Future<void> stopDriverTrackingService() async {
   final service = FlutterBackgroundService();
   final running = await service.isRunning();
   if (!running) return;
+  if (kDebugMode) {
+    CommonLogger.log.i('🛑 [BG_SERVICE] Stopping driver tracking service');
+  }
   service.invoke('data', {'action': 'stopService'});
 }
 
@@ -118,6 +124,8 @@ void onStart(ServiceInstance service) async {
 
   String? driverId;
   String? currentBookingId;
+  StreamSubscription<Position>? positionSub;
+  Timer? pollTimer;
 
   // Keep service as foreground (Android) so it continues on screen-lock.
   try {
@@ -170,10 +178,14 @@ void onStart(ServiceInstance service) async {
     }
   });
 
+  Timer? heartbeatTimer;
   service.on('data').listen((event) {
     if (event == null) return;
 
     if (event['action'] == 'stopService') {
+      heartbeatTimer?.cancel();
+      pollTimer?.cancel();
+      unawaited(positionSub?.cancel());
       socket.disconnect();
       service.stopSelf();
     }
@@ -188,7 +200,7 @@ void onStart(ServiceInstance service) async {
     }
   });
 
-  Geolocator.getPositionStream(
+  positionSub = Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.bestForNavigation,
       distanceFilter: 8,
@@ -237,17 +249,60 @@ void onStart(ServiceInstance service) async {
       if (currentBookingId != null) 'bookingId': currentBookingId,
       'timestamp': now.toIso8601String(),
     };
+    if (!socket.connected) {
+      socket.connect();
+    }
     socket.emit('updateLocation', locationData);
     if (kDebugMode) {
       CommonLogger.log.i('📍 [BG_SOCKET_EMIT] updateLocation $locationData');
     }
   });
 
-  Timer.periodic(const Duration(minutes: 15), (timer) async {
-    bool running = await FlutterBackgroundService().isRunning();
-    if (!running) {
-      timer.cancel();
-    }
+  // If the stream doesn't emit (driver stationary / OEM throttling), poll and emit
+  // periodically so the server still receives location while driver is online.
+  pollTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
+    if (driverId == null || driverId!.trim().isEmpty) return;
+
+    final now = DateTime.now();
+    if (now.difference(lastEmitAt) < const Duration(seconds: 18)) return;
+
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+        ),
+      );
+
+      final acc = position.accuracy.isFinite ? position.accuracy : 9999.0;
+      if (acc > maxAccuracyM) return;
+
+      lastLat = position.latitude;
+      lastLng = position.longitude;
+      lastEmitAt = now;
+
+      final locationData = {
+        'userId': driverId,
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        if (currentBookingId != null) 'bookingId': currentBookingId,
+        'timestamp': now.toIso8601String(),
+      };
+
+      if (!socket.connected) {
+        socket.connect();
+      }
+      socket.emit('updateLocation', locationData);
+      if (kDebugMode) {
+        CommonLogger.log.i('[BG_SOCKET_EMIT] updateLocation (poll) $locationData');
+      }
+    } catch (_) {}
+  });
+
+  // NOTE: Don't call `FlutterBackgroundService().isRunning()` from the
+  // background isolate. It can throw `MissingPluginException` on some devices /
+  // builds because the method-channel implementation may not be registered in
+  // this isolate. If the service stops, the isolate/timer is torn down anyway.
+  heartbeatTimer = Timer.periodic(const Duration(minutes: 15), (_) {
     service.invoke('heartbeat', {'time': DateTime.now().toIso8601String()});
   });
 }

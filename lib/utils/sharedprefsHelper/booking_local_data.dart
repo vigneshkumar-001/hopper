@@ -12,4 +12,8 @@ class BookingDataService {
   Map<String, dynamic>? getBookingData() {
     return bookingRequestData;
   }
+
+  void clear() {
+    bookingRequestData = null;
+  }
 }

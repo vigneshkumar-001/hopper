@@ -32,11 +32,11 @@ class WeeklyActivityData {
   factory WeeklyActivityData.fromJson(Map<String, dynamic> json) {
     print("📦 Parsing  : $json");
     return WeeklyActivityData(
-      goal: json['goal'],
-      reward: json['reward'],
-      totalTrips: json['totalTrips'],
-      progressPercent: json['progressPercent'],
-      endsOn: json['endsOn'],
+      goal: (json['goal'] as num?)?.toInt() ?? 0,
+      reward: (json['reward'] as num?)?.toInt() ?? 0,
+      totalTrips: (json['totalTrips'] as num?)?.toInt() ?? 0,
+      progressPercent: (json['progressPercent'] as num?)?.toInt() ?? 0,
+      endsOn: (json['endsOn'] ?? '').toString(),
     );
   }
 

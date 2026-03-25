@@ -6,10 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:percent_indicator/percent_indicator.dart';
+import 'package:intl/intl.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
+import 'package:hopper/Core/Utility/date_time_converter.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
@@ -64,6 +66,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      c.onAppResumed();
       c.checkAndResumeActiveBooking();
     }
   }
@@ -111,7 +114,11 @@ class _DriverMainScreenState extends State<DriverMainScreen>
 
                             return RepaintBoundary(
                               child: GoogleMap(
+                                key: ValueKey<String>(
+                                  'driver_map_${c.mapStyle ?? 'default'}',
+                                ),
                                 mapType: MapType.normal,
+                                style: c.mapStyle,
                                 compassEnabled: false,
                                  myLocationEnabled: false,
                                  myLocationButtonEnabled: false,
@@ -137,9 +144,6 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                 },
                                 onMapCreated: (gm) async {
                                   c.mapController = gm;
-                                  if (c.mapStyle != null) {
-                                    await gm.setMapStyle(c.mapStyle);
-                                  }
                                 },
                                 gestureRecognizers: {
                                   Factory<OneSequenceGestureRecognizer>(
@@ -814,11 +818,37 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                                 vertical: 20,
                               ),
                               child: Obx(() {
+                                final isCar = widget.statusController.isCar;
                                 final weeklyData =
-                                    widget
-                                        .statusController
-                                        .weeklyStatusData
-                                        .value;
+                                    widget.statusController.weeklyStatusData.value;
+                                final parcelWeekly =
+                                    widget.statusController.parcelBookingData.value?.weeklyProgress;
+
+                                final goal =
+                                    isCar ? (weeklyData?.goal ?? 0) : (parcelWeekly?.goal ?? 0);
+                                final reward =
+                                    isCar ? (weeklyData?.reward ?? 0) : (parcelWeekly?.reward ?? 0);
+                                final totalTrips = isCar
+                                    ? (weeklyData?.totalTrips ?? 0)
+                                    : (parcelWeekly?.totalTrips ?? 0);
+                                final progressPercent = isCar
+                                    ? (weeklyData?.progressPercent ?? 0).toDouble()
+                                    : (parcelWeekly?.progressPercent ?? 0.0);
+
+                                DateTime? endsOn;
+                                if (isCar) {
+                                  endsOn = DateAndTimeConvert.tryParseFlexible(
+                                    (weeklyData?.endsOn ?? '').toString(),
+                                  );
+                                } else {
+                                  endsOn = parcelWeekly?.endsOn;
+                                }
+                                if (endsOn != null && endsOn.millisecondsSinceEpoch == 0) {
+                                  endsOn = null;
+                                }
+                                final endsLabel = endsOn == null
+                                    ? 'Ends on -'
+                                    : 'Ends on ${DateFormat('EEEE').format(endsOn)}';
 
                                 return Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -829,13 +859,13 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           CustomTextfield.textWithStylesSmall(
-                                            'Ends on Monday',
+                                            endsLabel,
                                             colors: AppColors.grey,
                                             fontWeight: FontWeight.w500,
                                           ),
                                           const SizedBox(height: 5),
                                           CustomTextfield.textWithStyles600(
-                                            'Complete ${weeklyData?.goal.toString() ?? '0'} trips and get ${weeklyData?.reward.toString() ?? '0'} extra',
+                                            'Complete $goal trips and get $reward extra',
                                             fontSize: 17,
                                           ),
                                           const SizedBox(height: 5),
@@ -843,7 +873,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                                             colors: getTextColor(
                                               color: AppColors.drkGreen,
                                             ),
-                                            '${weeklyData?.totalTrips.toString() ?? '0'} trips done out of 20',
+                                            '$totalTrips trips done out of $goal',
                                             fontWeight: FontWeight.w500,
                                           ),
                                         ],
@@ -854,12 +884,10 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                                       radius: 45.0,
                                       lineWidth: 10.0,
                                       animation: true,
-                                      percent: ((weeklyData?.progressPercent ??
-                                                  0) /
-                                              100)
+                                      percent: (progressPercent / 100)
                                           .clamp(0.0, 1.0),
                                       center: Text(
-                                        "${weeklyData?.progressPercent.toString() ?? '0'}%",
+                                        "${progressPercent.round()}%",
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w600,
                                         ),

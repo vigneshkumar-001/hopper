@@ -23,7 +23,12 @@ class ApiConstents {
 
   /// ✅ dynamic base url from GetX
   static String get baseUrl {
-    final cfg = Get.find<ApiConfigController>();
+    // Avoid runtime crash if controller wasn't registered yet (can happen on cold start
+    // when some controllers call APIs from `onInit()` before `initController()` runs).
+    final ApiConfigController cfg =
+        Get.isRegistered<ApiConfigController>()
+            ? Get.find<ApiConfigController>()
+            : Get.put(ApiConfigController(), permanent: true);
     return cfg.baseUrl;
   }
 

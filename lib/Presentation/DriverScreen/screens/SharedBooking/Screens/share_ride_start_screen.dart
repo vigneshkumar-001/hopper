@@ -773,6 +773,28 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       }
     });
 
+    socketService.on('driver-reached-destination', (data) {
+      final status = data?['status'];
+      if (status == true || status?.toString() == 'true') {
+        if (!mounted || _isDisposing) return;
+        setState(() => driverCompletedRide = true);
+      }
+    });
+
+    socketService.on('driver-location', (data) {
+      if (data == null) return;
+
+      final dropM = _safeNum(data['dropDistanceInMeters']) ?? 0.0;
+      final dropMin = _safeNum(data['dropDurationInMin']) ?? 0.0;
+      sharedController.dropDistanceInMeters.value = dropM;
+      sharedController.dropDurationInMin.value = dropMin;
+
+      final pickupM = _safeNum(data['pickupDistanceInMeters']);
+      final pickupMin = _safeNum(data['pickupDurationInMin']);
+      if (pickupM != null) sharedController.pickupDistanceInMeters.value = pickupM;
+      if (pickupMin != null) sharedController.pickupDurationInMin.value = pickupMin;
+    });
+
     if (!socketService.connected) {
       socketService.connect();
       socketService.onConnect(() => _flushSocketRetryQueue());

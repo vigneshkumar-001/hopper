@@ -1,3 +1,5 @@
+import 'package:hopper/Core/Utility/date_time_converter.dart';
+
 class TodayParcelActivityResponse {
   final int status;
   final ParcelBookingData data;
@@ -33,14 +35,14 @@ class ParcelBookingData {
 
   factory ParcelBookingData.fromJson(Map<String, dynamic> json) {
     return ParcelBookingData(
-      earning: (json['earning'] as num).toDouble(),
-      completed: json['completed'],
-      rating: json['rating'],
-      successRate: json['successRate'],
-      recentBookings:
-          (json['recentBookings'] as List)
-              .map((e) => RecentBooking.fromJson(e))
-              .toList(),
+      earning: (json['earning'] as num?)?.toDouble() ?? 0.0,
+      completed: (json['completed'] as num?)?.toInt() ?? 0,
+      rating: (json['rating'] as num?)?.toInt() ?? 0,
+      successRate: (json['successRate'] ?? '').toString(),
+      recentBookings: ((json['recentBookings'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => RecentBooking.fromJson(e.cast<String, dynamic>()))
+          .toList(),
       weeklyProgress: WeeklyProgress.fromJson(
         json['weeklyProgress'] ?? {},
       ), // Added
@@ -72,10 +74,10 @@ class RecentBooking {
 
   factory RecentBooking.fromJson(Map<String, dynamic> json) {
     return RecentBooking(
-      customerName: json['customerName'].toString() ?? '',
-      amount: (json['amount'] as num).toDouble(),
-      status: json['status'],
-      statusTime: json['statusTime'],
+      customerName: (json['customerName'] ?? '').toString(),
+      amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+      status: (json['status'] ?? '').toString(),
+      statusTime: (json['statusTime'] ?? '').toString(),
     );
   }
 
@@ -104,12 +106,12 @@ class WeeklyProgress {
 
   factory WeeklyProgress.fromJson(Map<String, dynamic> json) {
     return WeeklyProgress(
-      goal: json['goal'] ?? 0,
-      reward: json['reward'] ?? 0,
-      totalTrips: json['totalTrips'] ?? 0,
-      progressPercent: (json['progressPercent'] ?? 0).toDouble(),
+      goal: (json['goal'] as num?)?.toInt() ?? 0,
+      reward: (json['reward'] as num?)?.toInt() ?? 0,
+      totalTrips: (json['totalTrips'] as num?)?.toInt() ?? 0,
+      progressPercent: (json['progressPercent'] as num?)?.toDouble() ?? 0.0,
       endsOn:
-          DateTime.tryParse(json['endsOn'] ?? '') ??
+          DateAndTimeConvert.tryParseFlexible((json['endsOn'] ?? '').toString()) ??
           DateTime.fromMillisecondsSinceEpoch(0),
     );
   }

@@ -25,6 +25,10 @@ import 'map/navigation_assist.dart';
 import 'location/location_permission_guard.dart';
 
 Future<void> initController() async {
+  // Must be registered first: many API endpoints depend on `ApiConstents.baseUrl`
+  // which reads `ApiConfigController` from GetX.
+  Get.put(ApiConfigController(), permanent: true);
+
   Get.lazyPut(() => NetworkController());
   Get.lazyPut(() => AuthController());
   // Get.lazyPut(() => OtpController());
@@ -56,7 +60,6 @@ Future<void> initController() async {
   Get.put(BookingRequestController(), permanent: true);
 
   // Get.lazyPut(() => BookingRequestController(), fenix: true);
-  Get.put(ApiConfigController(), permanent: true);
   Get.put(DriverAnalyticsController(), permanent: true);
   Get.put(LocationPermissionGuard(), permanent: true);
 }

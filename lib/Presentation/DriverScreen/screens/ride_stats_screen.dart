@@ -431,13 +431,20 @@ class RideStatsScreen extends StatelessWidget {
                                       size: 13,
                                     ),
                                     const SizedBox(width: 10),
-                                    const Text(
-                                      '1 min away',
-                                      style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
+                                    Obx(() {
+                                      final eta =
+                                          driverStatusController.dropDurationInMin.value
+                                              .round();
+                                      final label =
+                                          eta <= 0 ? 'Arrived' : '$eta min away';
+                                      return Text(
+                                        label,
+                                        style: const TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      );
+                                    }),
                                   ],
                                 ),
                                 const SizedBox(height: 10),
@@ -1967,14 +1974,21 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                                     size: 13,
                                   ),
                                   SizedBox(width: 10),
-                                  // You can bind real time-left here if needed
-                                  Text(
-                                    '1 min away',
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
+                                  Obx(() {
+                                    final eta = driverStatusController
+                                        .dropDurationInMin
+                                        .value
+                                        .round();
+                                    final label =
+                                        eta <= 0 ? 'Arrived' : '$eta min away';
+                                    return Text(
+                                      label,
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    );
+                                  }),
                                 ],
                               ),
                               const SizedBox(height: 10),
