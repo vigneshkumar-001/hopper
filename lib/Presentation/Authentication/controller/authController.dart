@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/log.dart';
@@ -17,6 +19,10 @@ var getMobileNumber = '';
 var countryCodes = '';
 String selectedCountryFlag = '';
 
+// Default to India (matches your primary driver market UI)
+const String kDefaultCountryCode = '+91';
+const String kDefaultCountryFlagEmoji = '\u{1F1EE}\u{1F1F3}'; // 🇮🇳
+
 class AuthController extends GetxController {
   // String mobileNumber = '';
   TextEditingController mobileNumber = TextEditingController();
@@ -32,6 +38,16 @@ class AuthController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+  }
+
+  void resetPhoneInputToDefault({bool clearMobileNumber = true}) {
+    selectedCountryCode.value = kDefaultCountryCode;
+    countryCodeController.text = kDefaultCountryCode;
+    selectedCountryFlag = kDefaultCountryFlagEmoji;
+    errorText.value = '';
+    if (clearMobileNumber) {
+      mobileNumber.clear();
+    }
   }
 
   void setSelectedCountry(Country country) {
@@ -142,6 +158,10 @@ class AuthController extends GetxController {
 
   Future<void> logout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+
+    // Fire-and-forget API logout; do not block UI/redirect on response.
+    unawaited(apiDataSource.logout(token: token));
 
     await performLogoutCleanup();
     await prefs.clear();

@@ -115,9 +115,10 @@ class PickingCustomerSharedController extends GetxController {
 
   // ✅ Cache ETA per rider bookingId (prevents old values flash)
   final Map<String, _Eta> _etaCache = {};
+  String? _uiEtaBookingId;
 
   // focus toggle (used by your UI button)
-  final isDriverFocused = false.obs;
+  final isDriverFocused = true.obs;
   final RxBool isOffRouteAlert = false.obs;
   final RxBool isNetworkOffline = false.obs;
   final RxInt pendingQueueCount = 0.obs;
@@ -233,20 +234,22 @@ class PickingCustomerSharedController extends GetxController {
       final ctx = Get.context;
       final dpr = (ctx != null) ? MediaQuery.of(ctx).devicePixelRatio : 2.5;
 
-      // ✅ keep marker readable (bike slightly smaller than car)
-      final cfg = ImageConfiguration(
-        size: const Size(36, 36),
+      final isCar = driverStatusController.isCar;
+      final String asset = isCar ? AppImages.movingCar : AppImages.parcelBike;
+
+      // Keep consistent marker sizing across single/shared screens.
+      final double markerHeight = 52.0;
+      final double markerWidth = isCar ? 27.0 : 32.0;
+      final ImageConfiguration cfg = ImageConfiguration(
+        size: Size(markerWidth, markerHeight),
         devicePixelRatio: dpr,
       );
 
-      final asset =
-          driverStatusController.isBike ? AppImages.parcelBike : AppImages.movingCar;
-
-      final markerHeight = driverStatusController.isBike ? 32.0 : 36.0;
       final icon = await BitmapDescriptor.asset(
-        height: markerHeight,
         cfg,
         asset,
+        width: markerWidth,
+        height: markerHeight,
       );
       carIcon.value = icon;
     } catch (e) {
@@ -271,13 +274,38 @@ class PickingCustomerSharedController extends GetxController {
 
     socketService.on('joined-booking', (data) async {
       if (data == null) return;
-      _syncDriverLocationFromSocket(data);
 
-      CommonLogger.log.i("✅ [SHARED] joined-booking received: $data");
+      // Server may send:
+      // - a single booking map
+      // - a list of booking maps (shared/pool)
+      // - a socket args list where the first item is the actual payload
+      final bookings = <Map<String, dynamic>>[];
+      dynamic payload = data;
+      if (payload is List && payload.length == 1) {
+        final first = payload.first;
+        if (first is Map || first is List) payload = first;
+      }
+      if (payload is Map) {
+        bookings.add(Map<String, dynamic>.from(payload));
+      } else if (payload is List) {
+        for (final e in payload) {
+          if (e is Map) bookings.add(Map<String, dynamic>.from(e));
+        }
+      }
+      if (bookings.isEmpty) return;
 
-      await sharedRideController.upsertFromSocket(
-        Map<String, dynamic>.from(data as Map),
+      CommonLogger.log.i(
+        "✅ [SHARED] joined-booking received: ${bookings.length} item(s)",
       );
+
+      for (final b in bookings) {
+        try {
+          final bid = (b['bookingId'] ?? '').toString().trim();
+          if (bid.isNotEmpty) socketService.rememberBookingRoom(bid);
+        } catch (_) {}
+        _syncDriverLocationFromSocket(b);
+      }
+      await Future.wait(bookings.map(sharedRideController.upsertFromSocket));
 
       // ✅ if first rider, set ETA state to updating until we get driver-location
       if (sharedRideController.activeTarget.value != null) {
@@ -293,24 +321,61 @@ class PickingCustomerSharedController extends GetxController {
 
       final map = Map<String, dynamic>.from(data);
       final eventBookingId = (map['bookingId'] ?? '').toString();
-      final activeId =
-          sharedRideController.activeTarget.value?.bookingId ?? bookingId;
-      final cacheKey = eventBookingId.isNotEmpty ? eventBookingId : activeId;
+
+      // Keep service type in sync so car/bike marker icon is correct.
+      driverStatusController.setServiceTypeFrom(
+        map['serviceType'] ?? map['rideType'] ?? map['vehicleType'],
+      );
+
+      // Decide which leg ETA to show (pickup vs drop).
+      final latestStatus = (map['latestStatus'] ?? map['status'] ?? '').toString();
+      final statusLower = latestStatus.toLowerCase();
+      final startedLike =
+          statusLower.contains('started') ||
+          statusLower.contains('ride_in_progress') ||
+          statusLower.contains('ride in progress') ||
+          statusLower.contains('in_progress');
+
+      final active = sharedRideController.activeTarget.value;
+      final activeId = active?.bookingId;
+
+      // If we don't yet have an active rider selected (common on resume), lock to
+      // the first bookingId we receive from driver-location to avoid flicker.
+      if (active == null &&
+          _uiEtaBookingId == null &&
+          eventBookingId.trim().isNotEmpty) {
+        _uiEtaBookingId = eventBookingId.trim();
+      }
+
+      final resolvedActiveId = activeId ?? _uiEtaBookingId ?? bookingId;
+      final cacheKey =
+          eventBookingId.isNotEmpty ? eventBookingId : resolvedActiveId;
+
+      // Update global pickup/drop stats (used in other UI places too).
+      final pickupMeters =
+          (map['pickupDistanceInMeters'] as num?)?.toDouble() ?? 0.0;
+      final pickupMins = (map['pickupDurationInMin'] as num?)?.toDouble() ?? 0.0;
+      final dropMeters = (map['dropDistanceInMeters'] as num?)?.toDouble() ?? 0.0;
+      final dropMins = (map['dropDurationInMin'] as num?)?.toDouble() ?? 0.0;
+      driverStatusController.pickupDistanceInMeters.value = pickupMeters;
+      driverStatusController.pickupDurationInMin.value = pickupMins;
+      driverStatusController.dropDistanceInMeters.value = dropMeters;
+      driverStatusController.dropDurationInMin.value = dropMins;
 
       // ✅ update cache always (so when user taps later, we instantly show latest)
-      final meters = (map['pickupDistanceInMeters'] as num?)?.toDouble() ?? 0.0;
-      final mins = (map['pickupDurationInMin'] as num?)?.toDouble() ?? 0.0;
+      final effectiveStage =
+          startedLike ? SharedRiderStage.onboardDrop : (active?.stage ?? SharedRiderStage.waitingPickup);
+      final meters =
+          effectiveStage == SharedRiderStage.onboardDrop ? dropMeters : pickupMeters;
+      final mins =
+          effectiveStage == SharedRiderStage.onboardDrop ? dropMins : pickupMins;
       _etaCache[cacheKey] = _Eta(meters, mins, DateTime.now());
 
-      // ✅ update UI ONLY if this event belongs to selected rider
-      if (eventBookingId.isEmpty || eventBookingId == activeId) {
+      // ✅ update UI ONLY if this event belongs to selected rider (or the locked initial id)
+      if (eventBookingId.isEmpty || eventBookingId == resolvedActiveId) {
         etaMeters.value = meters;
         etaMinutes.value = mins;
         isEtaUpdating.value = false;
-
-        // (optional) keep old global values if used in other widgets
-        driverStatusController.pickupDistanceInMeters.value = meters;
-        driverStatusController.pickupDurationInMin.value = mins;
       }
     });
     socketService.on('location-updated', (data) {
@@ -388,6 +453,13 @@ class PickingCustomerSharedController extends GetxController {
   }
 
   LatLng? _extractDriverLocation(dynamic data) {
+    if (data is List) {
+      for (final e in data) {
+        final loc = _extractDriverLocation(e);
+        if (loc != null) return loc;
+      }
+      return null;
+    }
     if (data is! Map) return null;
     final map = Map<String, dynamic>.from(data);
 
@@ -1115,6 +1187,11 @@ class PickingCustomerSharedController extends GetxController {
 
     socketService.on('joined-booking', (data) async {
       if (data == null) return;
+      try {
+        final map = Map<String, dynamic>.from(data as Map);
+        final bid = (map['bookingId'] ?? '').toString().trim();
+        if (bid.isNotEmpty) socketService.rememberBookingRoom(bid);
+      } catch (_) {}
       _syncDriverLocationFromSocket(data);
 
       CommonLogger.log.i("✅ [SHARED] joined-booking received: $data");
@@ -1139,22 +1216,56 @@ class PickingCustomerSharedController extends GetxController {
       final map = Map<String, dynamic>.from(data);
       final String eventBookingId = (map['bookingId'] ?? '').toString();
 
-      final activeId = sharedRideController.activeTarget.value?.bookingId;
+      driverStatusController.setServiceTypeFrom(
+        map['serviceType'] ?? map['rideType'] ?? map['vehicleType'],
+      );
 
-      // ✅ Update ONLY if this event belongs to selected rider
-      if (activeId != null && eventBookingId != activeId) return;
+      final latestStatus = (map['latestStatus'] ?? map['status'] ?? '').toString();
+      final statusLower = latestStatus.toLowerCase();
+      final startedLike =
+          statusLower.contains('started') ||
+          statusLower.contains('ride_in_progress') ||
+          statusLower.contains('ride in progress') ||
+          statusLower.contains('in_progress');
 
-      // ✅ Update shared screen ETA variables (recommended)
-      if (map['pickupDistanceInMeters'] != null) {
-        etaMeters.value = (map['pickupDistanceInMeters'] as num).toDouble();
+      final active = sharedRideController.activeTarget.value;
+      final activeId = active?.bookingId;
+
+      if (active == null &&
+          _uiEtaBookingId == null &&
+          eventBookingId.trim().isNotEmpty) {
+        _uiEtaBookingId = eventBookingId.trim();
       }
-      if (map['pickupDurationInMin'] != null) {
-        etaMinutes.value = (map['pickupDurationInMin'] as num).toDouble();
-      }
 
-      // (optional) keep old global values if needed elsewhere
-      driverStatusController.pickupDistanceInMeters.value = etaMeters.value;
-      driverStatusController.pickupDurationInMin.value = etaMinutes.value;
+      final resolvedActiveId = activeId ?? _uiEtaBookingId ?? bookingId;
+
+      final pickupMeters =
+          (map['pickupDistanceInMeters'] as num?)?.toDouble() ?? 0.0;
+      final pickupMins = (map['pickupDurationInMin'] as num?)?.toDouble() ?? 0.0;
+      final dropMeters = (map['dropDistanceInMeters'] as num?)?.toDouble() ?? 0.0;
+      final dropMins = (map['dropDurationInMin'] as num?)?.toDouble() ?? 0.0;
+
+      driverStatusController.pickupDistanceInMeters.value = pickupMeters;
+      driverStatusController.pickupDurationInMin.value = pickupMins;
+      driverStatusController.dropDistanceInMeters.value = dropMeters;
+      driverStatusController.dropDurationInMin.value = dropMins;
+
+      final effectiveStage =
+          startedLike ? SharedRiderStage.onboardDrop : (active?.stage ?? SharedRiderStage.waitingPickup);
+      final meters =
+          effectiveStage == SharedRiderStage.onboardDrop ? dropMeters : pickupMeters;
+      final mins =
+          effectiveStage == SharedRiderStage.onboardDrop ? dropMins : pickupMins;
+
+      final cacheKey =
+          eventBookingId.isNotEmpty ? eventBookingId : resolvedActiveId;
+      _etaCache[cacheKey] = _Eta(meters, mins, DateTime.now());
+
+      if (eventBookingId.isEmpty || eventBookingId == resolvedActiveId) {
+        etaMeters.value = meters;
+        etaMinutes.value = mins;
+        isEtaUpdating.value = false;
+      }
     });
     socketService.on('location-updated', (data) {
       if (data == null) return;

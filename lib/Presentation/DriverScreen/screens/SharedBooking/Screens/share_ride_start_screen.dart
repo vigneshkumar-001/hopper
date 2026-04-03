@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:action_slider/action_slider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -17,6 +16,7 @@ import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
@@ -30,9 +30,13 @@ import 'package:hopper/api/repository/api_constents.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/shared_map.dart';
+import 'package:hopper/utils/map/ride_route_overlays.dart';
+import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
+import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
+import 'package:hopper/api/repository/api_config_controller.dart';
 
 import '../../../../../utils/websocket/socket_io_client.dart';
 import '../Controller/booking_request_controller.dart';
@@ -205,7 +209,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   late SocketService socketService;
 
   bool driverCompletedRide = false;
-  bool _isDriverFocused = false;
+  bool _isDriverFocused = true;
   bool _leavingScreen = false;
   bool _isNetworkOffline = false;
   bool _isOffRouteAlert = false;
@@ -565,93 +569,53 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   // Ã¢â€â‚¬Ã¢â€â‚¬ Socket Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   Future<void> _initSocket() async {
     socketService = SocketService();
+    try {
+      final cfg = Get.find<ApiConfigController>();
+      socketService.initSocket(cfg.socketUrl);
+      // Ensure we are in the correct room for this shared ride (parent room).
+      final did = (await SharedPrefHelper.getDriverId()) ?? '';
+      if (did.trim().isNotEmpty) {
+        socketService.joinBooking(widget.bookingId, userId: did);
+      } else {
+        socketService.joinBooking(widget.bookingId);
+      }
+    } catch (_) {
+      // ApiConfigController may not be registered in tests; ignore.
+    }
 
     socketService.on('joined-booking', (data) async {
       try {
         if (!mounted || _isDisposing || data == null) return;
-        final customerLoc = data['customerLocation'];
-        if (customerLoc == null) return;
 
-        final fromLat = _safeNum(
-          customerLoc['fromLatitude'] ?? customerLoc['latitude'],
-        );
-        final fromLng = _safeNum(
-          customerLoc['fromLongitude'] ?? customerLoc['longitude'],
-        );
-        final toLat = _safeNum(
-          customerLoc['toLatitude'] ?? customerLoc['toLat'],
-        );
-        final toLng = _safeNum(
-          customerLoc['toLongitude'] ?? customerLoc['toLng'],
-        );
+        // Server may send:
+        // - a single booking map
+        // - a list of booking maps (shared/pool)
+        // - a socket args list where the first item is the actual payload
+        final bookings = <Map<String, dynamic>>[];
+        dynamic payload = data;
+        if (payload is List && payload.length == 1) {
+          final first = payload.first;
+          if (first is Map || first is List) payload = first;
+        }
+        if (payload is Map) {
+          bookings.add(Map<String, dynamic>.from(payload));
+        } else if (payload is List) {
+          for (final e in payload) {
+            if (e is Map) bookings.add(Map<String, dynamic>.from(e));
+          }
+        }
+        if (bookings.isEmpty) return;
 
-        if (fromLat == null ||
-            fromLng == null ||
-            toLat == null ||
-            toLng == null)
-          return;
-
-        final pickupAddrs = await getAddressFromLatLng(fromLat, fromLng);
-        final dropoffAddrs = await getAddressFromLatLng(toLat, toLng);
-        final String bookingIdStr = data['bookingId']?.toString() ?? '';
-        if (bookingIdStr.isEmpty) return;
-
-        final riders = sharedRideController.riders;
-        final existingIndex = riders.indexWhere(
-          (r) => r.bookingId.toString() == bookingIdStr,
-        );
-
-        if (existingIndex == -1) {
-          riders.add(
-            SharedRiderItem(
-              bookingId: bookingIdStr,
-              name: data['customerName']?.toString() ?? 'Rider',
-              phone: data['customerPhone']?.toString() ?? '',
-              profilePic:
-                  data['customerProfilePic']?.toString() ??
-                  data['profilePic']?.toString() ??
-                  '',
-              pickupAddress: pickupAddrs,
-              dropoffAddress: dropoffAddrs,
-              amount: (data['amount'] as num?) ?? 0,
-              pickupLatLng: LatLng(fromLat, fromLng),
-              dropLatLng: LatLng(toLat, toLng),
-              arrived: false,
-              secondsLeft: 0,
-              sliderController: ActionSliderController(),
-              stage: SharedRiderStage.waitingPickup,
-            ),
-          );
-        } else {
-          final old = riders[existingIndex];
-          riders[existingIndex] = SharedRiderItem(
-            bookingId: bookingIdStr,
-            name: data['customerName']?.toString() ?? old.name,
-            phone: data['customerPhone']?.toString() ?? old.phone,
-            profilePic:
-                data['customerProfilePic']?.toString() ??
-                data['profilePic']?.toString() ??
-                old.profilePic,
-            pickupAddress: pickupAddrs,
-            dropoffAddress: dropoffAddrs,
-            amount: (data['amount'] as num?) ?? old.amount,
-            pickupLatLng: LatLng(fromLat, fromLng),
-            dropLatLng: LatLng(toLat, toLng),
-            arrived: old.arrived,
-            secondsLeft: old.secondsLeft,
-            stage: old.stage,
-            sliderController: old.sliderController,
-          );
+        for (final b in bookings) {
+          try {
+            final bid = (b['bookingId'] ?? '').toString().trim();
+            if (bid.isNotEmpty) socketService.rememberBookingRoom(bid);
+          } catch (_) {}
         }
 
-        var active = sharedRideController.activeTarget.value;
-        if (active == null || riders.length == 1) {
-          sharedRideController.setActiveTarget(
-            bookingIdStr,
-            SharedRiderStage.waitingPickup,
-          );
-          active = sharedRideController.activeTarget.value;
-        }
+        await Future.wait(bookings.map(sharedRideController.upsertFromSocket));
+
+        final active = sharedRideController.activeTarget.value;
         if (active != null) {
           await _syncActiveTargetRoute(active: active);
         }
@@ -676,6 +640,8 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         for (final b in items) {
           final bookingId = b['bookingId']?.toString() ?? '';
           if (bookingId.isEmpty) continue;
+
+          socketService.rememberBookingRoom(bookingId);
 
           final pickupGeo = b['bookingCustomerlocation'];
           final pickupCoords =
@@ -762,15 +728,12 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     });
 
     socketService.on('driver-cancelled', (data) async {
-      if (data?['status'] == true) await _exitToHomeSafely();
+      if (!Get.isRegistered<DriverMainController>()) return;
+      await Get.find<DriverMainController>().handleDriverCancelled(data);
     });
     socketService.on('customer-cancelled', (data) async {
-      if (data?['status'] == true) {
-        Get.find<DriverAnalyticsController>().trackCancel(
-          bookingId: data?['bookingId']?.toString() ?? widget.bookingId,
-        );
-        await _exitToHomeSafely();
-      }
+      if (!Get.isRegistered<DriverMainController>()) return;
+      await Get.find<DriverMainController>().handleCustomerCancelled(data);
     });
 
     socketService.on('driver-reached-destination', (data) {
@@ -801,23 +764,33 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     }
   }
 
-  Future<BitmapDescriptor> _bitmapFromAsset(
-    String path, {
-    int width = 48,
-  }) async {
-    final data = await rootBundle.load(path);
-    final codec = await ui.instantiateImageCodec(
-      data.buffer.asUint8List(),
-      targetWidth: width,
-    );
-    final frame = await codec.getNextFrame();
-    final bytes = await frame.image.toByteData(format: ui.ImageByteFormat.png);
-    return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
-  }
-
   Future<void> _loadMarkerIcons() async {
     try {
-      final icon = await _bitmapFromAsset(AppImages.movingCar, width: 52);
+      final status =
+          Get.isRegistered<DriverStatusController>()
+              ? Get.find<DriverStatusController>()
+              : Get.put(DriverStatusController(), permanent: true);
+
+      final ctx = context;
+      final dpr = MediaQuery.of(ctx).devicePixelRatio;
+
+      final bool isCar = status.isCar;
+      final String asset = isCar ? AppImages.movingCar : AppImages.parcelBike;
+
+      // Keep consistent marker sizing across single/shared screens.
+      final double markerHeight = 52.0;
+      final double markerWidth = isCar ? 27.0 : 32.0;
+      final ImageConfiguration cfg = ImageConfiguration(
+        size: Size(markerWidth, markerHeight),
+        devicePixelRatio: dpr,
+      );
+
+      final icon = await BitmapDescriptor.asset(
+        cfg,
+        asset,
+        width: markerWidth,
+        height: markerHeight,
+      );
       if (!mounted || _isDisposing) return;
       setState(() => carIcon = icon);
     } catch (_) {
@@ -1071,25 +1044,11 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     required VoidCallback onTap,
     Color? iconColor,
   }) {
-    return GestureDetector(
+    return MapControlButton(
+      icon: icon,
       onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: _C.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _C.border),
-          boxShadow: const [
-            BoxShadow(color: _C.shadowMd, blurRadius: 12, offset: Offset(0, 4)),
-          ],
-        ),
-        child: Icon(
-          icon,
-          size: 20,
-          color: iconColor ?? _C.text.withOpacity(0.7),
-        ),
-      ),
+      iconColor: iconColor ?? _C.text.withOpacity(0.7),
+      backgroundColor: _C.surface,
     );
   }
 
@@ -1720,26 +1679,21 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(15),
-            child: ActionSlider.standard(
+            child: HopprSwipeSlider(
               key: ValueKey('start---'),
               controller: riderCtrl,
               height: 56,
               backgroundColor: _C.green,
-              toggleColor: Colors.white,
-              icon: const Icon(
-                Icons.double_arrow_rounded,
-                color: _C.green,
-                size: 24,
+              handleColor: Colors.white,
+              handleIconColor: _C.green,
+              borderRadius: BorderRadius.circular(15),
+              text: 'Swipe to Start Ride',
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
               ),
-              child: Text(
-                'Swipe to Start Ride',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-              action: (controller) async {
+              onAction: (controller) async {
                 try {
                   controller.loading();
                   final msg = await driverStatusController.otpRequest(
@@ -1777,6 +1731,8 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                     controller.success();
                     sharedRideController.markOnboard(active.bookingId);
                     await _syncActiveTargetRoute();
+                    await Future.delayed(const Duration(milliseconds: 250));
+                    controller.reset();
                   } else {
                     controller.reset();
                   }
@@ -1829,28 +1785,24 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(15),
-                        child: ActionSlider.standard(
+                        child: HopprSwipeSlider(
                           key: ValueKey(
                             'complete-${active.bookingId}-${active.stage}',
                           ),
                           controller: riderSlider,
                           height: 56,
                           backgroundColor: _C.green,
-                          toggleColor: Colors.white,
-                          icon: const Icon(
-                            Icons.check_rounded,
-                            color: _C.green,
-                            size: 24,
+                          handleColor: Colors.white,
+                          handleIconColor: _C.green,
+                          idleIcon: Icons.check_rounded,
+                          borderRadius: BorderRadius.circular(15),
+                          text: 'Swipe to Complete Stop - ${active.name}',
+                          textStyle: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
                           ),
-                          child: Text(
-                            'Swipe to Complete Stop - ${active.name}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                          action: (controller) async {
+                          onAction: (controller) async {
                             try {
                               controller.loading();
                               await Future.delayed(
@@ -1868,6 +1820,10 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                               if (msg != null) {
                                 controller.success();
                                 await _onCurrentLegCompleted(active);
+                                await Future.delayed(
+                                  const Duration(milliseconds: 250),
+                                );
+                                controller.reset();
                               } else {
                                 controller.failure();
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -2317,17 +2273,13 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       ),
       if (active != null)
         Marker(
-          markerId: const MarkerId('target'),
+          markerId: const MarkerId('target_bounds'),
           position:
               active.stage == SharedRiderStage.waitingPickup
                   ? active.pickupLatLng
                   : active.dropLatLng,
-          infoWindow: InfoWindow(
-            title:
-                active.stage == SharedRiderStage.waitingPickup
-                    ? 'Pickup ${active.name}'
-                    : 'Drop ${active.name}',
-          ),
+          visible: false,
+          infoWindow: InfoWindow.noText,
         ),
     };
 
@@ -2344,28 +2296,25 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                 width: double.infinity,
                   child: SharedMap(
                     key: _mapKey,
-                    followDriver: true,
+                    followDriver: _isDriverFocused,
                     followZoom: _followZoom,
                     followTilt: 45,
                     initialPosition: targetPos,
                     pickupPosition: targetPos,
-                   markers: markers,
-                   polylines: {
-                     if (polylinePoints.length >= 2)
-                       Polyline(
-                        polylineId: const PolylineId('route_main'),
-                        color: const Color(0xFF111111),
-                        width: 2,
-                        points: polylinePoints,
-                        startCap: Cap.roundCap,
-                        endCap: Cap.roundCap,
-                        jointType: JointType.round,
-                      ),
-                   },
-                   // Avoid GoogleMap my-location layer blocking map render when
-                   // permission/service is off. Driver marker already represents
-                   // the current position.
-                   myLocationEnabled: false,
+                    pickupIndicatorStyle: PickupIndicatorStyle.pulse,
+                    pickupIndicatorColor: const Color(0xFF00A85E),
+                    pickupTargetColor: AppColors.commonBlack,
+                    markers: markers,
+                    polylines: RideRouteOverlays.buildRoutePolylines(
+                      routePoints: polylinePoints,
+                      origin: driverPos,
+                      destination: targetPos,
+                      idPrefix: 'route_shared',
+                    ),
+                    // Avoid GoogleMap my-location layer blocking map render when
+                    // permission/service is off. Driver marker already represents
+                    // the current position.
+                    myLocationEnabled: false,
                     fitToBounds: true,
                   ),
                ),
@@ -2408,22 +2357,28 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                             ),
                       ),
                       const SizedBox(height: 10),
-                      _buildMapControlBtn(
-                        icon:
-                            _isDriverFocused
-                                ? Icons.fit_screen_rounded
-                                : Icons.my_location_rounded,
-                        iconColor: _C.green,
-                        onTap: () {
+                      MapFocusToggleButton(
+                        isDriverFocused: _isDriverFocused,
+                        accentColor: _C.green,
+                        onFocusDriver: () async {
                           final ms = _mapKey.currentState;
                           if (ms == null) return;
-                          if (_isDriverFocused) {
-                            ms.fitRouteBounds();
+                          await ms.focusDriver(zoom: _followZoom, tilt: 45);
+                        },
+                        onFitBounds: () {
+                          final ms = _mapKey.currentState;
+                          if (ms == null) return;
+                          ms.pauseAutoFollow(const Duration(seconds: 4));
+                          final pts = polylinePoints;
+                          if (pts.length >= 2) {
+                            ms.fitPolylineBounds(pts);
                           } else {
-                            ms.focusPickup();
+                            ms.fitRouteBounds();
                           }
+                        },
+                        onDriverFocusedChanged: (v) {
                           if (!mounted || _isDisposing) return;
-                          setState(() => _isDriverFocused = !_isDriverFocused);
+                          setState(() => _isDriverFocused = v);
                         },
                       ),
                     ],

@@ -13,6 +13,7 @@ class CommonGoogleMap extends StatefulWidget {
   final Function(GoogleMapController)? onMapCreated;
   final VoidCallback? onCameraMoveStarted;
   final Function(CameraPosition)? onCameraMove;
+  final VoidCallback? onCameraIdle;
   final Set<Circle> circles;
   final bool keepScreenOn;
 
@@ -24,6 +25,7 @@ class CommonGoogleMap extends StatefulWidget {
     this.markers = const <Marker>{},
     this.onCameraMove,
     this.onCameraMoveStarted,
+    this.onCameraIdle,
     this.myLocationEnabled = true,
     this.onMapCreated,
     this.keepScreenOn = true,
@@ -57,9 +59,7 @@ class _CommonGoogleMapState extends State<CommonGoogleMap> {
     try {
       final style = await AppMapStyle.loadUberLight();
       _mapStyle = style;
-      if (_mapController != null) {
-        await _mapController!.setMapStyle(style);
-      }
+      if (mounted) setState(() {});
     } catch (_) {}
   }
 
@@ -73,12 +73,14 @@ class _CommonGoogleMapState extends State<CommonGoogleMap> {
   @override
   Widget build(BuildContext context) {
     return GoogleMap(
+      style: _mapStyle,
       onCameraMove: widget.onCameraMove,
       initialCameraPosition: CameraPosition(
         target: widget.initialPosition,
         zoom: 15.2,
       ),
       onCameraMoveStarted: widget.onCameraMoveStarted,
+      onCameraIdle: widget.onCameraIdle,
       polylines: widget.polylines,
       markers: widget.markers,
       myLocationEnabled: widget.myLocationEnabled,
@@ -97,9 +99,6 @@ class _CommonGoogleMapState extends State<CommonGoogleMap> {
       },
       onMapCreated: (controller) async {
         _mapController = controller;
-        if (_mapStyle != null) {
-          await controller.setMapStyle(_mapStyle);
-        }
         if (widget.onMapCreated != null) {
           widget.onMapCreated!(controller);
         }

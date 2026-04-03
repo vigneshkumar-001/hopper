@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:flutter/widgets.dart';
 
 import '../../../Core/Constants/log.dart';
 import '../../../Core/Utility/snackbar.dart';
@@ -94,57 +95,69 @@ class ChooseServiceController extends GetxController {
     }
   }
 
-  void handleLandingPageNavigation() {
+  void handleLandingPageNavigation({bool clearStack = true}) {
     final landingPage = userProfile.value?.landingPage;
     final formStatus = userProfile.value?.formStatus;
 
     if (formStatus == 3) {
-      Get.offAll(() => DriverMainScreen());
+      if (clearStack) {
+        Get.offAll(() => DriverMainScreen());
+      } else {
+        Get.off(() => DriverMainScreen());
+      }
       return;
+    }
+
+    void goTo(Widget Function() page) {
+      if (clearStack) {
+        Get.offAll(page);
+      } else {
+        Get.off(page);
+      }
     }
 
     switch (landingPage) {
       case 0:
-        Get.offAll(() => BasicInfo());
+        goTo(() => BasicInfo());
         break;
       case 2:
-        Get.offAll(() => DriverAddress());
+        goTo(() => DriverAddress());
         break;
       case 3:
-        Get.offAll(() => ProfilePicAccess());
+        goTo(() => ProfilePicAccess());
         break;
       case 4:
-        Get.offAll(() => NinScreens());
+        goTo(() => NinScreens());
         break;
       case 5:
-        Get.offAll(() => NinScreens());
+        goTo(() => NinScreens());
         break;
       case 6:
-        Get.offAll(() => DriverLicense());
+        goTo(() => DriverLicense());
         break;
       case 7:
-        Get.offAll(() => ChooseService());
+        goTo(() => ChooseService());
         break;
       case 8:
-        Get.offAll(() => CarOwnership());
+        goTo(() => CarOwnership());
         break;
       case 9:
-        Get.offAll(() => VehicleDetails());
+        goTo(() => VehicleDetails());
         break;
       case 10:
-        Get.offAll(() => UploadExteriorPhotos());
+        goTo(() => UploadExteriorPhotos());
         break;
       case 11:
-        Get.offAll(() => InteriorUploadPhotos());
+        goTo(() => InteriorUploadPhotos());
         break;
       case 12:
-        Get.offAll(() => ConsentForms());
+        goTo(() => ConsentForms());
         break;
       case 13:
-        Get.offAll(() => CompletedScreens());
+        goTo(() => CompletedScreens());
         break;
       default:
-        Get.offAll(() => GetStartedScreens());
+        goTo(() => GetStartedScreens());
     }
   }
 

@@ -117,8 +117,9 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
   @override
   void initState() {
     super.initState();
-    controller.selectedCountryCode.value = '+234';
-    controller.countryCodeController.text = '+234';
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.resetPhoneInputToDefault();
+    });
   }
 
   List<String> scopes = <String>[
@@ -287,7 +288,7 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                                       children: [
                                         Text(
                                           selectedCountryFlag.isEmpty
-                                              ? '🇳🇬'
+                                              ? '\u{1F1F3}\u{1F1EC}'
                                               : selectedCountryFlag,
                                           style: const TextStyle(fontSize: 18),
                                         ),

@@ -158,23 +158,75 @@ void onStart(ServiceInstance service) async {
         : ApiConfigController.singleSocket;
   } catch (_) {}
 
+  Map<String, dynamic>? _pendingPayload;
+  String? _pendingEvent;
+  DateTime _lastManualReconnectAt = DateTime.fromMillisecondsSinceEpoch(0);
+
   final socket = IO.io(
     socketUrl,
     IO.OptionBuilder()
         .setTransports(['websocket'])
-        .enableForceNew()
         .enableReconnection()
+        .enableAutoConnect()
+        .setReconnectionAttempts(999999)
+        .setReconnectionDelay(1000)
+        .setReconnectionDelayMax(8000)
+        .setTimeout(15000)
         .build(),
   );
+
+  void safeRegisterAndFlush() {
+    final did = driverId?.trim() ?? '';
+    if (did.isNotEmpty) {
+      socket.emit('register', {
+        'userId': did,
+        'type': 'driver',
+        if (currentBookingId != null) 'bookingId': currentBookingId,
+      });
+    }
+
+    final event = _pendingEvent;
+    final payload = _pendingPayload;
+    if (event != null && payload != null) {
+      socket.emit(event, payload);
+      _pendingEvent = null;
+      _pendingPayload = null;
+    }
+  }
 
   socket.connect();
 
   socket.onConnect((_) {
-    if (driverId != null) {
-      socket.emit('register', {'userId': driverId, 'type': 'driver'});
-    }
+    safeRegisterAndFlush();
     if (kDebugMode) {
       CommonLogger.log.i("✅ [BG_SOCKET] Connected ($socketUrl)");
+    }
+  });
+
+  socket.onReconnect((_) {
+    safeRegisterAndFlush();
+    if (kDebugMode) {
+      CommonLogger.log.i("🔁 [BG_SOCKET] Reconnected ($socketUrl)");
+    }
+  });
+
+  socket.onDisconnect((_) {
+    if (kDebugMode) {
+      CommonLogger.log.e("⛔ [BG_SOCKET] Disconnected ($socketUrl)");
+    }
+
+    // If the server explicitly disconnects, socket.io may not auto-reconnect.
+    // Try a debounced manual reconnect; re-register happens on connect.
+    final now = DateTime.now();
+    if (now.difference(_lastManualReconnectAt) >= const Duration(seconds: 2)) {
+      _lastManualReconnectAt = now;
+      socket.connect();
+    }
+  });
+
+  socket.onConnectError((err) {
+    if (kDebugMode) {
+      CommonLogger.log.e("⚠️ [BG_SOCKET] Connect error: $err ($socketUrl)");
     }
   });
 
@@ -196,7 +248,11 @@ void onStart(ServiceInstance service) async {
 
     if (event.containsKey('driverId')) {
       driverId = event['driverId']?.toString();
-      socket.emit('register', {'userId': driverId, 'type': 'driver'});
+      if (socket.connected) {
+        safeRegisterAndFlush();
+      } else {
+        socket.connect();
+      }
     }
   });
 
@@ -250,9 +306,12 @@ void onStart(ServiceInstance service) async {
       'timestamp': now.toIso8601String(),
     };
     if (!socket.connected) {
+      _pendingEvent = 'updateLocation';
+      _pendingPayload = locationData;
       socket.connect();
+    } else {
+      socket.emit('updateLocation', locationData);
     }
-    socket.emit('updateLocation', locationData);
     if (kDebugMode) {
       CommonLogger.log.i('📍 [BG_SOCKET_EMIT] updateLocation $locationData');
     }
@@ -276,9 +335,25 @@ void onStart(ServiceInstance service) async {
       final acc = position.accuracy.isFinite ? position.accuracy : 9999.0;
       if (acc > maxAccuracyM) return;
 
+      final prevLat = lastLat;
+      final prevLng = lastLng;
+
       lastLat = position.latitude;
       lastLng = position.longitude;
       lastEmitAt = now;
+
+      final movedMeters =
+          (prevLat == null || prevLng == null)
+              ? null
+              : Geolocator.distanceBetween(
+                prevLat,
+                prevLng,
+                position.latitude,
+                position.longitude,
+              );
+      final speedMs =
+          (position.speed.isFinite && position.speed >= 0) ? position.speed : 0.0;
+      final isMoving = (movedMeters != null && movedMeters >= 5.0) || speedMs >= 0.6;
 
       final locationData = {
         'userId': driverId,
@@ -289,11 +364,16 @@ void onStart(ServiceInstance service) async {
       };
 
       if (!socket.connected) {
+        _pendingEvent = isMoving ? 'updateLocation' : 'driver-heartbeat';
+        _pendingPayload = locationData;
         socket.connect();
+      } else {
+        socket.emit(isMoving ? 'updateLocation' : 'driver-heartbeat', locationData);
       }
-      socket.emit('updateLocation', locationData);
       if (kDebugMode) {
-        CommonLogger.log.i('[BG_SOCKET_EMIT] updateLocation (poll) $locationData');
+        CommonLogger.log.i(
+          '[BG_SOCKET_EMIT] ${isMoving ? 'updateLocation' : 'driver-heartbeat'} (poll) $locationData',
+        );
       }
     } catch (_) {}
   });

@@ -12,6 +12,7 @@ class NotificationController extends GetxController {
   final RxBool isLoading = false.obs;
   final RxBool isMoreLoading = false.obs;
   final RxBool hasMore = true.obs;
+  final RxBool isSharedToggleLoading = false.obs;
   RxBool isSharedEnabled = false.obs;
   final cfg = Get.find<ApiConfigController>();
   RxList<NotificationData> notificationData = <NotificationData>[].obs;
@@ -36,14 +37,14 @@ class NotificationController extends GetxController {
   }
 
   Future<void> setSharedEnabled(bool enabled) async {
-    if (isLoading.value) return;
+    if (isSharedToggleLoading.value) return;
 
     final prev = isSharedEnabled.value;
 
     // ✅ Optimistic UI
     isSharedEnabled.value = enabled;
     _showSafeSnackbar(enabled, serverMessage: enabled ? 'Shared booking enabled' : 'Shared booking disabled');
-    isLoading.value = true;
+    isSharedToggleLoading.value = true;
 
     try {
       // 1) Call server
@@ -79,7 +80,7 @@ class NotificationController extends GetxController {
       CommonLogger.log.e("❌ Error in setSharedEnabled: $e");
       _showSafeSnackbar(false, serverMessage: 'Something went wrong');
     } finally {
-      isLoading.value = false;
+      isSharedToggleLoading.value = false;
     }
   }
 

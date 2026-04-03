@@ -133,7 +133,7 @@ class _DrawerScreenState extends State<DrawerScreen> {
                           if (isBike || !isCar) {
                             return const SizedBox.shrink();
                           }
-                          final loading = sharedCtrl.isLoading.value;
+                          final loading = sharedCtrl.isSharedToggleLoading.value;
                           return Column(
                             children: [
                               Row(

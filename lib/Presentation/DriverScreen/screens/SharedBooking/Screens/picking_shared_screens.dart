@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:action_slider/action_slider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,14 +13,18 @@ import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/share_ride_start_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/utils/map/shared_map.dart';
+import 'package:hopper/utils/map/ride_route_overlays.dart';
+import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
+import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 
 import '../Controller/booking_request_controller.dart';
 import '../Controller/picking_customer_shared_controller.dart';
@@ -157,17 +160,15 @@ class _PickingCustomerSharedScreenState
     );
 
     c.socketService.on('driver-cancelled', (data) {
-      if (data != null && data['status'] == true) {
-        if (!mounted) return;
-        Get.offAll(() => const DriverMainScreen());
-      }
+      if (!mounted) return;
+      if (!Get.isRegistered<DriverMainController>()) return;
+      Get.find<DriverMainController>().handleDriverCancelled(data);
     });
 
     c.socketService.on('customer-cancelled', (data) {
-      if (data != null && data['status'] == true) {
-        if (!mounted) return;
-        Get.offAll(() => const DriverMainScreen());
-      }
+      if (!mounted) return;
+      if (!Get.isRegistered<DriverMainController>()) return;
+      Get.find<DriverMainController>().handleCustomerCancelled(data);
     });
   }
 
@@ -672,51 +673,36 @@ class _PickingCustomerSharedScreenState
     required VoidCallback onTap,
     Color? iconColor,
   }) {
-    return GestureDetector(
+    return MapControlButton(
+      icon: icon,
       onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: _C.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _C.border),
-          boxShadow: [
-            BoxShadow(
-              color: _C.shadowMd,
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Icon(
-          icon,
-          size: 20,
-          color: iconColor ?? _C.text.withOpacity(0.7),
-        ),
-      ),
+      iconColor: iconColor ?? _C.text.withOpacity(0.7),
+      backgroundColor: _C.surface,
     );
   }
 
   Widget _buildFocusBtn() {
     return Obx(
-      () => _buildMapControlBtn(
-        icon:
-            c.isDriverFocused.value
-                ? Icons.fit_screen_rounded
-                : Icons.my_location_rounded,
-        iconColor: _C.green,
-        onTap: () {
+      () => MapFocusToggleButton(
+        isDriverFocused: c.isDriverFocused.value,
+        onFocusDriver: () async {
+          final ms = _mapKey.currentState;
+          if (ms == null) return;
+          await ms.focusDriver(zoom: c.followZoom.value, tilt: 0);
+        },
+        onFitBounds: () {
           final ms = _mapKey.currentState;
           if (ms == null) return;
           ms.pauseAutoFollow(const Duration(seconds: 4));
-          if (c.isDriverFocused.value) {
-            ms.fitRouteBounds();
+          final pts = c.routeUi.value.polyline;
+          if (pts.length >= 2) {
+            ms.fitPolylineBounds(pts);
           } else {
-            ms.focusPickup();
+            ms.fitRouteBounds();
           }
-          c.isDriverFocused.value = !c.isDriverFocused.value;
         },
+        onDriverFocusedChanged: (v) => c.isDriverFocused.value = v,
+        accentColor: _C.green,
       ),
     );
   }
@@ -1079,9 +1065,20 @@ class _PickingCustomerSharedScreenState
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(15),
-        child: ActionSlider.standard(
+        child: HopprSwipeSlider(
           controller: rider.sliderController,
-          action: (controller) async {
+          height: 56,
+          backgroundColor: _C.greenLight,
+          handleColor: _C.green,
+          handleIconColor: Colors.white,
+          borderRadius: BorderRadius.circular(15),
+          text: 'Swipe to Start - ${rider.name}',
+          textStyle: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: _C.greenText.withOpacity(0.8),
+          ),
+          onAction: (controller) async {
             controller.loading();
             final msg = await driverStatusController.otpRequest(
               context,
@@ -1095,6 +1092,8 @@ class _PickingCustomerSharedScreenState
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Failed to send OTP')),
               );
+              await Future.delayed(const Duration(milliseconds: 700));
+              controller.reset();
               return;
             }
             final verified = await Navigator.push<bool>(
@@ -1113,6 +1112,7 @@ class _PickingCustomerSharedScreenState
             if (verified == true) {
               controller.success();
               sharedRideController.markOnboard(rider.bookingId);
+              await Future.delayed(const Duration(milliseconds: 250));
               if (!mounted) return;
               Get.off(
                 () => ShareRideStartScreen(
@@ -1125,37 +1125,6 @@ class _PickingCustomerSharedScreenState
               controller.reset();
             }
           },
-          height: 56,
-          backgroundColor: _C.greenLight,
-          toggleColor: Colors.transparent,
-          customForegroundBuilder:
-              (context, state, child) => Container(
-                margin: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: _C.green,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _C.green.withOpacity(0.35),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.double_arrow_rounded,
-                  color: Colors.white,
-                  size: 24,
-                ),
-              ),
-          child: Text(
-            'Swipe to Start  •  ${rider.name}',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: _C.greenText.withOpacity(0.8),
-            ),
-          ),
         ),
       ),
     );
@@ -1531,19 +1500,10 @@ class _PickingCustomerSharedScreenState
                 flat: true,
               ),
               Marker(
-                markerId: const MarkerId('pickup_target'),
+                markerId: const MarkerId('pickup_bounds'),
                 position: currentTarget,
-                icon: BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueRed,
-                ),
-                infoWindow: InfoWindow(
-                  title:
-                      activeTarget == null
-                          ? 'Pickup Area'
-                          : (activeTarget.stage == SharedRiderStage.onboardDrop
-                              ? 'Drop Point'
-                              : 'Customer Pickup'),
-                ),
+                visible: false,
+                infoWindow: InfoWindow.noText,
               ),
               ...sharedRideController.riders.map(
                 (r) => Marker(
@@ -1552,7 +1512,7 @@ class _PickingCustomerSharedScreenState
                   icon: BitmapDescriptor.defaultMarkerWithHue(
                     BitmapDescriptor.hueGreen,
                   ),
-                  infoWindow: InfoWindow(title: r.name),
+                  infoWindow: InfoWindow.noText,
                 ),
               ),
             };
@@ -1580,26 +1540,23 @@ class _PickingCustomerSharedScreenState
                     key: _mapKey,
                     initialPosition: uiState.driverLocation,
                     pickupPosition: currentTarget,
+                    pickupIndicatorStyle: PickupIndicatorStyle.pulse,
+                    pickupIndicatorColor: const Color(0xFF00A85E),
+                    pickupTargetColor: AppColors.commonBlack,
                     markers: markers,
-                    followDriver: true,
+                    followDriver: c.isDriverFocused.value,
                     followBearingEnabled: false,
                     followZoom: c.followZoom.value,
                     followTilt: 0,
                     trafficEnabled: false,
                     compassEnabled: false,
-                    polylines: {
-                      if (uiState.polyline.length >= 2)
-                        Polyline(
-                          polylineId: const PolylineId('route_to_rider_main'),
-                          color: const Color(0xFF111111),
-                          width: 3,
-                          points: uiState.polyline,
-                          startCap: Cap.roundCap,
-                          endCap: Cap.roundCap,
-                          jointType: JointType.round,
-                        ),
-                    },
-                    myLocationEnabled: true,
+                    polylines: RideRouteOverlays.buildRoutePolylines(
+                      routePoints: uiState.polyline,
+                      origin: uiState.driverLocation,
+                      destination: currentTarget,
+                      idPrefix: 'route_to_rider',
+                    ),
+                    myLocationEnabled: false,
                     fitToBounds: false,
                   ),
                 ),

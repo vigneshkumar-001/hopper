@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_response.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
@@ -443,12 +444,16 @@ class RideStatsController extends GetxController
       // ✅ Fallback: if server is already sending drop-distance updates, use them
       // to toggle the Complete Ride UI even if the explicit `driver-reached-destination`
       // event listener was overridden elsewhere.
-      final reached = dropM <= _REACHED_DESTINATION_RADIUS_M;
-      final exit = dropM >= _REACHED_DESTINATION_EXIT_RADIUS_M;
-      if (!driverCompletedRide.value && reached) {
-        driverCompletedRide.value = true;
-      } else if (driverCompletedRide.value && exit) {
-        driverCompletedRide.value = false;
+      // Guard: some backends send `0` temporarily (unknown), which would otherwise
+      // incorrectly flip UI into "reached destination".
+      if (dropM > 0) {
+        final reached = dropM <= _REACHED_DESTINATION_RADIUS_M;
+        final exit = dropM >= _REACHED_DESTINATION_EXIT_RADIUS_M;
+        if (!driverCompletedRide.value && reached) {
+          driverCompletedRide.value = true;
+        } else if (driverCompletedRide.value && exit) {
+          driverCompletedRide.value = false;
+        }
       }
     });
 
@@ -473,15 +478,12 @@ class RideStatsController extends GetxController
     });
 
     socketService.on('driver-cancelled', (data) {
-      if (data?['status'] == true) Get.offAllNamed('/DriverMainScreen');
+      if (!Get.isRegistered<DriverMainController>()) return;
+      Get.find<DriverMainController>().handleDriverCancelled(data);
     });
     socketService.on('customer-cancelled', (data) {
-      if (data?['status'] == true) {
-        Get.find<DriverAnalyticsController>().trackCancel(
-          bookingId: data?['bookingId']?.toString() ?? bookingId,
-        );
-        Get.offAllNamed('/DriverMainScreen');
-      }
+      if (!Get.isRegistered<DriverMainController>()) return;
+      Get.find<DriverMainController>().handleCustomerCancelled(data);
     });
 
     socketService.socket.onAny((event, data) {
@@ -547,10 +549,12 @@ class RideStatsController extends GetxController
       final speed = (position.speed.isFinite) ? position.speed : 0.0;
       final heading = (position.heading.isFinite) ? position.heading : -1.0;
 
-      if (acc > _MAX_ACCURACY_M) return;
-
       _updateReachedDestinationByDistance(current);
       _updateSmartAutoZoom(speed);
+
+      // Even if GPS accuracy isn't great, still allow reach/arrived UI to update.
+      // Skip marker animation / route refresh for noisy fixes.
+      if (acc > _MAX_ACCURACY_M) return;
 
       if (_lastDriverPosition == null) {
         _lastDriverPosition = current;

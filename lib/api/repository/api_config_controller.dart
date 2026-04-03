@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/log.dart';
+import 'package:hopper/utils/websocket/socket_io_client.dart';
 
 import '../../utils/sharedprefsHelper/sharedprefs_handler.dart';
 
@@ -49,6 +50,13 @@ class ApiConfigController extends GetxController {
     await SharedPrefHelper.instance.setSharedBookingEnabled(value);
     CommonLogger.log.i("BaseUrl switched => $baseUrl");
     CommonLogger.log.i("SocketUrl switched => $socketUrl");
+
+    // Ensure the socket singleton actually switches to the new URL immediately.
+    // Without this, background timers (heartbeat/updateLocation) may continue
+    // emitting to the old backend until some screen re-initializes the socket.
+    try {
+      SocketService().initSocket(socketUrl);
+    } catch (_) {}
     update();
   }
 }

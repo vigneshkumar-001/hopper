@@ -15,13 +15,9 @@ import '../controller/chooseservice_controller.dart';
 import '../controller/guidelines_Controller.dart';
 import '../controller/stateList_Controller.dart';
 import '../controller/vehicledetails_controller.dart';
-import 'ConsentForms.dart';
-import 'chooseService.dart';
-import 'uploadExteriorPhotos.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/vehicleDocGuidliness.dart'
     show VehicleDocGuidLines;
 
-import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
 import 'package:hopper/utils/imagePath/imagePath.dart';
 import 'package:dotted_border/dotted_border.dart';
@@ -42,8 +38,8 @@ class _VehicleDetailsState extends State<VehicleDetails> {
   final VehicleDetailsController controller = Get.put(
     VehicleDetailsController(),
   );
-  final StateListController stateController = Get.find();
-  final ChooseServiceController getUserDetails = Get.find();
+  late final StateListController stateController;
+  late final ChooseServiceController getUserDetails;
 
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final GuidelinesController guidelinesController = Get.put(
@@ -53,6 +49,18 @@ class _VehicleDetailsState extends State<VehicleDetails> {
   @override
   void initState() {
     super.initState();
+
+    // VehicleDetails can be opened directly from landing-page routing
+    // (e.g., after OTP). Ensure dependencies exist before using them.
+    stateController =
+        Get.isRegistered<StateListController>()
+            ? Get.find<StateListController>()
+            : Get.put(StateListController(), permanent: true);
+    getUserDetails =
+        Get.isRegistered<ChooseServiceController>()
+            ? Get.find<ChooseServiceController>()
+            : Get.put(ChooseServiceController(), permanent: true);
+
     stateController.brands;
     stateController.getBrandList();
     controller.fetchAndSetUserData();
@@ -61,8 +69,7 @@ class _VehicleDetailsState extends State<VehicleDetails> {
 
   @override
   Widget build(BuildContext context) {
-    final profile = Get.find<ChooseServiceController>().userProfile.value;
-    serviceType = controller.vehicleType.toString() ?? 'Car';
+    serviceType = controller.vehicleType.isNotEmpty ? controller.vehicleType : 'Car';
     return Scaffold(
       body: SafeArea(
         child: Obx(

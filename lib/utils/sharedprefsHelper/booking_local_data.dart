@@ -5,8 +5,18 @@ class BookingDataService {
 
   Map<String, dynamic>? bookingRequestData;
 
-  void setBookingData(Map<String, dynamic> data) {
-    bookingRequestData = data;
+  Map<String, dynamic>? _coerceToMap(dynamic data) {
+    if (data == null) return null;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    if (data is List && data.isNotEmpty) {
+      return _coerceToMap(data.first);
+    }
+    return null;
+  }
+
+  void setBookingData(dynamic data) {
+    bookingRequestData = _coerceToMap(data);
   }
 
   Map<String, dynamic>? getBookingData() {

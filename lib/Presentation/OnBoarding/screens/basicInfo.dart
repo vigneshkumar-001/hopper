@@ -61,8 +61,7 @@ class _BasicInfoState extends State<BasicInfo> {
     otpController.clearState();
     userController.getUserDetails();
     controller.fetchAndSetUserData();
-    authController.selectedCountryCode.value = '+234';
-    authController.countryCodeController.text = '+234';
+    authController.resetPhoneInputToDefault(clearMobileNumber: false);
   }
 
   void _handleBack() {

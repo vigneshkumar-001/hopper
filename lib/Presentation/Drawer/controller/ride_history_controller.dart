@@ -1,24 +1,17 @@
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/log.dart';
-import 'package:country_picker/country_picker.dart';
 
 import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/Authentication/screens/Landing_Screens.dart';
-import 'package:hopper/Presentation/Authentication/screens/Otp_Screens.dart';
-import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
 import 'package:hopper/Presentation/Drawer/model/add_wallet_response.dart';
 import 'package:hopper/Presentation/Drawer/model/ride_history_response.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
-import 'package:hopper/api/repository/failure.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../model/wallet_history_response.dart';
-import '../screens/wallet_payment_screen.dart';
 
 class RideHistoryController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
+  RxBool isWithdrawLoading = false.obs;
   RxList<RideActivityHistoryData> rideHistoryData =
       RxList<RideActivityHistoryData>();
 
@@ -203,6 +196,36 @@ class RideHistoryController extends GetxController {
       CommonLogger.log.e("❌ Exception while fetching rides: $e");
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  Future<void> requestWithdraw({required double amount}) async {
+    if (isWithdrawLoading.value) return;
+    isWithdrawLoading.value = true;
+    try {
+      final results = await apiDataSource.requestWithdraw(amount: amount);
+      results.fold(
+        (failure) => CustomSnackBar.showError(failure.message),
+        (response) async {
+          if (response.success) {
+            CustomSnackBar.showSuccess(
+              response.message.isEmpty
+                  ? 'Withdrawal request submitted successfully'
+                  : response.message,
+            );
+            await customerWalletHistory(isRefresh: true);
+          } else {
+            CustomSnackBar.showError(
+              response.message.isEmpty ? 'Withdrawal failed' : response.message,
+            );
+          }
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.e(e);
+      CustomSnackBar.showError('Something went wrong');
+    } finally {
+      isWithdrawLoading.value = false;
     }
   }
 }

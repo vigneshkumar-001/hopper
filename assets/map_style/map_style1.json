@@ -6,8 +6,23 @@
   },
   {
     "featureType": "poi",
-    "elementType": "all",
+    "elementType": "geometry",
     "stylers": [{ "visibility": "off" }]
+  },
+  {
+    "featureType": "poi",
+    "elementType": "labels.text",
+    "stylers": [{ "visibility": "on" }]
+  },
+  {
+    "featureType": "poi",
+    "elementType": "labels.text.fill",
+    "stylers": [{ "color": "#374151" }]
+  },
+  {
+    "featureType": "poi",
+    "elementType": "labels.text.stroke",
+    "stylers": [{ "color": "#f6f7fa" }]
   },
   {
     "featureType": "transit",
@@ -67,7 +82,7 @@
   {
     "featureType": "road.local",
     "elementType": "labels",
-    "stylers": [{ "visibility": "off" }]
+    "stylers": [{ "visibility": "on" }]
   },
   {
     "featureType": "road.arterial",

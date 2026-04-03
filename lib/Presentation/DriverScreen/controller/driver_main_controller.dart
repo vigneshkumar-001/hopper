@@ -33,6 +33,7 @@ import 'package:hopper/Presentation/DriverScreen/controller/driver_status_contro
 import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_response.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/picking_shared_screens.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/share_ride_start_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/picking_customer_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/ride_stats_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
@@ -44,6 +45,8 @@ class DriverMainController extends GetxController
   static const double _MAX_ACCURACY_M = 25.0; // ignore noisy GPS fixes
   static const double _STATIONARY_JUMP_M = 30.0; // ignore big jumps when idle
   static const double _JUMP_ACCEPT_ACCURACY_M = 12.0; // allow big move if very accurate
+  static const double _MOVING_SPEED_MS = 0.6;
+  static const double _MOVING_METERS = 5.0;
 
   // External controllers
   final BookingRequestController bookingController =
@@ -74,10 +77,16 @@ class DriverMainController extends GetxController
   final SocketService socketService = SocketService();
   StreamSubscription<Position>? locationSub;
   Timer? emitTimer;
+  Timer? heartbeatTimer;
   Map<String, dynamic>? latestLocationPayload;
+  String? _lastSentLocationTimestamp;
+  DateTime? _lastMovedAt;
+  DateTime? _lastUpdateLocationEmitAt;
+  DateTime? _lastHeartbeatEmitAt;
 
   String? driverId;
   String? currentBookingId;
+  bool _cancelNavInFlight = false;
 
   // Countdown for request
   Timer? countdownTimer;
@@ -89,7 +98,7 @@ class DriverMainController extends GetxController
   // Follow mode
   final RxBool followDriver = true.obs;
   Timer? cameraFollowTimer;
-  double _followZoom = 16.6;
+  double _followZoom = 17.0;
   LatLng? _lastCameraFollowTarget;
   double _lastCameraFollowBearing = 0;
   DateTime _lastCameraFollowMoveAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -106,6 +115,7 @@ class DriverMainController extends GetxController
   DateTime? _lastActiveBookingCheckAt;
   String? _lastResumedBookingId;
   String? _lastDismissedBookingId;
+  bool _appInForeground = true;
 
   final Rxn<Map<String, dynamic>> activeBookingData = Rxn<Map<String, dynamic>>();
   final RxBool showActiveBookingCard = false.obs;
@@ -210,8 +220,7 @@ class DriverMainController extends GetxController
 Future<void> loadCustomCarIcon() async {
   try {
     final bool isCar = statusController.isCar;
-    final String asset =
-        isCar ? AppImages.movingCar : AppImages.parcelBike;
+    final String asset = isCar ? AppImages.movingCar : AppImages.parcelBike;
 
     final double markerHeight = isCar ? 52.0 : 52.0;
     final double markerWidth = isCar ? 27.0 : 32.0;
@@ -238,13 +247,13 @@ Future<void> loadCustomCarIcon() async {
   void updateCarMarker(LatLng newPos) {
     // âœ… stop any callbacks after close
     if (_disposed || isClosed) return;
-    if (carIcon == null) return;
+    final icon = carIcon ?? BitmapDescriptor.defaultMarker;
 
     if (lastPosition == null || carMarker == null) {
       carMarker = Marker(
         markerId: const MarkerId('car'),
         position: newPos,
-        icon: carIcon!,
+        icon: icon,
         rotation: 0,
         anchor: const Offset(0.5, 0.5),
         flat: true,
@@ -422,6 +431,159 @@ Future<void> loadCustomCarIcon() async {
     return v;
   }
 
+  Map<String, dynamic>? _coerceSocketPayloadToMap(dynamic data) {
+    if (data == null) return null;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    if (data is List && data.isNotEmpty) {
+      return _coerceSocketPayloadToMap(data.first);
+    }
+    return null;
+  }
+
+  Future<void> handleCustomerCancelled(dynamic raw) async {
+    await _handleBookingCancellation(raw, cancelledBy: 'customer');
+  }
+
+  Future<void> handleDriverCancelled(dynamic raw) async {
+    await _handleBookingCancellation(raw, cancelledBy: 'driver');
+  }
+
+  Future<void> _handleBookingCancellation(
+    dynamic raw, {
+    required String cancelledBy,
+  }) async {
+    if (_disposed || isClosed) return;
+    if (_cancelNavInFlight) return;
+
+    final payload = _coerceSocketPayloadToMap(raw);
+    if (payload == null) return;
+
+    final ok = _asBool(payload['status']);
+    if (!ok) return;
+    _cancelNavInFlight = true;
+
+    final bookingId = _normalizeBookingId(payload['bookingId']);
+    if (bookingId != null && Get.isRegistered<DriverAnalyticsController>()) {
+      Get.find<DriverAnalyticsController>().trackCancel(bookingId: bookingId);
+    }
+
+    final msg =
+        (payload['message'] ?? 'Your trip has been cancelled.').toString();
+    _showCancellationDialog(
+      title: cancelledBy == 'customer' ? 'Trip Cancelled' : 'Trip Cancelled',
+      message: msg,
+    );
+
+    await _cleanupAfterBookingEnded(bookingId: bookingId);
+
+    await Future<void>.delayed(const Duration(seconds: 3));
+    if (_disposed || isClosed) return;
+
+    try {
+      if (Get.isBottomSheetOpen == true) Get.back();
+    } catch (_) {}
+    try {
+      if (Get.isDialogOpen == true) Get.back();
+    } catch (_) {}
+
+    if (Get.currentRoute != '/DriverMainScreen') {
+      Get.offAll(() => const DriverMainScreen());
+    }
+
+    _cancelNavInFlight = false;
+  }
+
+  void _showCancellationDialog({required String title, required String message}) {
+    try {
+      if (Get.isDialogOpen == true) return;
+    } catch (_) {}
+
+    try {
+      Get.dialog(
+        barrierDismissible: false,
+        Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.cancel_rounded,
+                    color: Color(0xFFB42318),
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.3,
+                    color: Colors.black.withOpacity(0.75),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Returning to Home…',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black.withOpacity(0.55),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _cleanupAfterBookingEnded({String? bookingId}) async {
+    countdownTimer?.cancel();
+    remainingSeconds.value = 0;
+    followDriver.value = true;
+
+    if (bookingId != null) {
+      bookingController.markHandled(bookingId);
+    } else {
+      bookingController.clear();
+    }
+
+    BookingDataService().clear();
+    socketService.clearBookingContext(bookingId: bookingId);
+
+    currentBookingId = null;
+    _lastResumedBookingId = null;
+    activeBookingData.value = null;
+    _lastDismissedBookingId = null;
+    showActiveBookingCard.value = false;
+
+    try {
+      await bg.stopDriverTrackingService();
+    } catch (_) {}
+  }
+
   String? _resolveBookingIdForLocationPayload() {
     final direct = _normalizeBookingId(currentBookingId);
     if (direct != null) return direct;
@@ -452,6 +614,7 @@ Future<void> loadCustomCarIcon() async {
   Future<void> startEmitLoop() async {
     await locationSub?.cancel();
     emitTimer?.cancel();
+    heartbeatTimer?.cancel();
 
     if (_disposed || isClosed) return;
 
@@ -463,6 +626,7 @@ Future<void> loadCustomCarIcon() async {
     ).listen((pos) {
       if (_disposed || isClosed) return;
 
+      final now = DateTime.now();
       final speedMs = (pos.speed.isFinite && pos.speed >= 0) ? pos.speed : 0.0;
       final accuracyM = (pos.accuracy.isFinite) ? pos.accuracy : 9999.0;
       final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs);
@@ -486,6 +650,12 @@ Future<void> loadCustomCarIcon() async {
           current.longitude,
         );
 
+        final isMoving =
+            speedMs >= _MOVING_SPEED_MS || movedMeters >= _MOVING_METERS;
+        if (isMoving) {
+          _lastMovedAt = now;
+        }
+
         if (MapMotionProfile.shouldFreezeTurn(
           speedMs: speedMs,
           movedMeters: movedMeters,
@@ -508,6 +678,7 @@ Future<void> loadCustomCarIcon() async {
         'latitude': current.latitude,
         'longitude': current.longitude,
         if (bookingIdForPayload != null) 'bookingId': bookingIdForPayload,
+        'timestamp': now.toIso8601String(),
       };
 
       updateCarMarker(current);
@@ -519,11 +690,58 @@ Future<void> loadCustomCarIcon() async {
       final payload = latestLocationPayload;
       if (payload == null) return;
 
+      // Moving => `updateLocation` (only when we have a *new* fix)
+      final ts = payload['timestamp']?.toString();
+      if (ts == null || ts.isEmpty) return;
+      if (ts == _lastSentLocationTimestamp) return;
+
+      final movedAt = _lastMovedAt;
+      final idleFor = movedAt == null
+          ? const Duration(days: 9999)
+          : DateTime.now().difference(movedAt);
+      if (idleFor >= const Duration(seconds: 20)) {
+        return;
+      }
+
+      _lastSentLocationTimestamp = ts;
+      _lastUpdateLocationEmitAt = DateTime.now();
       socketService.emit('updateLocation', payload);
       Get.find<DriverAnalyticsController>().trackOnlineTick(
         const Duration(seconds: 7),
       );
        // Reference log is centralized in `SocketService.emit()` for `updateLocation`.
+    });
+
+    // Not moving but online => emit `driver-heartbeat` every 20–30s (we use 25s).
+    heartbeatTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      if (_disposed || isClosed) return;
+      if (!statusController.isOnline.value) return;
+      final did = driverId?.trim() ?? '';
+      if (did.isEmpty) return;
+
+      final now = DateTime.now();
+      final lastLocAt = _lastUpdateLocationEmitAt;
+      if (lastLocAt != null &&
+          now.difference(lastLocAt) < const Duration(seconds: 20)) {
+        return;
+      }
+      final lastHbAt = _lastHeartbeatEmitAt;
+      if (lastHbAt != null &&
+          now.difference(lastHbAt) < const Duration(seconds: 20)) {
+        return;
+      }
+
+      final bookingIdForPayload = _resolveBookingIdForLocationPayload();
+      final pos = lastPosition;
+      final hb = <String, dynamic>{
+        'userId': did,
+        if (bookingIdForPayload != null) 'bookingId': bookingIdForPayload,
+        if (pos != null) 'latitude': pos.latitude,
+        if (pos != null) 'longitude': pos.longitude,
+        'timestamp': now.toIso8601String(),
+      };
+      _lastHeartbeatEmitAt = now;
+      socketService.emit('driver-heartbeat', hb);
     });
   }
 
@@ -532,6 +750,8 @@ Future<void> loadCustomCarIcon() async {
     socketService.off('connect');
     socketService.off('registered');
     // socketService.off('booking-request');
+    socketService.off('driver-cancelled');
+    socketService.off('customer-cancelled');
 
     socketService.on('connect', (_) {
       if (_disposed || isClosed) return;
@@ -549,27 +769,31 @@ Future<void> loadCustomCarIcon() async {
       await startEmitLoop();
     });
 
+    socketService.on('driver-cancelled', (data) async {
+      await handleDriverCancelled(data);
+    });
+
+    socketService.on('customer-cancelled', (data) async {
+      await handleCustomerCancelled(data);
+    });
+
     socketService.on('booking-request', (data) async {
       if (_disposed || isClosed) return;
       if (data == null) return;
 
-      BookingDataService().setBookingData(data);
+      final payload = _coerceSocketPayloadToMap(data);
+      if (payload == null) return;
 
-      if (data['type'] == 'active-bookings') {
-        final List active = data['activeBookings'] ?? [];
+      BookingDataService().setBookingData(payload);
+
+      if (payload['type'] == 'active-bookings') {
+        final List active = payload['activeBookings'] ?? [];
         if (active.isEmpty) return;
 
         final booking = active.first;
         currentBookingId = booking['bookingId']?.toString();
-
-        if (statusController.isOnline.value) {
-          unawaited(
-            bg.ensureDriverTrackingServiceRunning(
-              driverId: driverId,
-              bookingId: _normalizeBookingId(currentBookingId),
-            ),
-          );
-        }
+        // BG tracking is started only when app goes to background to avoid
+        // `io server disconnect` caused by multiple sockets for same driverId.
 
         final fromLat = (booking['fromLatitude'] as num?)?.toDouble();
         final fromLng = (booking['fromLongitude'] as num?)?.toDouble();
@@ -597,19 +821,11 @@ Future<void> loadCustomCarIcon() async {
         return;
       }
 
-      currentBookingId = data['bookingId']?.toString();
+      currentBookingId = payload['bookingId']?.toString();
+      // BG tracking is started only when app goes to background.
 
-      if (statusController.isOnline.value) {
-        unawaited(
-          bg.ensureDriverTrackingServiceRunning(
-            driverId: driverId,
-            bookingId: _normalizeBookingId(currentBookingId),
-          ),
-        );
-      }
-
-      final pickup = data['pickupLocation'];
-      final drop = data['dropLocation'];
+      final pickup = payload['pickupLocation'];
+      final drop = payload['dropLocation'];
       if (pickup == null || drop == null) return;
 
       final pickupLat = (pickup['latitude'] as num?)?.toDouble();
@@ -630,7 +846,7 @@ Future<void> loadCustomCarIcon() async {
       if (_disposed || isClosed) return;
 
       bookingController.showRequest(
-        rawData: data,
+        rawData: payload,
         pickupAddress: pickupAddr,
         dropAddress: dropAddr,
       );
@@ -677,6 +893,65 @@ Future<void> loadCustomCarIcon() async {
     return false;
   }
 
+  bool _isBookingCancelled(Map<String, dynamic> data, String status) {
+    return _asBool(data['cancelled']) || _statusHas(status, ['cancel']);
+  }
+
+  bool _isBookingCompleted(Map<String, dynamic> data, String status) {
+    // Backend sometimes sets `destinationReached=true` while the ride is still
+    // active (driver near drop). Do NOT treat that as completed for resume UI.
+    if (_asBool(data['rideCompleted']) ||
+        _asBool(data['completed']) ||
+        _asBool(data['isCompleted'])) {
+      return true;
+    }
+    return _statusHas(status, ['complete', 'completed', 'finished']);
+  }
+
+  void _joinSharedRoomsFromActiveBooking({
+    required String driverId,
+    required String bookingId,
+    required String parentRoomId,
+    required dynamic liveTracking,
+  }) {
+    // For shared rides backend may use:
+    // - parent shared room (sharedBookingId)
+    // - individual rider booking rooms (bookingId / activeSharedBookings)
+    final rooms = <String>{
+      bookingId.trim(),
+      parentRoomId.trim(),
+    }..removeWhere((e) => e.isEmpty);
+
+    if (liveTracking is Map) {
+      final list = liveTracking['activeSharedBookings'];
+      if (list is List) {
+        for (final e in list) {
+          final id = (e ?? '').toString().trim();
+          if (id.isNotEmpty) rooms.add(id);
+        }
+      }
+    }
+
+    // Ensure emits/heartbeats go to all rooms even if join happens later.
+    for (final r in rooms) {
+      socketService.rememberBookingRoom(r);
+    }
+
+    // Make parent room the active booking context (registration + join).
+    socketService.registerDriver(driverId, bookingId: parentRoomId);
+    socketService.joinBooking(parentRoomId, userId: driverId);
+
+    // Also explicitly join other rooms immediately when already connected so
+    // we receive `joined-booking` payloads right away.
+    for (final r in rooms) {
+      if (r == parentRoomId) continue;
+      socketService.emit('join-booking', <String, dynamic>{
+        'bookingId': r,
+        'userId': driverId,
+      });
+    }
+  }
+
   Future<void> checkAndResumeActiveBooking({bool force = false}) async {
     if (_disposed || isClosed) return;
     if (_checkingActiveBooking) return;
@@ -695,36 +970,66 @@ Future<void> loadCustomCarIcon() async {
 
       await result.fold(
         (_) async {},
-        (DriverActiveBookingResponse response) async {
-          if (!response.hasBooking) {
-            activeBookingData.value = null;
-            _lastDismissedBookingId = null;
-            showActiveBookingCard.value = false;
-            return;
-          }
-          final data = response.data;
-          if (data == null) {
-            activeBookingData.value = null;
-            showActiveBookingCard.value = false;
-            return;
-          }
+         (DriverActiveBookingResponse response) async {
+           if (!response.hasBooking) {
+             activeBookingData.value = null;
+             _lastDismissedBookingId = null;
+             showActiveBookingCard.value = false;
+             return;
+           }
+           final data = response.data;
+           if (data == null) {
+             activeBookingData.value = null;
+             showActiveBookingCard.value = false;
+             return;
+           }
 
-          final bookingId = (data['bookingId'] ?? '').toString().trim();
-          if (bookingId.isEmpty) return;
-          currentBookingId = bookingId;
+           final bookingId = (data['bookingId'] ?? '').toString().trim();
+           if (bookingId.isEmpty) return;
 
-          final did = driverId;
-          if (did != null && did.trim().isNotEmpty) {
-            socketService.registerDriver(did, bookingId: bookingId);
-            socketService.joinBooking(bookingId, userId: did);
-          }
+           final live = data['driverLiveTracking'];
+           final isShared =
+               _asBool(data['sharedBooking']) ||
+               _asBool(data['isShared']) ||
+               _asBool(data['shared']) ||
+               (live is Map && _asBool(live['sharedBooking']));
 
-          final status = (data['status'] ?? '').toString();
-          final cancelled =
-              _asBool(data['cancelled']) || _statusHas(status, ['cancel']);
-          final completed =
-              _asBool(data['destinationReached']) ||
-              _statusHas(status, ['complete', 'completed', 'finished']);
+           final sharedBookingId =
+               (data['sharedBookingId'] ?? '').toString().trim();
+           // For shared rides, backend uses a parent shared booking id/room.
+           // Join that room so we receive pooled rider list (joined-booking).
+           final parentRoomId =
+               (isShared && sharedBookingId.isNotEmpty) ? sharedBookingId : bookingId;
+
+           currentBookingId = parentRoomId;
+
+           final did = driverId;
+           if (did != null && did.trim().isNotEmpty) {
+             // Ensure socket/base-url mode matches the booking type so we join the
+             // correct backend immediately after resume/login.
+             try {
+               final cfg = Get.find<ApiConfigController>();
+               if (cfg.isSharedEnabled.value != isShared) {
+                 await cfg.setSharedEnabled(isShared);
+               }
+             } catch (_) {}
+
+             if (isShared) {
+               _joinSharedRoomsFromActiveBooking(
+                 driverId: did,
+                 bookingId: bookingId,
+                 parentRoomId: parentRoomId,
+                 liveTracking: live,
+               );
+             } else {
+               socketService.registerDriver(did, bookingId: bookingId);
+               socketService.joinBooking(bookingId, userId: did);
+             }
+           }
+
+           final status = (data['status'] ?? '').toString();
+           final cancelled = _isBookingCancelled(data, status);
+           final completed = _isBookingCompleted(data, status);
           if (cancelled || completed) {
             activeBookingData.value = null;
             _lastDismissedBookingId = null;
@@ -806,11 +1111,8 @@ Future<void> loadCustomCarIcon() async {
     if (_lastResumedBookingId == bookingId) return;
 
     final status = (data['status'] ?? '').toString();
-    final cancelled =
-        _asBool(data['cancelled']) || _statusHas(status, ['cancel']);
-    final completed =
-        _asBool(data['destinationReached']) ||
-        _statusHas(status, ['complete', 'completed', 'finished']);
+    final cancelled = _isBookingCancelled(data, status);
+    final completed = _isBookingCompleted(data, status);
     if (cancelled || completed) return;
 
     final live = data['driverLiveTracking'];
@@ -819,6 +1121,10 @@ Future<void> loadCustomCarIcon() async {
         _asBool(data['isShared']) ||
         _asBool(data['shared']) ||
         (live is Map && _asBool(live['sharedBooking']));
+
+    final sharedBookingId = (data['sharedBookingId'] ?? '').toString().trim();
+    final parentRoomId =
+        (isShared && sharedBookingId.isNotEmpty) ? sharedBookingId : bookingId;
 
     final pickup = _pickupFromActiveBooking(data);
     if (pickup == null) return;
@@ -850,9 +1156,25 @@ Future<void> loadCustomCarIcon() async {
 
     final did = driverId;
     if (did != null && did.trim().isNotEmpty) {
-      currentBookingId = bookingId;
-      socketService.registerDriver(did, bookingId: bookingId);
-      socketService.joinBooking(bookingId, userId: did);
+      try {
+        final cfg = Get.find<ApiConfigController>();
+        if (cfg.isSharedEnabled.value != isShared) {
+          await cfg.setSharedEnabled(isShared);
+        }
+      } catch (_) {}
+
+      currentBookingId = parentRoomId;
+      if (isShared) {
+        _joinSharedRoomsFromActiveBooking(
+          driverId: did,
+          bookingId: bookingId,
+          parentRoomId: parentRoomId,
+          liveTracking: live,
+        );
+      } else {
+        socketService.registerDriver(did, bookingId: bookingId);
+        socketService.joinBooking(bookingId, userId: did);
+      }
     }
 
     _lastResumedBookingId = bookingId;
@@ -867,7 +1189,7 @@ Future<void> loadCustomCarIcon() async {
           () => ShareRideStartScreen(
             pickupLocation: pickup,
             driverLocation: driverLoc,
-            bookingId: bookingId,
+            bookingId: parentRoomId,
           ),
         );
         return;
@@ -877,7 +1199,7 @@ Future<void> loadCustomCarIcon() async {
         () => PickingCustomerSharedScreen(
           pickupLocation: pickup,
           driverLocation: driverLoc,
-          bookingId: bookingId,
+          bookingId: parentRoomId,
           pickupLocationAddress: pickupAddress,
           dropLocationAddress: dropAddress,
         ),
@@ -948,41 +1270,58 @@ Future<void> loadCustomCarIcon() async {
     await initLocation();
     startCameraFollow();
 
-    // ✅ If server says driver is already online (fresh login / app reopen),
-    // ensure background tracking is running so screen-lock/app-close still sends location.
+    // NOTE: Don’t start BG tracking while the app is foregrounded.
+    // Running BG socket + foreground socket together causes `io server disconnect`
+    // on servers that enforce a single active session per driverId.
+  }
+
+  Future<void> onAppPaused() async {
+    if (_disposed || isClosed) return;
+    _appInForeground = false;
+
+    // Hand off to background service ONLY when online.
     if (statusController.isOnline.value) {
-      CommonLogger.log.i('🟢 [DRIVER] Online on init → ensure BG tracking');
-      unawaited(
-        bg.ensureDriverTrackingServiceRunning(
-          driverId: driverId,
-          bookingId: _resolveBookingIdForLocationPayload(),
-        ),
-      );
+      driverId ??= await SharedPrefHelper.getDriverId();
+      final did = driverId?.trim() ?? '';
+      if (did.isNotEmpty) {
+        unawaited(
+          bg.ensureDriverTrackingServiceRunning(
+            driverId: did,
+            bookingId: _resolveBookingIdForLocationPayload(),
+          ),
+        );
+      }
     }
+
+    // Stop foreground emit loop to avoid duplicates.
+    await locationSub?.cancel();
+    emitTimer?.cancel();
+    heartbeatTimer?.cancel();
+
+    // Disconnect foreground socket so BG can own the single connection.
+    socketService.disconnect();
   }
 
   Future<void> onAppResumed() async {
     if (_disposed || isClosed) return;
+    _appInForeground = true;
 
     driverId ??= await SharedPrefHelper.getDriverId();
     final did = driverId?.trim() ?? '';
     if (did.isEmpty) return;
+
+    // Stop BG socket/service before reconnecting foreground socket to avoid
+    // `io server disconnect` loop (server enforces single active session).
+    try {
+      await bg.stopDriverTrackingService();
+    } catch (_) {}
+    await Future.delayed(const Duration(milliseconds: 350));
 
     // Ensure socket is connected & registered after background/resume cycles.
     socketService.connect();
     socketService.registerDriver(did, bookingId: currentBookingId);
     if (socketService.connected) {
       await startEmitLoop();
-    }
-
-    if (statusController.isOnline.value) {
-      CommonLogger.log.i('🔁 [DRIVER] Resumed while online → ensure BG tracking');
-      unawaited(
-        bg.ensureDriverTrackingServiceRunning(
-          driverId: did,
-          bookingId: _resolveBookingIdForLocationPayload(),
-        ),
-      );
     }
   }
 
@@ -1010,16 +1349,20 @@ Future<void> loadCustomCarIcon() async {
          await startEmitLoop();
 
          if (statusController.isOnline.value) {
-           unawaited(bg.stopDriverTrackingService());
-           unawaited(
-             Future.delayed(
-               const Duration(milliseconds: 450),
-               () => bg.ensureDriverTrackingServiceRunning(
-                 driverId: driverId,
-                 bookingId: _resolveBookingIdForLocationPayload(),
+           if (_appInForeground) {
+             unawaited(bg.stopDriverTrackingService());
+           } else {
+             unawaited(bg.stopDriverTrackingService());
+             unawaited(
+               Future.delayed(
+                 const Duration(milliseconds: 450),
+                 () => bg.ensureDriverTrackingServiceRunning(
+                   driverId: driverId,
+                   bookingId: _resolveBookingIdForLocationPayload(),
+                 ),
                ),
-             ),
-           );
+             );
+           }
          }
        } catch (e) {
          CommonLogger.log.e("âŒ socket switch failed: $e");
@@ -1064,10 +1407,10 @@ Future<void> loadCustomCarIcon() async {
   // ---------------- toggle online ----------------
   Future<void> toggleOnline() async {
     if (_disposed || isClosed) return;
-    if (statusController.isLoading.value) return;
+    if (statusController.isToggleLoading.value) return;
 
     HapticFeedback.lightImpact();
-    statusController.isLoading.value = true;
+    statusController.isToggleLoading.value = true;
 
     try {
       final nextOnline = !statusController.isOnline.value;
@@ -1118,12 +1461,17 @@ Future<void> loadCustomCarIcon() async {
 
       // Background tracking (screen lock / app closed). Runs as Android foreground service.
       if (isOnline) {
-        unawaited(
-          bg.ensureDriverTrackingServiceRunning(
-            driverId: driverId,
-            bookingId: _resolveBookingIdForLocationPayload(),
-          ),
-        );
+        if (_appInForeground) {
+          // Foreground uses SocketService (single connection). BG starts on pause.
+          unawaited(bg.stopDriverTrackingService());
+        } else {
+          unawaited(
+            bg.ensureDriverTrackingServiceRunning(
+              driverId: driverId,
+              bookingId: _resolveBookingIdForLocationPayload(),
+            ),
+          );
+        }
       } else {
         unawaited(bg.stopDriverTrackingService());
       }
@@ -1136,7 +1484,7 @@ Future<void> loadCustomCarIcon() async {
       statusController.toggleStatus();
       CommonLogger.log.e("toggle online error: $e");
     } finally {
-      statusController.isLoading.value = false;
+      statusController.isToggleLoading.value = false;
     }
   }
 
@@ -1244,12 +1592,15 @@ Future<void> loadCustomCarIcon() async {
     socketService.off('connect');
     socketService.off('registered');
     socketService.off('booking-request');
+    socketService.off('driver-cancelled');
+    socketService.off('customer-cancelled');
 
     _sharedToggleWorker?.dispose();
     _serviceTypeWorker?.dispose();
 
     countdownTimer?.cancel();
     emitTimer?.cancel();
+    heartbeatTimer?.cancel();
     cameraFollowTimer?.cancel();
 
     locationSub?.cancel();

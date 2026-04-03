@@ -1,5 +1,6 @@
 ﻿import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -53,7 +54,9 @@ class _DriverMainScreenState extends State<DriverMainScreen>
     profileController.getUserDetails();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      c.onAppResumed(); // ensure BG service is stopped in foreground
       c.checkAndResumeActiveBooking();
+      c.goToCurrentLocation();
     });
   }
 
@@ -68,6 +71,15 @@ class _DriverMainScreenState extends State<DriverMainScreen>
     if (state == AppLifecycleState.resumed) {
       c.onAppResumed();
       c.checkAndResumeActiveBooking();
+      return;
+    }
+
+    // IMPORTANT: `inactive` can happen frequently (system dialogs, call UI,
+    // app-switcher gesture). Disconnecting socket here causes noisy
+    // `io client disconnect` logs and unnecessary reconnect churn.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      c.onAppPaused();
     }
   }
 
@@ -82,7 +94,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
           body: SafeArea(
             child: Obx(() {
               if (!c.ready.value) {
-                return Center(child: AppLoader.circularLoader());
+                return const Center(child: CupertinoActivityIndicator(radius: 14));
               }
 
               return Column(
@@ -112,14 +124,14 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                     ? {c.carMarker!}
                                     : <Marker>{};
 
-                            return RepaintBoundary(
-                              child: GoogleMap(
-                                key: ValueKey<String>(
-                                  'driver_map_${c.mapStyle ?? 'default'}',
-                                ),
-                                mapType: MapType.normal,
-                                style: c.mapStyle,
-                                compassEnabled: false,
+                              return RepaintBoundary(
+                                child: GoogleMap(
+                                  key: ValueKey<String>(
+                                    'driver_map_${c.mapStyle ?? 'default'}',
+                                  ),
+                                  mapType: MapType.normal,
+                                  style: c.mapStyle,
+                                  compassEnabled: false,
                                  myLocationEnabled: false,
                                  myLocationButtonEnabled: false,
                                  zoomControlsEnabled: false,
@@ -135,18 +147,25 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                   target:
                                       c.currentPosition.value ??
                                       const LatLng(9.914, 78.097),
-                                  zoom: 16,
+                                  zoom: 16.8,
                                 ),
                                 markers: markerSet,
-                                onCameraMoveStarted: () {
-                                  // stop follow when user touches map
-                                  c.followDriver.value = false;
-                                },
-                                onMapCreated: (gm) async {
-                                  c.mapController = gm;
-                                },
-                                gestureRecognizers: {
-                                  Factory<OneSequenceGestureRecognizer>(
+                                  onCameraMoveStarted: () {
+                                    // stop follow when user touches map
+                                    c.followDriver.value = false;
+                                  },
+                                  onCameraIdle: () {
+                                    // Defensive: ensure style stays applied across zoom/pan.
+                                    final style = c.mapStyle;
+                                    if (style != null) {
+                                      c.mapController?.setMapStyle(style);
+                                    }
+                                  },
+                                  onMapCreated: (gm) async {
+                                    c.mapController = gm;
+                                  },
+                                  gestureRecognizers: {
+                                    Factory<OneSequenceGestureRecognizer>(
                                     () => EagerGestureRecognizer(),
                                   ),
                                 },
@@ -395,13 +414,13 @@ class _GlassHeader extends StatelessWidget {
           const Spacer(),
           GestureDetector(
             onTap: onToggle,
-            child: Obx(() {
-              final isOnline = statusController.isOnline.value;
-              final isLoading = statusController.isLoading.value;
-              // IMPORTANT: read serviceType inside Obx so the icon updates immediately.
-              final serviceType = statusController.serviceType.value;
-              final isCar = serviceType.trim().toLowerCase() == 'car';
-              final vehicleAsset = isCar
+              child: Obx(() {
+                final isOnline = statusController.isOnline.value;
+                final isLoading = statusController.isToggleLoading.value;
+                // IMPORTANT: read serviceType inside Obx so the icon updates immediately.
+                final serviceType = statusController.serviceType.value;
+                final isCar = serviceType.trim().toLowerCase() == 'car';
+                final vehicleAsset = isCar
                   ? AppImages.offlineCar
                   : AppImages.bike;
 
@@ -666,7 +685,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                                   ),
                                   const SizedBox(width: 14),
                                   const Text(
-                                    "Respond within 15 seconds",
+                                    "Respond within 25 seconds",
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -742,7 +761,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                                   ),
                                   const SizedBox(width: 14),
                                   const Text(
-                                    "Respond within 15 seconds",
+                                    "Respond within 25 seconds",
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -1093,7 +1112,7 @@ class _CarBookingCardUI extends StatelessWidget {
                 vertical: 10,
               ),
               child: Obx(() {
-                final isLoading = statusController.isLoading.value;
+                final isLoading = statusController.isBookingAcceptLoading.value;
                 return Row(
                   children: [
                     Expanded(

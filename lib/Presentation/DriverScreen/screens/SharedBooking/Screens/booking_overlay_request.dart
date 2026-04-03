@@ -639,7 +639,7 @@ class BookingOverlayRequest extends StatelessWidget {
                                   borderRadius: 10,
                                   buttonColor: AppColors.red,
                                   onTap:
-                                      statusController.isLoading.value
+                                      statusController.isBookingAcceptLoading.value
                                           ? null
                                           : () {
                                         final id = data['bookingId']?.toString();
@@ -665,7 +665,7 @@ class BookingOverlayRequest extends StatelessWidget {
                                     borderRadius: 10,
                                     buttonColor: AppColors.drkGreen,
                                     onTap:
-                                        statusController.isLoading.value
+                                        statusController.isBookingAcceptLoading.value
                                             ? null
                                             : () async {
                                               try {
@@ -715,7 +715,7 @@ class BookingOverlayRequest extends StatelessWidget {
                                               }
                                             },
                                     text:
-                                        statusController.isLoading.value
+                                        statusController.isBookingAcceptLoading.value
                                             ? SizedBox(
                                               height: 20,
                                               width: 20,

@@ -22,6 +22,27 @@ class SocketService {
 
   final List<String> _joinedRooms = [];
   final Map<String, Function(dynamic)> _callbacks = {};
+  DateTime _lastManualReconnectAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastUpdateLocationLogAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastHeartbeatLogAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Tracks a booking room locally (used for shared rides) without emitting any
+  /// socket event or changing the active booking context.
+  void rememberBookingRoom(String bookingId) {
+    final id = bookingId.trim();
+    if (id.isEmpty) return;
+    if (!_joinedRooms.contains(id)) _joinedRooms.add(id);
+  }
+
+  void clearBookingContext({String? bookingId}) {
+    final id = bookingId ?? _bookingId;
+    if (id != null && id.trim().isNotEmpty) {
+      _joinedRooms.removeWhere((r) => r == id);
+    }
+    if (bookingId == null || bookingId == _bookingId) {
+      _bookingId = null;
+    }
+  }
 
   // ---------------------------------------------------------
   // ✅ INIT socket (create once per URL)
@@ -50,6 +71,8 @@ class SocketService {
           .enableAutoConnect()
           .setReconnectionAttempts(999999)
           .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(8000)
+          .setTimeout(15000)
           .build(),
     );
 
@@ -85,6 +108,8 @@ class SocketService {
           .enableAutoConnect()
           .setReconnectionAttempts(999999)
           .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(8000)
+          .setTimeout(15000)
           .build(),
     );
 
@@ -108,8 +133,38 @@ class SocketService {
       _restoreEventListeners();
     });
 
-    s.onDisconnect((_) {
-      CommonLogger.log.e("❌ Disconnected: $_socketUrl");
+    s.onDisconnect((reason) {
+      final r = reason?.toString() ?? '';
+      final rl = r.toLowerCase();
+
+      // `io client disconnect` happens when we explicitly call `disconnect()` or
+      // `dispose()` (e.g., background handoff or URL switching). This is expected
+      // and should not look like a production failure.
+      if (rl.contains('io client disconnect')) {
+        CommonLogger.log.i(
+          "ℹ️ Disconnected (client): $_socketUrl | reason: $reason",
+        );
+        return;
+      }
+
+      CommonLogger.log.e("❌ Disconnected: $_socketUrl | reason: $reason");
+
+      // If server explicitly disconnected us, socket.io may not auto-reconnect.
+      // Attempt a safe manual reconnect (debounced).
+      final isServerDisconnect =
+          rl.contains('io server disconnect') || rl.contains('server disconnect');
+      if (isServerDisconnect) {
+        _safeManualReconnect();
+        return;
+      }
+
+      final shouldNudgeReconnect = rl.contains('ping timeout') ||
+          rl.contains('transport close') ||
+          rl.contains('forced close') ||
+          rl.contains('timeout');
+      if (shouldNudgeReconnect) {
+        _safeManualReconnect();
+      }
     });
 
     s.onReconnect((_) {
@@ -123,10 +178,22 @@ class SocketService {
 
     s.onConnectError((err) {
       CommonLogger.log.e("⚠️ Connect error: $err | $_socketUrl");
+      _safeManualReconnect();
     });
 
     s.onError((err) {
       CommonLogger.log.e("⚠️ Socket error: $err");
+      _safeManualReconnect();
+    });
+
+    s.onReconnectAttempt((attempt) {
+      CommonLogger.log.i("🔁 Reconnect attempt: $attempt | url=$_socketUrl");
+    });
+    s.onReconnectError((err) {
+      CommonLogger.log.e("⚠️ Reconnect error: $err | url=$_socketUrl");
+    });
+    s.onReconnectFailed((_) {
+      CommonLogger.log.e("❌ Reconnect failed | url=$_socketUrl");
     });
 
     if (kDebugMode) {
@@ -143,6 +210,31 @@ class SocketService {
     if (_initialized && _socket != null && _socket!.disconnected) {
       _socket!.connect();
     }
+  }
+
+  void disconnect() {
+    try {
+      _socket?.disconnect();
+    } catch (_) {}
+  }
+
+  void _safeManualReconnect() {
+    final now = DateTime.now();
+    if (now.difference(_lastManualReconnectAt) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastManualReconnectAt = now;
+
+    final s = _socket;
+    if (!_initialized || s == null) return;
+
+    // Avoid spamming connect() while a connect is already in progress.
+    try {
+      final rs = s.io.readyState.toString().toLowerCase();
+      if (rs == 'opening') return;
+    } catch (_) {}
+
+    connect();
   }
 
   // ---------------------------------------------------------
@@ -223,8 +315,14 @@ class SocketService {
   // ✅ Listen event (normal)
   // ---------------------------------------------------------
   void on(String event, Function(dynamic data) callback) {
+    final prev = _callbacks[event];
     _callbacks[event] = callback;
-    _socket?.off(event);
+
+    // IMPORTANT: don't call `off(event)` without a handler — it removes *all*
+    // listeners, including core listeners added via `onConnect/onReconnect`.
+    if (prev != null) {
+      _socket?.off(event, prev);
+    }
     _socket?.on(event, callback);
   }
 
@@ -240,6 +338,7 @@ class SocketService {
       String event,
       void Function(dynamic data, void Function(dynamic response)? ack) callback,
       ) {
+    final prev = _callbacks[event];
     _callbacks[event] = (dynamic incoming) {
       void Function(dynamic)? ackFn;
 
@@ -259,7 +358,10 @@ class SocketService {
       // Normal payload without ack
       callback(incoming, null);
     };
-    _socket?.off(event);
+    if (prev != null) {
+      // Remove only our previously bound handler.
+      _socket?.off(event, prev);
+    }
     _socket?.on(event, _callbacks[event]!);
   }
 
@@ -267,21 +369,100 @@ class SocketService {
   // ✅ Emit
   // ---------------------------------------------------------
   void emit(String event, dynamic data) {
-    _socket?.emit(event, data);
-
-    // Reference logs for tracking location updates (easy to filter in Logcat).
-    if (kDebugMode && event == 'updateLocation') {
-      final id = _socket?.id;
-      CommonLogger.log.i(
-        '📍 [SOCKET_EMIT] updateLocation url=$_socketUrl id=$id connected=$connected data=$data',
-      );
+    // If we emit while disconnected, socket.io may queue, but ensure we are
+    // actively reconnecting (helps after URL switches / background-resume).
+    if (_initialized && _socket != null && _socket!.disconnected) {
+      _socket!.connect();
     }
+    final s = _socket;
+    if (s == null) return;
+
+    // Shared-ride support: when multiple booking rooms are active, location +
+    // heartbeat must be sent to each room so every rider receives live updates.
+    if ((event == 'updateLocation' || event == 'driver-heartbeat') &&
+        data is Map) {
+      final rooms =
+          _joinedRooms
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toSet()
+              .toList();
+
+      if (rooms.isNotEmpty) {
+        final base = Map<String, dynamic>.from(data);
+        final booking = (base['bookingId'] ?? '').toString().trim();
+
+        // If we only have 1 room, ensure bookingId is present.
+        if (rooms.length == 1 && booking.isEmpty) {
+          base['bookingId'] = rooms.first;
+          s.emit(event, base);
+        } else if (rooms.length > 1) {
+          for (final room in rooms) {
+            final payload = Map<String, dynamic>.from(base);
+            payload['bookingId'] = room;
+            s.emit(event, payload);
+          }
+        } else {
+          s.emit(event, base);
+        }
+
+        _maybeLogEmit(
+          event: event,
+          payload: base,
+          roomsCount: rooms.length,
+        );
+        return;
+      }
+    }
+
+    s.emit(event, data);
+
+    if (data is Map) {
+      _maybeLogEmit(event: event, payload: Map<String, dynamic>.from(data));
+    }
+  }
+
+  void _maybeLogEmit({
+    required String event,
+    required Map<String, dynamic> payload,
+    int? roomsCount,
+  }) {
+    if (event != 'updateLocation' && event != 'driver-heartbeat') return;
+
+    // In release builds, avoid spamming logs; still log occasionally so we can
+    // verify emits in production.
+    final now = DateTime.now();
+    final isDebug = kDebugMode;
+
+    if (!isDebug) {
+      final last = event == 'updateLocation' ? _lastUpdateLocationLogAt : _lastHeartbeatLogAt;
+      if (now.difference(last) < const Duration(seconds: 60)) return;
+      if (event == 'updateLocation') {
+        _lastUpdateLocationLogAt = now;
+      } else {
+        _lastHeartbeatLogAt = now;
+      }
+    }
+
+    final id = _socket?.id;
+    final bookingId = (payload['bookingId'] ?? '').toString();
+    final lat = payload['latitude'];
+    final lng = payload['longitude'];
+    final ts = payload['timestamp'];
+    final rooms = roomsCount == null ? '' : ' rooms=$roomsCount';
+
+    CommonLogger.log.i(
+      '📍 [SOCKET_EMIT] $event url=$_socketUrl id=$id connected=$connected$rooms bookingId=$bookingId lat=$lat lng=$lng ts=$ts',
+    );
   }
 
   // ---------------------------------------------------------
   // ✅ Emit with ack (server replies back)
   // ---------------------------------------------------------
   void emitWithAck(String event, dynamic data, Function(dynamic)? ack) {
+    if (_initialized && _socket != null && _socket!.disconnected) {
+      _socket!.connect();
+    }
     _socket?.emitWithAck(event, data, ack: ack);
   }
 
@@ -289,8 +470,14 @@ class SocketService {
   // ✅ Off
   // ---------------------------------------------------------
   void off(String event) {
-    _callbacks.remove(event);
-    _socket?.off(event);
+    final prev = _callbacks.remove(event);
+    if (prev != null) {
+      _socket?.off(event, prev);
+      return;
+    }
+
+    // Fallback: if we don't own the handler reference, do nothing to avoid
+    // accidentally removing core listeners.
   }
 
   // ---------------------------------------------------------

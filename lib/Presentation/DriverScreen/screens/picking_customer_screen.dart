@@ -15,10 +15,13 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
 import 'package:hopper/utils/map/shared_map.dart';
+import 'package:hopper/utils/map/ride_route_overlays.dart';
+import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/driver_message_suggestions.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
+import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 
 import '../controller/driver_status_controller.dart';
 import '../controller/pickup_customer_controller.dart';
@@ -76,7 +79,8 @@ class PickingCustomerScreen extends StatelessWidget {
               Marker(
                 markerId: const MarkerId('pickup'),
                 position: pickupLocation,
-                infoWindow: const InfoWindow(title: 'Pickup Location'),
+                visible: false,
+                infoWindow: InfoWindow.noText,
               ),
             };
 
@@ -102,30 +106,27 @@ class PickingCustomerScreen extends StatelessWidget {
                     height: 650,
                     child: Stack(
                       children: [
-                        SharedMap(
-                          key: _mapKey,
-                          pickupPosition: pickupLocation,
-                          myLocationEnabled: false,
-                          initialPosition: pickupLocation,
-                          markers: markers,
-                           followDriver: c.isDriverFocused.value,
-                           followBearingEnabled: false,
-                           followZoom: c.followZoom.value,
-                           followTilt: c.isDriverFocused.value ? 45 : 0,
-                           polylines: {
-                            if (routePoints.length >= 2)
-                              Polyline(
-                                polylineId: const PolylineId("route"),
-                                color: AppColors.commonBlack,
-                                width: 3,
-                                startCap: Cap.roundCap,
-                                endCap: Cap.roundCap,
-                                jointType: JointType.round,
-                                points: routePoints,
-                              ),
-                          },
-                          onMapCreated: (gm) => c.onMapCreated(gm, context),
-                        ),
+                          SharedMap(
+                            key: _mapKey,
+                            pickupPosition: pickupLocation,
+                            myLocationEnabled: false,
+                            initialPosition: pickupLocation,
+                            pickupIndicatorStyle: PickupIndicatorStyle.pulse,
+                            pickupIndicatorColor: const Color(0xFF00A85E),
+                            pickupTargetColor: AppColors.commonBlack,
+                            markers: markers,
+                            followDriver: c.isDriverFocused.value,
+                            followBearingEnabled: false,
+                            followZoom: c.followZoom.value,
+                            followTilt: c.isDriverFocused.value ? 45 : 0,
+                            polylines: RideRouteOverlays.buildRoutePolylines(
+                              routePoints: ui.polyline,
+                              origin: ui.driverLocation,
+                              destination: pickupLocation,
+                              idPrefix: 'route_pickup',
+                            ),
+                            onMapCreated: (gm) => c.onMapCreated(gm, context),
+                          ),
                         IgnorePointer(
                           child: Container(
                             height: 190,
@@ -153,37 +154,33 @@ class PickingCustomerScreen extends StatelessWidget {
                         valueListenable:
                             NavigationVoiceService.instance.mutedNotifier,
                         builder: (context, muted, _) {
-                          return _mapActionButton(
+                          return MapControlButton(
                             icon:
                                 muted
                                     ? Icons.volume_off_rounded
                                     : Icons.volume_up_rounded,
-                            onTap:
-                                () =>
-                                    NavigationVoiceService.instance
-                                        .toggleMuted(),
+                            iconColor:
+                                muted
+                                    ? const Color(0xFFE53935)
+                                    : const Color(0xFF00A85E),
+                            onTap: () =>
+                                NavigationVoiceService.instance.toggleMuted(),
                           );
                         },
                       ),
                       const SizedBox(height: 10),
                       Obx(
-                        () => _mapActionButton(
-                          icon:
-                              c.isDriverFocused.value
-                                  ? Icons.fit_screen_rounded
-                                  : Icons.my_location_rounded,
-                          onTap: () {
+                        () => MapFocusToggleButton(
+                          isDriverFocused: c.isDriverFocused.value,
+                          onFocusDriver: () => c.focusDriverMarker(zoom: 17.2),
+                          onFitBounds: () {
                             final ms = _mapKey.currentState;
                             if (ms == null) return;
                             ms.pauseAutoFollow(const Duration(seconds: 4));
-                            if (c.isDriverFocused.value) {
-                              ms.fitPolylineBounds(routePoints);
-                              c.isDriverFocused.value = false;
-                            } else {
-                              c.focusDriverMarker(zoom: 17.2);
-                              c.isDriverFocused.value = true;
-                            }
+                            ms.fitPolylineBounds(routePoints);
                           },
+                          onDriverFocusedChanged:
+                              (v) => c.isDriverFocused.value = v,
                         ),
                       ),
                     ],
@@ -695,28 +692,20 @@ class PickingCustomerScreen extends StatelessWidget {
                                     horizontal: 20,
                                     vertical: 10,
                                   ),
-                                  child: ActionSlider.standard(
+                                  child: HopprSwipeSlider(
                                     controller: sliderController,
                                     height: 50,
                                     backgroundColor: const Color(0xFF1C1C1C),
-                                    toggleColor: Colors.white,
-                                    icon: const Icon(
-                                      Icons.double_arrow,
-                                      color: Colors.black,
-                                      size: 28,
-                                    ),
-                                    child: Text(
-                                      'Swipe to Start Ride',
-                                      style: TextStyle(
-                                        color: AppColors.commonWhite,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    action: (slider) async {
+                                    handleColor: Colors.white,
+                                    handleIconColor: Colors.black,
+                                    text: 'Swipe to Start Ride',
+                                    onAction: (slider) async {
                                       slider.loading();
                                       await c.onSwipeStartRide(context);
                                       slider.success();
+                                      await Future<void>.delayed(
+                                        const Duration(milliseconds: 250),
+                                      );
                                       slider.reset();
                                     },
                                   ),
@@ -924,27 +913,6 @@ class PickingCustomerScreen extends StatelessWidget {
     });
   }
 
-  static Widget _mapActionButton({
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.white.withOpacity(0.96),
-      elevation: 4,
-      shadowColor: const Color(0x24000000),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: SizedBox(
-          height: 46,
-          width: 46,
-          child: Icon(icon, color: Colors.black87, size: 22),
-        ),
-      ),
-    );
-  }
-
   static Widget _roundIconBox(String asset) {
     return Container(
       decoration: BoxDecoration(
@@ -1044,6 +1012,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1315,18 +1284,16 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 
     socketService.on('driver-cancelled', (data) async {
       CommonLogger.log.i('driver-cancelled : $data');
-      if (data != null && data['status'] == true) {
-        if (!mounted) return;
-        Get.offAll(() => DriverMainScreen());
-      }
+      if (!mounted) return;
+      if (!Get.isRegistered<DriverMainController>()) return;
+      await Get.find<DriverMainController>().handleDriverCancelled(data);
     });
 
     socketService.on('customer-cancelled', (data) async {
       CommonLogger.log.i('customer-cancelled : $data');
-      if (data != null && data['status'] == true) {
-        if (!mounted) return;
-        Get.offAll(() => DriverMainScreen());
-      }
+      if (!mounted) return;
+      if (!Get.isRegistered<DriverMainController>()) return;
+      await Get.find<DriverMainController>().handleCustomerCancelled(data);
     });
 
     socketService.on('driver-arrived', (data) {
@@ -2136,60 +2103,53 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                       horizontal: 20,
                                       vertical: 10,
                                     ),
-                                    child: ActionSlider.standard(
+                                    child: HopprSwipeSlider(
                                       controller: _sliderController,
-                                      action: (controller) async {
+                                      height: 50,
+                                      backgroundColor: const Color(0xFF1C1C1C),
+                                      handleColor: Colors.white,
+                                      handleIconColor: Colors.black,
+                                      text: 'Swipe to Start Ride',
+                                      onAction: (controller) async {
                                         controller.loading();
                                         await Future.delayed(
                                           const Duration(seconds: 1),
                                         );
-                                        final message = await driverStatusController
-                                            .otpRequest(
-                                              pickupAddress:
-                                                  widget
-                                                      .pickupLocationAddress ??
+                                        final message =
+                                            await driverStatusController.otpRequest(
+                                          pickupAddress:
+                                              widget.pickupLocationAddress ??
                                                   '',
-                                              dropAddress:
-                                                  widget.dropLocationAddress ??
-                                                  '',
-                                              custName: CUSTOMERNAME,
-                                              context,
-                                              bookingId: widget.bookingId,
-                                            );
+                                          dropAddress:
+                                              widget.dropLocationAddress ?? '',
+                                          custName: CUSTOMERNAME,
+                                          context,
+                                          bookingId: widget.bookingId,
+                                        );
 
                                         if (message != null) {
                                           controller.success();
                                           _timer?.cancel();
                                           _timer = null;
-                                        } else {
-                                          controller.failure();
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'Failed to start ride',
-                                              ),
-                                            ),
+                                          await Future<void>.delayed(
+                                            const Duration(milliseconds: 250),
                                           );
+                                          controller.reset();
+                                          return;
                                         }
+
+                                        controller.failure();
+                                        await Future<void>.delayed(
+                                          const Duration(milliseconds: 250),
+                                        );
+                                        controller.reset();
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Failed to start ride'),
+                                          ),
+                                        );
                                       },
-                                      height: 50,
-                                      backgroundColor: const Color(0xFF1C1C1C),
-                                      toggleColor: Colors.white,
-                                      icon: const Icon(
-                                        Icons.double_arrow,
-                                        color: Colors.black,
-                                        size: 28,
-                                      ),
-                                      child: Text(
-                                        'Swipe to Start Ride',
-                                        style: TextStyle(
-                                          color: AppColors.commonWhite,
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
                                     ),
                                   ),
                                 ],

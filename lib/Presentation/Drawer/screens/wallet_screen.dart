@@ -1,11 +1,12 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 
-import '../../../Core/Utility/app_loader.dart';
 import '../controller/ride_history_controller.dart';
 import '../model/wallet_history_response.dart';
 import 'add_money_screens.dart';
@@ -22,6 +23,8 @@ class _WalletScreenState extends State<WalletScreen> {
     RideHistoryController(),
   );
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _withdrawAmountController =
+      TextEditingController();
 
   int selectedTab = 0;
   bool _isAmountVisible = false;
@@ -47,7 +50,181 @@ class _WalletScreenState extends State<WalletScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _withdrawAmountController.dispose();
     super.dispose();
+  }
+
+  void _openWithdrawSheet() {
+    _withdrawAmountController.text = '';
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        final balance =
+            double.tryParse(walletController.balance.value.toString().trim()) ??
+            0.0;
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 14,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 18,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Withdraw',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Available balance: ₦ ${balance.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black54,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _withdrawAmountController,
+                textInputAction: TextInputAction.done,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                ],
+                decoration: InputDecoration(
+                  labelText: 'Amount',
+                  hintText: 'Enter amount (e.g. 100.0)',
+                  filled: true,
+                  fillColor: const Color(0xFFF6F7F9),
+                  prefixIcon: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Image.asset(
+                      AppImages.bCurrency,
+                      width: 18,
+                      height: 18,
+                      color: AppColors.drkGreen,
+                    ),
+                  ),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 44,
+                    minHeight: 44,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: AppColors.drkGreen.withOpacity(0.35),
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Obx(() {
+                final loading = walletController.isWithdrawLoading.value;
+                return SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed:
+                        loading
+                            ? null
+                            : () async {
+                              final raw =
+                                  _withdrawAmountController.text.trim();
+                              final amt = double.tryParse(raw);
+                              if (amt == null || amt <= 0) {
+                                Get.snackbar(
+                                  'Invalid amount',
+                                  'Please enter a valid amount',
+                                  backgroundColor: Colors.black87,
+                                  colorText: Colors.white,
+                                );
+                                return;
+                              }
+
+                              final bal =
+                                  double.tryParse(
+                                    walletController.balance.value
+                                        .toString()
+                                        .trim(),
+                                  ) ??
+                                  0.0;
+                              if (bal > 0 && amt > bal) {
+                                Get.snackbar(
+                                  'Insufficient balance',
+                                  'Amount should be less than or equal to wallet balance',
+                                  backgroundColor: Colors.black87,
+                                  colorText: Colors.white,
+                                );
+                                return;
+                              }
+
+                              await walletController.requestWithdraw(
+                                amount: amt,
+                              );
+                              if (!mounted) return;
+                              if (!walletController.isWithdrawLoading.value) {
+                                Navigator.pop(ctx);
+                              }
+                            },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child:
+                        loading
+                            ? const CupertinoActivityIndicator(
+                              radius: 14,
+                              color: Colors.white,
+                            )
+                            : const Text(
+                              'Submit Request',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -102,7 +279,9 @@ class _WalletScreenState extends State<WalletScreen> {
                 if (walletController.isLoading.value &&
                     walletController.traction.isEmpty) {
                   return SliverToBoxAdapter(
-                    child: Center(child: AppLoader.circularLoader()),
+                    child: const Center(
+                      child: CupertinoActivityIndicator(radius: 14),
+                    ),
                   );
                 }
 
@@ -121,7 +300,9 @@ class _WalletScreenState extends State<WalletScreen> {
                       return walletController.isMoreLoading.value
                           ? Padding(
                             padding: const EdgeInsets.all(16),
-                            child: Center(child: AppLoader.circularLoader()),
+                            child: const Center(
+                              child: CupertinoActivityIndicator(radius: 14),
+                            ),
                           )
                           : const SizedBox();
                     }
@@ -266,7 +447,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () {},
+                    onPressed: _openWithdrawSheet,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white.withOpacity(0.10),
                       foregroundColor: Colors.white,

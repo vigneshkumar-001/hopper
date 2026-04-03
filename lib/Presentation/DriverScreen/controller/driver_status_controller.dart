@@ -21,6 +21,8 @@ import '../screens/verify_rider_screen.dart';
 class DriverStatusController extends GetxController {
   var isOnline = false.obs;
   RxBool isLoading = false.obs;
+  final RxBool isToggleLoading = false.obs;
+  final RxBool isBookingAcceptLoading = false.obs;
   var serviceType = ''.obs;
   final RxBool isStopNewRequests = false.obs;
   final RxString arrivedLoadingBookingId = ''.obs;
@@ -66,8 +68,23 @@ class DriverStatusController extends GetxController {
   void setServiceTypeFrom(dynamic raw) {
     final next = _normalizeServiceType(raw);
     if (next.isEmpty) return;
-    if (serviceType.value == next) return;
     serviceType.value = next;
+    // Force notify even if value is the same (helps after logout/login where
+    // widgets/controllers can be rebuilt but serviceType remains unchanged).
+    serviceType.refresh();
+  }
+
+  /// Clears user-scoped state so UI doesn't show stale Car/Bike after logout.
+  void resetForLogout() {
+    isOnline.value = false;
+    isToggleLoading.value = false;
+    isLoading.value = false;
+    isBookingAcceptLoading.value = false;
+    isStopNewRequests.value = false;
+    arrivedLoadingBookingId.value = '';
+
+    serviceType.value = '';
+    serviceType.refresh();
   }
   void toggleStatus() {
     isOnline.value = !isOnline.value;
@@ -84,7 +101,7 @@ class DriverStatusController extends GetxController {
     required LatLng driverLocation,
     bool navigateToPickup = true,
   }) async {
-    isLoading.value = true;
+    isBookingAcceptLoading.value = true;
     try {
       final results = await apiDataSource.bookingAccept(
         bookingId: bookingId,
@@ -94,7 +111,7 @@ class DriverStatusController extends GetxController {
       return results.fold(
         (failure) {
           CustomSnackBar.showError(failure.message);
-          isLoading.value = false;
+          isBookingAcceptLoading.value = false;
           return '';
         },
         (response) {
@@ -132,7 +149,7 @@ class DriverStatusController extends GetxController {
             if (resolvedBookingId.trim().isEmpty ||
                 resolvedBookingId.trim().toLowerCase() == 'null') {
               CustomSnackBar.showError('Booking id missing. Please retry.');
-              isLoading.value = false;
+              isBookingAcceptLoading.value = false;
               return '';
             }
             Get.to(
@@ -159,12 +176,12 @@ class DriverStatusController extends GetxController {
             );
           }
 
-          isLoading.value = false;
+          isBookingAcceptLoading.value = false;
           return ' ';
         },
       );
     } catch (e) {
-      isLoading.value = false;
+      isBookingAcceptLoading.value = false;
       return ' ';
     }
   }
@@ -180,7 +197,7 @@ class DriverStatusController extends GetxController {
     required LatLng driverLocation,
     bool navigateToPickup = true,
   }) async {
-    isLoading.value = true;
+    isBookingAcceptLoading.value = true;
     try {
       final results = await apiDataSource.bookingAccept(
         bookingId: bookingId,
@@ -190,7 +207,7 @@ class DriverStatusController extends GetxController {
       return results.fold(
         (failure) {
           CustomSnackBar.showError(failure.message);
-          isLoading.value = false;
+          isBookingAcceptLoading.value = false;
           return '';
         },
         (response) {
@@ -228,7 +245,7 @@ class DriverStatusController extends GetxController {
             if (resolvedBookingId.trim().isEmpty ||
                 resolvedBookingId.trim().toLowerCase() == 'null') {
               CustomSnackBar.showError('Booking id missing. Please retry.');
-              isLoading.value = false;
+              isBookingAcceptLoading.value = false;
               return '';
             }
             Get.to(
@@ -246,12 +263,12 @@ class DriverStatusController extends GetxController {
             );
           }
 
-          isLoading.value = false;
+          isBookingAcceptLoading.value = false;
           return ' ';
         },
       );
     } catch (e) {
-      isLoading.value = false;
+      isBookingAcceptLoading.value = false;
       return ' ';
     }
   }
@@ -680,6 +697,9 @@ class DriverStatusController extends GetxController {
 
           isOnline.value = response.data.onlineStatus;
           serviceType.value = _normalizeServiceType(response.data.serviceType);
+          // Ensure any listening UIs (marker/header) update even if the server
+          // returns the same serviceType value as before.
+          serviceType.refresh();
           CommonLogger.log.i(isOnline.value);
         },
       );

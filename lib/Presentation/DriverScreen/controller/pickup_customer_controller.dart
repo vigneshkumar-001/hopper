@@ -13,6 +13,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
 import 'package:hopper/api/repository/api_config_controller.dart';
@@ -251,7 +252,9 @@ class PickingCustomerController extends GetxController {
   Future<void> _loadCarIcon() async {
     try {
       final asset =
-          driverStatusController.isBike ? AppImages.parcelBike : AppImages.movingCar;
+          driverStatusController.isBike
+              ? AppImages.parcelBike
+              : AppImages.movingCar;
 
       // Keep bike slightly smaller than car so it doesn't look oversized on map.
       final markerHeight = driverStatusController.isBike ? 32.0 : 36.0;
@@ -340,18 +343,13 @@ class PickingCustomerController extends GetxController {
     });
 
     socketService.on('driver-cancelled', (data) {
-      if (data?['status'] == true) {
-        // handled in UI navigation (you already do)
-      }
+      if (!Get.isRegistered<DriverMainController>()) return;
+      Get.find<DriverMainController>().handleDriverCancelled(data);
     });
 
     socketService.on('customer-cancelled', (data) {
-      if (data?['status'] == true) {
-        Get.find<DriverAnalyticsController>().trackCancel(
-          bookingId: data?['bookingId']?.toString() ?? bookingId,
-        );
-        // handled in UI navigation (you already do)
-      }
+      if (!Get.isRegistered<DriverMainController>()) return;
+      Get.find<DriverMainController>().handleCustomerCancelled(data);
     });
 
     if (!socketService.connected) {
@@ -703,10 +701,14 @@ class PickingCustomerController extends GetxController {
       ),
     ).listen((pos) async {
       final acc = (pos.accuracy.isFinite) ? pos.accuracy : 9999.0;
-      if (acc > _MAX_ACCURACY_M) return;
-
       final raw = LatLng(pos.latitude, pos.longitude);
       final current = _maybeSnapToRoute(raw);
+
+      // Always update "Arrived" gating from UI-side GPS, even if accuracy is
+      // moderate (helps when socket is delayed).
+      _updateDriverReachedByDistance(current);
+
+      if (acc > _MAX_ACCURACY_M) return;
       final speed = (pos.speed.isFinite) ? pos.speed : 0.0;
       final heading = (pos.heading.isFinite) ? pos.heading : -1.0;
       _updateSmartAutoZoom(speed);
@@ -714,7 +716,6 @@ class PickingCustomerController extends GetxController {
       if (_lastPos == null) {
         _lastPos = current;
         ui.value = ui.value.copyWith(driverLocation: current);
-        _updateDriverReachedByDistance(current);
         await _fetchRoute(force: true);
         return;
       }
@@ -730,7 +731,6 @@ class PickingCustomerController extends GetxController {
         // tiny drift -> update location silently without rotation
         ui.value = ui.value.copyWith(driverLocation: current);
         _lastPos = current;
-        _updateDriverReachedByDistance(current);
         if (ui.value.polyline.length < 2) {
           await _fetchRoute(force: true);
         }

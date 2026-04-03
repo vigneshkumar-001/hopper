@@ -8,6 +8,7 @@ import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/models/loginResponse.dart';
 import 'package:hopper/Presentation/Authentication/models/otp_response.dart';
 import 'package:hopper/Presentation/Drawer/model/add_wallet_response.dart';
+import 'package:hopper/Presentation/Drawer/model/withdraw_request_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/get_driver_status.dart';
 import 'package:hopper/Presentation/DriverScreen/models/stop_request_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
@@ -51,6 +52,32 @@ abstract class BaseApiDataSource {
 }
 
 class ApiDataSource extends BaseApiDataSource {
+  Future<void> logout({String? token}) async {
+    try {
+      final url = ApiConstents.logout;
+      final headers = <String, dynamic>{};
+      final t = token?.trim() ?? '';
+      if (t.isNotEmpty) headers['Authorization'] = 'Bearer $t';
+
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 8),
+          receiveTimeout: const Duration(seconds: 8),
+          headers: headers,
+        ),
+      );
+
+      // Backend may accept GET/POST; using POST with empty body is safe.
+      await dio.post(
+        url,
+        data: const <String, dynamic>{},
+        options: Options(validateStatus: (s) => s != null && s < 500),
+      );
+    } catch (_) {
+      // fire-and-forget: ignore
+    }
+  }
+
   @override
   // Future<Either<Failure, LoginResponse>> mobileNumberLogin(
   //   String mobileNumber,
@@ -1666,6 +1693,48 @@ CommonLogger.log.i("OTP Request URL: $url with bookingId: $bookingId");
       } else {
         return Left(ServerFailure("Unknown error occurred"));
       }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, WithdrawRequestResponse>> requestWithdraw({
+    required double amount,
+  }) async {
+    try {
+      final url = ApiConstents.withdrawRequest;
+      final payload = {'amount': amount.toString()};
+
+      dynamic response = await Request.sendRequest(url, payload, 'POST', false);
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data is Map && response.data['success'] == true) {
+          return Right(
+            WithdrawRequestResponse.fromJson(
+              Map<String, dynamic>.from(response.data as Map),
+            ),
+          );
+        }
+        if (response.data is Map) {
+          return Left(
+            ServerFailure(
+              (response.data['message'] ?? 'Withdrawal failed').toString(),
+            ),
+          );
+        }
+        return Left(ServerFailure('Withdrawal failed'));
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(
+            (response.data is Map
+                    ? (response.data['message'] ?? 'Unexpected error')
+                    : 'Unexpected error')
+                .toString(),
+          ),
+        );
+      }
+      return Left(ServerFailure('Unexpected error'));
     } catch (e) {
       CommonLogger.log.e(e);
       return Left(ServerFailure('Something went wrong'));

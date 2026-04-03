@@ -53,6 +53,7 @@ class ApiConstents {
   static String get resendOTP => _u('/users/resendOTP');
   static String get updateUserDetails => _u('/users/updateUserDetails');
   static String get getUserDetailsById => _u('/users/getUserDetailsById');
+  static String get logout => _u('/users/logout');
   static String get states => _u('/users/states');
   static String get driverResponse => _u('/users/driver-response');
   static String get getUserDetails => _u('/users/getUserDetailsById');
@@ -61,6 +62,7 @@ class ApiConstents {
   static String get todayParcel => _u('/users/today-parcel');
   static String get rideHistory => _u('/users/ride-history');
   static String get addToWallet => _u('/users/add-to-wallet');
+  static String get withdrawRequest => _u('/users/withdraw/request');
   static String get fcmToken => _u('/users/update-fcm-token');
   static String get checkPaymentType => _u('/users/check-payment-type');
   static String get cashCollectedStatus => _u('/cashonhand/byuser/orders');
@@ -69,7 +71,8 @@ class ApiConstents {
   static String get stopNewRequests => _u('/users/stopNewRequests');
   static String get driverStatus => _u('/users/status');
   static String get driverActiveBooking => _u('/users/active-booking');
-  static String get sharedDriverActiveBooking => _u('/shared/driver/active-booking');
+  static String get sharedDriverActiveBooking => _u('/users/active-booking');
+  // static String get sharedDriverActiveBooking => _u('/shared/driver/active-booking');
 
   static String userImageUpload =
      _u('/upload/image');

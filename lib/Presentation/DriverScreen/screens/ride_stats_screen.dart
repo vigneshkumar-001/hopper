@@ -1,4 +1,3 @@
-import 'package:action_slider/action_slider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -11,11 +10,14 @@ import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/utils/map/shared_map.dart';
+import 'package:hopper/utils/map/ride_route_overlays.dart';
+import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/driver_message_suggestions.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
+import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 
 import '../controller/ride_starts_controller.dart';
 import 'cash_collected_screen.dart';
@@ -92,8 +94,15 @@ class RideStatsScreen extends StatelessWidget {
                         flat: true,
                         rotation: c.currentBearing.value,
                       ),
+                    // Keep a hidden destination marker so fit-to-bounds works,
+                    // but the UI stays clean (we render a custom indicator via circles).
                     if (to != null)
-                      Marker(markerId: const MarkerId('end'), position: to),
+                      Marker(
+                        markerId: const MarkerId('dest_bounds'),
+                        position: to,
+                        visible: false,
+                        infoWindow: InfoWindow.noText,
+                      ),
                   };
 
                   final initialPos = from ?? to ?? const LatLng(0, 0);
@@ -102,6 +111,9 @@ class RideStatsScreen extends StatelessWidget {
                     key: _mapKey,
                     initialPosition: initialPos,
                     pickupPosition: to,
+                    pickupIndicatorStyle: PickupIndicatorStyle.pulse,
+                    pickupIndicatorColor: const Color(0xFF00A85E),
+                    pickupTargetColor: AppColors.commonBlack,
                     myLocationEnabled: false,
                     fitToBounds: true,
                     trafficEnabled: false,
@@ -111,18 +123,15 @@ class RideStatsScreen extends StatelessWidget {
                     },
                     onCameraMoveStarted: c.onUserMapMoveStarted,
                     markers: markers,
-                    polylines: {
-                      if (c.polylinePoints.length >= 2)
-                        Polyline(
-                          polylineId: const PolylineId('route_main'),
-                          color: AppColors.commonBlack,
-                          width: 3,
-                          points: c.polylinePoints,
-                          startCap: Cap.roundCap,
-                          endCap: Cap.roundCap,
-                          jointType: JointType.round,
-                        ),
-                    },
+                    polylines:
+                        to == null
+                            ? const <Polyline>{}
+                            : RideRouteOverlays.buildRoutePolylines(
+                              routePoints: c.polylinePoints,
+                              origin: from ?? to,
+                              destination: to,
+                              idPrefix: 'route_ride',
+                            ),
                   );
                 }),
               ),
@@ -138,58 +147,37 @@ class RideStatsScreen extends StatelessWidget {
                         valueListenable:
                             NavigationVoiceService.instance.mutedNotifier,
                         builder: (context, muted, _) {
-                          return FloatingActionButton(
-                            heroTag: null,
-                            mini: true,
-                            backgroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30),
-                            ),
-                            onPressed:
-                                () =>
-                                    NavigationVoiceService.instance
-                                        .toggleMuted(),
-                            child: Icon(
-                              muted
-                                  ? Icons.volume_off_rounded
-                                  : Icons.volume_up_rounded,
-                              color: Colors.black,
-                            ),
+                          return MapControlButton(
+                            icon:
+                                muted
+                                    ? Icons.volume_off_rounded
+                                    : Icons.volume_up_rounded,
+                            iconColor:
+                                muted
+                                    ? const Color(0xFFE53935)
+                                    : const Color(0xFF00A85E),
+                            onTap: () =>
+                                NavigationVoiceService.instance.toggleMuted(),
                           );
                         },
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 10),
                       Obx(
-                        () => FloatingActionButton(
-                          heroTag: null,
-                          mini: true,
-                          backgroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          onPressed: () {
+                        () => MapFocusToggleButton(
+                          isDriverFocused: c.isDriverFocused.value,
+                          onFocusDriver: () => c.focusDriverMarker(zoom: 17.2),
+                          onFitBounds: () {
                             final ms = _mapKey.currentState;
                             if (ms == null) return;
                             ms.pauseAutoFollow(const Duration(seconds: 4));
-                            if (c.isDriverFocused.value) {
-                              final pts = c.polylinePoints.toList();
-                              if (pts.length >= 2) {
-                                ms.fitPolylineBounds(pts);
-                              } else {
-                                ms.fitRouteBounds();
-                              }
-                              c.setDriverFocused(false);
+                            final pts = c.polylinePoints.toList();
+                            if (pts.length >= 2) {
+                              ms.fitPolylineBounds(pts);
                             } else {
-                              c.focusDriverMarker(zoom: 17.2);
-                              c.setDriverFocused(true);
+                              ms.fitRouteBounds();
                             }
                           },
-                          child: Icon(
-                            c.isDriverFocused.value
-                                ? Icons.fit_screen_rounded
-                                : Icons.my_location_rounded,
-                            color: Colors.black,
-                          ),
+                          onDriverFocusedChanged: c.setDriverFocused,
                         ),
                       ),
                     ],
@@ -432,11 +420,19 @@ class RideStatsScreen extends StatelessWidget {
                                     ),
                                     const SizedBox(width: 10),
                                     Obx(() {
-                                      final eta =
-                                          driverStatusController.dropDurationInMin.value
-                                              .round();
-                                      final label =
-                                          eta <= 0 ? 'Arrived' : '$eta min away';
+                                      final etaMin = driverStatusController
+                                          .dropDurationInMin
+                                          .value;
+                                      final distM = driverStatusController
+                                          .dropDistanceInMeters
+                                          .value;
+                                      final arrived =
+                                          distM.isFinite && distM >= 0 && distM <= 60;
+                                      final label = arrived
+                                          ? 'Arrived'
+                                          : (etaMin.isFinite && etaMin < 1
+                                              ? '<1 min away'
+                                              : '${etaMin.ceil()} min away');
                                       return Text(
                                         label,
                                         style: const TextStyle(
@@ -458,45 +454,31 @@ class RideStatsScreen extends StatelessWidget {
                                     horizontal: 20,
                                     vertical: 10,
                                   ),
-                                  child: ActionSlider.standard(
+                                  child: HopprSwipeSlider(
                                     height: 50,
                                     backgroundColor: AppColors.drkGreen,
-                                    toggleColor: Colors.white,
-                                    icon: Icon(
-                                      Icons.double_arrow,
-                                      color: AppColors.drkGreen,
-                                      size: 28,
-                                    ),
-                                    child: const Text(
-                                      'Complete Ride',
-                                      style: TextStyle(
-                                        color: AppColors.commonWhite,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    action: (controller) async {
+                                    handleColor: Colors.white,
+                                    handleIconColor: AppColors.drkGreen,
+                                    text: 'Complete Ride',
+                                    onAction: (controller) async {
                                       controller.loading();
                                       await Future.delayed(
                                         const Duration(milliseconds: 700),
                                       );
 
-                                      final msg = await driverStatusController
-                                          .completeRideRequest(
-                                            context,
-                                            Amount: c.amount.value,
-                                            bookingId: bookingId,
-                                          );
+                                      final msg =
+                                          await driverStatusController.completeRideRequest(
+                                        context,
+                                        Amount: c.amount.value,
+                                        bookingId: bookingId,
+                                      );
 
                                       if (msg != null) {
                                         controller.success();
-
                                         await Future.delayed(
                                           const Duration(milliseconds: 300),
                                         );
-
                                         if (!context.mounted) return;
-
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
@@ -508,18 +490,20 @@ class RideStatsScreen extends StatelessWidget {
                                                 ),
                                           ),
                                         );
-                                      } else {
-                                        controller.failure();
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'Failed to complete ride',
-                                            ),
-                                          ),
-                                        );
+                                        return;
                                       }
+
+                                      controller.failure();
+                                      await Future<void>.delayed(
+                                        const Duration(milliseconds: 250),
+                                      );
+                                      controller.reset();
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Failed to complete ride'),
+                                        ),
+                                      );
                                     },
                                   ),
                                 ),
@@ -1051,12 +1035,12 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 
     socketService.on('driver-reached-destination', (data) {
       final status = data?['status'];
-      if (status == true || status?.toString() == 'true') {
-        if (!mounted) return;
-        setState(() => driverCompletedRide = true);
-        CommonLogger.log.i('ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Driver reached destination');
-      }
-    });
+        if (status == true || status?.toString() == 'true') {
+          if (!mounted) return;
+          setState(() => driverCompletedRide = true);
+          CommonLogger.log.i('Driver reached destination');
+        }
+      });
 
     socketService.on('driver-location', (data) {
       if (data == null) return;
@@ -1067,14 +1051,16 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     });
 
     socketService.on('driver-cancelled', (data) {
-      if (data?['status'] == true) Get.offAll(() => const DriverMainScreen());
+      if (!Get.isRegistered<DriverMainController>()) return;
+      Get.find<DriverMainController>().handleDriverCancelled(data);
     });
     socketService.on('customer-cancelled', (data) {
-      if (data?['status'] == true) Get.offAll(() => const DriverMainScreen());
+      if (!Get.isRegistered<DriverMainController>()) return;
+      Get.find<DriverMainController>().handleCustomerCancelled(data);
     });
 
     socketService.socket.onAny((event, data) {
-      CommonLogger.log.i('ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚Â¦ [socket] $event: $data');
+      CommonLogger.log.i('[socket] $event: $data');
     });
 
     if (!socketService.connected) {
@@ -1975,12 +1961,19 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                                   ),
                                   SizedBox(width: 10),
                                   Obx(() {
-                                    final eta = driverStatusController
+                                    final etaMin = driverStatusController
                                         .dropDurationInMin
-                                        .value
-                                        .round();
-                                    final label =
-                                        eta <= 0 ? 'Arrived' : '$eta min away';
+                                        .value;
+                                    final distM = driverStatusController
+                                        .dropDistanceInMeters
+                                        .value;
+                                    final arrived =
+                                        distM.isFinite && distM >= 0 && distM <= 60;
+                                    final label = arrived
+                                        ? 'Arrived'
+                                        : (etaMin.isFinite && etaMin < 1
+                                            ? '<1 min away'
+                                            : '${etaMin.ceil()} min away');
                                     return Text(
                                       label,
                                       style: const TextStyle(
@@ -1997,56 +1990,51 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                                 'Dropping off $custName',
                               ),
                               const SizedBox(height: 5),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 10,
-                                ),
-                                child: ActionSlider.standard(
-                                  height: 50,
-                                  backgroundColor: AppColors.drkGreen,
-                                  toggleColor: Colors.white,
-                                  icon: Icon(
-                                    Icons.double_arrow,
-                                    color: AppColors.drkGreen,
-                                    size: 28,
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 10,
                                   ),
-                                  child: const Text(
-                                    'Complete Ride',
-                                    style: TextStyle(
-                                      color: AppColors.commonWhite,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  action: (controller) async {
-                                    controller.loading();
-                                    await Future.delayed(
-                                      const Duration(milliseconds: 800),
-                                    );
-                                    final msg = await driverStatusController
-                                        .completeRideRequest(
-                                          context,
-                                          Amount: Amount,
-                                          bookingId: widget.bookingId,
-                                        );
-                                    if (msg != null) {
-                                      controller.success();
-                                    } else {
-                                      controller.failure();
-                                      ScaffoldMessenger.of(
+                                  child: HopprSwipeSlider(
+                                    height: 50,
+                                    backgroundColor: AppColors.drkGreen,
+                                    handleColor: Colors.white,
+                                    handleIconColor: AppColors.drkGreen,
+                                    text: 'Complete Ride',
+                                    onAction: (controller) async {
+                                      controller.loading();
+                                      await Future.delayed(
+                                        const Duration(milliseconds: 800),
+                                      );
+                                      final msg =
+                                          await driverStatusController.completeRideRequest(
                                         context,
-                                      ).showSnackBar(
+                                        Amount: Amount,
+                                        bookingId: widget.bookingId,
+                                      );
+                                      if (msg != null) {
+                                        controller.success();
+                                        await Future<void>.delayed(
+                                          const Duration(milliseconds: 250),
+                                        );
+                                        controller.reset();
+                                        return;
+                                      }
+
+                                      controller.failure();
+                                      await Future<void>.delayed(
+                                        const Duration(milliseconds: 250),
+                                      );
+                                      controller.reset();
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
                                         const SnackBar(
-                                          content: Text(
-                                            'Failed to complete ride',
-                                          ),
+                                          content: Text('Failed to complete ride'),
                                         ),
                                       );
-                                    }
-                                  },
+                                    },
+                                  ),
                                 ),
-                              ),
                               const SizedBox(height: 10),
                             ],
                           ),

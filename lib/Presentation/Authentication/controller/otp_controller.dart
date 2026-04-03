@@ -6,7 +6,6 @@ import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
-import 'package:hopper/api/repository/failure.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../DriverScreen/controller/driver_status_controller.dart';
@@ -35,58 +34,52 @@ class OtpController extends GetxController {
     String? type,
   }) async
   {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      isLoading.value = true;
-    });
-
     try {
       isLoading.value = true;
       final results = await apiDataSource.verifyOtp(otp);
 
       return results.fold(
         (failure) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            isLoading.value = false;
-            CustomSnackBar.showError(failure.message);
-          });
+          isLoading.value = false;
+          CustomSnackBar.showError(failure.message);
           return failure.message;
         },
         (response) async {
           final prefs = await SharedPreferences.getInstance();
-          WidgetsBinding.instance.addPostFrameCallback((_) async {
-            if (response.data.formStatus == 3) {
-              await controller.getDriverStatus();
-              Get.offAll(() => DriverMainScreen());
-              await prefs.setBool("isVerified", true);
-            } else if (response.data.formStatus == 1 &&
-                response.data.userStatus == 'new') {
-              Get.offAll(() => TermsScreen());
-            } else if (response.data.formStatus == 1 &&
-                response.data.userStatus == 'exist') {
-              await loadAndNavigate();
-            } else {
-              CommonLogger.log.i('Basic Info');
-            }
-
-            isLoading.value = false;
-          });
 
           accessToken = response.data.token;
           driverId = response.data.driverId;
 
-          await prefs.setString('token', response.data.token);
-          await prefs.setString('token', response.data.token);
-          await prefs.setString('driverId', response.data.driverId);
-          final _fcmToken = prefs.getString('fcmToken');
-          sendFcmToken(fcmToken: _fcmToken?? '');
+          // ✅ Persist auth BEFORE any follow-up calls (getUserDetails/getDriverStatus)
+          if (accessToken.isNotEmpty) {
+            await prefs.setString('token', accessToken);
+          }
+          if (driverId.isNotEmpty) {
+            await prefs.setString('driverId', driverId);
+          }
+
+          if (response.data.formStatus == 3) {
+            await controller.getDriverStatus();
+            Get.off(() => DriverMainScreen());
+            await prefs.setBool("isVerified", true);
+          } else if (response.data.formStatus == 1 &&
+              response.data.userStatus == 'new') {
+            Get.off(() => TermsScreen());
+          } else if (response.data.formStatus == 1 &&
+              response.data.userStatus == 'exist') {
+            await loadAndNavigate();
+          } else {
+            CommonLogger.log.i('Basic Info');
+          }
+          final fcmToken = prefs.getString('fcmToken');
+          sendFcmToken(fcmToken: fcmToken ?? '');
+          isLoading.value = false;
 
           return response.message;
         },
       );
     } catch (e) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        isLoading.value = false;
-      });
+      isLoading.value = false;
       return 'An error occurred';
     }
   }
@@ -220,7 +213,7 @@ class OtpController extends GetxController {
   Future<void> loadAndNavigate() async {
     final ChooseServiceController chooseCtrl = Get.put(ChooseServiceController(), permanent: true);
     await chooseCtrl.getUserDetails();
-    chooseCtrl.handleLandingPageNavigation();
+    chooseCtrl.handleLandingPageNavigation(clearStack: false);
   }
 
   Future<String?> resendOtp(
