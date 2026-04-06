@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../Presentation/Authentication/widgets/textFields.dart';
 import '../Constants/Colors.dart';
+import 'app_loader.dart';
 import 'images.dart';
 
 class Buttons {
@@ -53,11 +54,10 @@ class Buttons {
                 ? SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(
+                  child: AppLoader.inlineCircularLoader(
+                    size: 20,
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      textColor ?? Colors.white,
-                    ),
+                    color: textColor ?? Colors.white,
                   ),
                 )
                 : Row(
@@ -212,6 +212,7 @@ class Buttons {
       child: Image.asset(AppImages.backButton, height: 18),
     );
   }
+
   static void showDialogBox({
     required BuildContext context,
     required Future<void> Function() onConfirmStop, // 👈 new param
@@ -304,15 +305,14 @@ class Buttons {
                   Positioned.fill(
                     child: Container(
                       color: Colors.black.withOpacity(0.30),
-                      child: const Center(
+                      child: Center(
                         child: SizedBox(
                           height: 30,
                           width: 30,
-                          child: CircularProgressIndicator(
+                          child: AppLoader.inlineCircularLoader(
+                            size: 30,
                             strokeWidth: 3,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
+                            color: Colors.white,
                           ),
                         ),
                       ),
@@ -326,7 +326,7 @@ class Buttons {
     );
   }
 
-/*  static showDialogBox({
+  /*  static showDialogBox({
     required BuildContext context,
 
   }) {
@@ -523,15 +523,14 @@ class Buttons {
                   Positioned.fill(
                     child: Container(
                       color: Colors.black.withOpacity(0.35),
-                      child: const Center(
+                      child: Center(
                         child: SizedBox(
                           height: 40,
                           width: 40,
-                          child: CircularProgressIndicator(
+                          child: AppLoader.inlineCircularLoader(
+                            size: 40,
                             strokeWidth: 3,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
+                            color: Colors.white,
                           ),
                         ),
                       ),

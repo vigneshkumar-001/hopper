@@ -13,6 +13,7 @@ import 'package:hopper/Presentation/DriverScreen/screens/driver_analytics_screen
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 class DrawerScreen extends StatefulWidget {
   const DrawerScreen({super.key});
@@ -32,9 +33,10 @@ class _DrawerScreenState extends State<DrawerScreen> {
   @override
   void initState() {
     super.initState();
-    getDetails = Get.isRegistered<ChooseServiceController>()
-        ? Get.find<ChooseServiceController>()
-        : Get.put(ChooseServiceController());
+    getDetails =
+        Get.isRegistered<ChooseServiceController>()
+            ? Get.find<ChooseServiceController>()
+            : Get.put(ChooseServiceController());
 
     statusController =
         Get.isRegistered<DriverStatusController>()
@@ -81,7 +83,8 @@ class _DrawerScreenState extends State<DrawerScreen> {
                         const SizedBox(height: 34),
                         _MenuTile(
                           title: 'Ride Activity',
-                          onTap: () => Get.to(() => RideAndPackageHistoryScreen()),
+                          onTap:
+                              () => Get.to(() => RideAndPackageHistoryScreen()),
                         ),
                         const _MenuDivider(),
                         _MenuTile(
@@ -91,7 +94,8 @@ class _DrawerScreenState extends State<DrawerScreen> {
                         const _MenuDivider(),
                         _MenuTile(
                           title: 'Driver Analytics',
-                          onTap: () => Get.to(() => const DriverAnalyticsScreen()),
+                          onTap:
+                              () => Get.to(() => const DriverAnalyticsScreen()),
                         ),
                         const _MenuDivider(),
                         _MenuTile(
@@ -104,7 +108,8 @@ class _DrawerScreenState extends State<DrawerScreen> {
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => const CustomerSupportListScreen(),
+                                builder:
+                                    (_) => const CustomerSupportListScreen(),
                               ),
                             );
                           },
@@ -133,7 +138,8 @@ class _DrawerScreenState extends State<DrawerScreen> {
                           if (isBike || !isCar) {
                             return const SizedBox.shrink();
                           }
-                          final loading = sharedCtrl.isSharedToggleLoading.value;
+                          final loading =
+                              sharedCtrl.isSharedToggleLoading.value;
                           return Column(
                             children: [
                               Row(
@@ -154,8 +160,7 @@ class _DrawerScreenState extends State<DrawerScreen> {
                                         loading
                                             ? null
                                             : (value) async {
-                                              await HapticFeedback
-                                                  .selectionClick();
+                                              await HapticFeedback.selectionClick();
                                               await sharedCtrl.setSharedEnabled(
                                                 value,
                                               );
@@ -191,7 +196,10 @@ class _DrawerScreenState extends State<DrawerScreen> {
                                 children: [
                                   Expanded(
                                     child: Text(
-                                      _drawerName(profile?.firstName, profile?.lastName),
+                                      _drawerName(
+                                        profile?.firstName,
+                                        profile?.lastName,
+                                      ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
@@ -209,7 +217,9 @@ class _DrawerScreenState extends State<DrawerScreen> {
                                     decoration: BoxDecoration(
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                                      border: Border.all(
+                                        color: const Color(0xFFE5E7EB),
+                                      ),
                                     ),
                                     child: Row(
                                       children: [
@@ -220,7 +230,10 @@ class _DrawerScreenState extends State<DrawerScreen> {
                                         ),
                                         const SizedBox(width: 4),
                                         Text(
-                                          (profile?.DriverStarRating?.isNotEmpty ?? false)
+                                          (profile
+                                                      ?.DriverStarRating
+                                                      ?.isNotEmpty ??
+                                                  false)
                                               ? profile!.DriverStarRating!
                                               : '0.0',
                                           style: const TextStyle(
@@ -235,7 +248,8 @@ class _DrawerScreenState extends State<DrawerScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                '${profile?.countryCode ?? ''} ${profile?.mobileNumber ?? 'Loading...'}'.trim(),
+                                '${profile?.countryCode ?? ''} ${profile?.mobileNumber ?? 'Loading...'}'
+                                    .trim(),
                                 style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500,
@@ -284,10 +298,7 @@ class _CircleButton extends StatelessWidget {
 }
 
 class _MenuTile extends StatelessWidget {
-  const _MenuTile({
-    required this.title,
-    required this.onTap,
-  });
+  const _MenuTile({required this.title, required this.onTap});
 
   final String title;
   final VoidCallback onTap;
@@ -342,11 +353,12 @@ class _ProfileImage extends StatelessWidget {
         height: 52,
         width: 52,
         fit: BoxFit.cover,
-        placeholder: (_, __) => const SizedBox(
-          height: 52,
-          width: 52,
-          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-        ),
+        placeholder:
+            (_, __) => const SizedBox(
+              height: 52,
+              width: 52,
+              child: Center(child: HopprCircularLoader(radius: 12)),
+            ),
         errorWidget: (_, __, ___) => _fallback(),
       );
     }

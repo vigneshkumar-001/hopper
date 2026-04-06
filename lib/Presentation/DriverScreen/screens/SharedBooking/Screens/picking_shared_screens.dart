@@ -25,6 +25,7 @@ import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 import '../Controller/booking_request_controller.dart';
 import '../Controller/picking_customer_shared_controller.dart';
@@ -348,10 +349,7 @@ class _PickingCustomerSharedScreenState
                       SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: _C.green,
-                        ),
+                        child: HopprCircularLoader(radius: 8, color: _C.green),
                       ),
                       const SizedBox(width: 10),
                       Text(
@@ -1753,13 +1751,10 @@ class _PrimaryButton extends StatelessWidget {
         child:
             loading
                 ? Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.2,
-                      color: textColor,
-                    ),
+                  child: HopprCircularLoader(
+                    radius: 10,
+                    size: 20,
+                    color: textColor,
                   ),
                 )
                 : Row(

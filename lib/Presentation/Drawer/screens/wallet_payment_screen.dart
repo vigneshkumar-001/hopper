@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -664,11 +665,10 @@ class _WalletPaymentScreensState extends State<WalletPaymentScreens> {
                                     ? const SizedBox(
                                       height: 24,
                                       width: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color:
-                                            Colors
-                                                .black, // you can change to AppColors.commonBlack
+                                      child: HopprCircularLoader(
+                                        size: 24,
+                                        radius: 12,
+                                        color: Colors.black,
                                       ),
                                     )
                                     : Row(

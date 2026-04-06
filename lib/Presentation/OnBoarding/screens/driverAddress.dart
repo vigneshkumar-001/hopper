@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import '../../../Core/Constants/texts.dart';
 import '../../../Core/Utility/Buttons.dart';
 import '../../../Core/Utility/ModelBottomSheet.dart';
@@ -122,8 +123,8 @@ class _DriverAddressState extends State<DriverAddress> {
 
                       Get.dialog(
                         Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
+                          child: HopprCircularLoader(
+                            radius: 14,
                             color: AppColors.commonBlack,
                           ),
                         ),

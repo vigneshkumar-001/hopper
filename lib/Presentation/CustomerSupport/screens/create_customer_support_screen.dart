@@ -1,10 +1,11 @@
-﻿import 'dart:io';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/CustomerSupport/controller/customer_support_controller.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:image_picker/image_picker.dart';
 
 class CreateCustomerSupportScreen extends StatefulWidget {
@@ -34,9 +35,10 @@ class _CreateCustomerSupportScreenState
   @override
   void initState() {
     super.initState();
-    c = Get.isRegistered<CustomerSupportController>()
-        ? Get.find<CustomerSupportController>()
-        : Get.put(CustomerSupportController());
+    c =
+        Get.isRegistered<CustomerSupportController>()
+            ? Get.find<CustomerSupportController>()
+            : Get.put(CustomerSupportController());
     WidgetsBinding.instance.addPostFrameCallback((_) => c.loadCommonDetails());
   }
 
@@ -49,8 +51,10 @@ class _CreateCustomerSupportScreenState
 
   Future<void> _pickAttachment(ImageSource source) async {
     try {
-      final XFile? picked =
-          await _picker.pickImage(source: source, imageQuality: 80);
+      final XFile? picked = await _picker.pickImage(
+        source: source,
+        imageQuality: 80,
+      );
       if (picked == null) return;
       setState(() => _attachments.add(File(picked.path)));
     } catch (_) {}
@@ -154,18 +158,22 @@ class _CreateCustomerSupportScreenState
       return;
     }
 
-    final resolvedCategoryId = categories.any((x) => x.id == _categoryId)
-        ? _categoryId
-        : categories.first.id;
-    final selectedCategory =
-        categories.firstWhere((x) => x.id == resolvedCategoryId);
+    final resolvedCategoryId =
+        categories.any((x) => x.id == _categoryId)
+            ? _categoryId
+            : categories.first.id;
+    final selectedCategory = categories.firstWhere(
+      (x) => x.id == resolvedCategoryId,
+    );
     final subcats = selectedCategory.subcategories;
-    final resolvedSubcategoryId = subcats.any((x) => x.id == _subcategoryId)
-        ? _subcategoryId
-        : (subcats.isNotEmpty ? subcats.first.id : '');
-    final resolvedPriorityId = priorities.any((x) => x.id == _priority)
-        ? _priority
-        : priorities.first.id;
+    final resolvedSubcategoryId =
+        subcats.any((x) => x.id == _subcategoryId)
+            ? _subcategoryId
+            : (subcats.isNotEmpty ? subcats.first.id : '');
+    final resolvedPriorityId =
+        priorities.any((x) => x.id == _priority)
+            ? _priority
+            : priorities.first.id;
 
     if (resolvedCategoryId.isEmpty ||
         resolvedSubcategoryId.isEmpty ||
@@ -254,7 +262,7 @@ class _CreateCustomerSupportScreenState
 
           if (details == null && loading) {
             return const Center(
-              child: CircularProgressIndicator(color: Colors.black),
+              child: HopprCircularLoader(color: Colors.black),
             );
           }
 
@@ -321,19 +329,23 @@ class _CreateCustomerSupportScreenState
             );
           }
 
-          final resolvedCategoryId = categories.any((x) => x.id == _categoryId)
-              ? _categoryId
-              : categories.first.id;
-          final resolvedPriorityId = priorities.any((x) => x.id == _priority)
-              ? _priority
-              : priorities.first.id;
+          final resolvedCategoryId =
+              categories.any((x) => x.id == _categoryId)
+                  ? _categoryId
+                  : categories.first.id;
+          final resolvedPriorityId =
+              priorities.any((x) => x.id == _priority)
+                  ? _priority
+                  : priorities.first.id;
 
-          final selectedCategory =
-              categories.firstWhere((x) => x.id == resolvedCategoryId);
+          final selectedCategory = categories.firstWhere(
+            (x) => x.id == resolvedCategoryId,
+          );
           final subcats = selectedCategory.subcategories;
-          final resolvedSubcategoryId = subcats.any((x) => x.id == _subcategoryId)
-              ? _subcategoryId
-              : (subcats.isNotEmpty ? subcats.first.id : '');
+          final resolvedSubcategoryId =
+              subcats.any((x) => x.id == _subcategoryId)
+                  ? _subcategoryId
+                  : (subcats.isNotEmpty ? subcats.first.id : '');
 
           if (resolvedCategoryId != _categoryId ||
               resolvedSubcategoryId != _subcategoryId ||
@@ -364,7 +376,10 @@ class _CreateCustomerSupportScreenState
                       ),
                     ),
                     const SizedBox(height: 10),
-                    TextField(controller: _subject, decoration: _fieldDecoration()),
+                    TextField(
+                      controller: _subject,
+                      decoration: _fieldDecoration(),
+                    ),
                     const SizedBox(height: 18),
                     const Text(
                       'Description',
@@ -399,15 +414,20 @@ class _CreateCustomerSupportScreenState
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
-                          value: _categoryId.isEmpty
-                              ? (categories.isNotEmpty ? categories.first.id : null)
-                              : _categoryId,
+                          value:
+                              _categoryId.isEmpty
+                                  ? (categories.isNotEmpty
+                                      ? categories.first.id
+                                      : null)
+                                  : _categoryId,
                           isExpanded: true,
                           items: categories
                               .map(
                                 (cat) => DropdownMenuItem(
                                   value: cat.id,
-                                  child: Text(cat.label.isEmpty ? cat.id : cat.label),
+                                  child: Text(
+                                    cat.label.isEmpty ? cat.id : cat.label,
+                                  ),
                                 ),
                               )
                               .toList(growable: false),
@@ -416,9 +436,10 @@ class _CreateCustomerSupportScreenState
                             final cat = categories.firstWhere((x) => x.id == v);
                             setState(() {
                               _categoryId = v;
-                              _subcategoryId = cat.subcategories.isNotEmpty
-                                  ? cat.subcategories.first.id
-                                  : '';
+                              _subcategoryId =
+                                  cat.subcategories.isNotEmpty
+                                      ? cat.subcategories.first.id
+                                      : '';
                             });
                           },
                         ),
@@ -442,15 +463,20 @@ class _CreateCustomerSupportScreenState
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
-                          value: _subcategoryId.isEmpty
-                              ? (subcats.isNotEmpty ? subcats.first.id : null)
-                              : _subcategoryId,
+                          value:
+                              _subcategoryId.isEmpty
+                                  ? (subcats.isNotEmpty
+                                      ? subcats.first.id
+                                      : null)
+                                  : _subcategoryId,
                           isExpanded: true,
                           items: subcats
                               .map(
                                 (sc) => DropdownMenuItem(
                                   value: sc.id,
-                                  child: Text(sc.label.isEmpty ? sc.id : sc.label),
+                                  child: Text(
+                                    sc.label.isEmpty ? sc.id : sc.label,
+                                  ),
                                 ),
                               )
                               .toList(growable: false),
@@ -479,9 +505,12 @@ class _CreateCustomerSupportScreenState
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
-                          value: _priority.isEmpty
-                              ? (priorities.isNotEmpty ? priorities.first.id : null)
-                              : _priority,
+                          value:
+                              _priority.isEmpty
+                                  ? (priorities.isNotEmpty
+                                      ? priorities.first.id
+                                      : null)
+                                  : _priority,
                           isExpanded: true,
                           items: priorities
                               .map(
@@ -569,9 +598,10 @@ class _CreateCustomerSupportScreenState
                                 right: 4,
                                 top: 4,
                                 child: InkWell(
-                                  onTap: () => setState(
-                                    () => _attachments.removeAt(i),
-                                  ),
+                                  onTap:
+                                      () => setState(
+                                        () => _attachments.removeAt(i),
+                                      ),
                                   borderRadius: BorderRadius.circular(999),
                                   child: Container(
                                     padding: const EdgeInsets.all(4),
@@ -613,23 +643,21 @@ class _CreateCustomerSupportScreenState
                         ),
                         elevation: 0,
                       ),
-                      child: _submitting
-                          ? const SizedBox(
-                              height: 22,
-                              width: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
+                      child:
+                          _submitting
+                              ? const HopprCircularLoader(
+                                radius: 11,
+                                size: 22,
                                 color: Colors.white,
+                              )
+                              : const Text(
+                                'Create Ticket',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                  color: Colors.white,
+                                ),
                               ),
-                            )
-                          : const Text(
-                              'Create Ticket',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 16,
-                                color: Colors.white,
-                              ),
-                            ),
                     ),
                   ),
                 ),
@@ -641,4 +669,3 @@ class _CreateCustomerSupportScreenState
     );
   }
 }
-

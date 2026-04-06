@@ -22,6 +22,7 @@ import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/driver_message_suggestions.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 import '../controller/driver_status_controller.dart';
 import '../controller/pickup_customer_controller.dart';
@@ -106,27 +107,27 @@ class PickingCustomerScreen extends StatelessWidget {
                     height: 650,
                     child: Stack(
                       children: [
-                          SharedMap(
-                            key: _mapKey,
-                            pickupPosition: pickupLocation,
-                            myLocationEnabled: false,
-                            initialPosition: pickupLocation,
-                            pickupIndicatorStyle: PickupIndicatorStyle.pulse,
-                            pickupIndicatorColor: const Color(0xFF00A85E),
-                            pickupTargetColor: AppColors.commonBlack,
-                            markers: markers,
-                            followDriver: c.isDriverFocused.value,
-                            followBearingEnabled: false,
-                            followZoom: c.followZoom.value,
-                            followTilt: c.isDriverFocused.value ? 45 : 0,
-                            polylines: RideRouteOverlays.buildRoutePolylines(
-                              routePoints: ui.polyline,
-                              origin: ui.driverLocation,
-                              destination: pickupLocation,
-                              idPrefix: 'route_pickup',
-                            ),
-                            onMapCreated: (gm) => c.onMapCreated(gm, context),
+                        SharedMap(
+                          key: _mapKey,
+                          pickupPosition: pickupLocation,
+                          myLocationEnabled: false,
+                          initialPosition: pickupLocation,
+                          pickupIndicatorStyle: PickupIndicatorStyle.pulse,
+                          pickupIndicatorColor: const Color(0xFF00A85E),
+                          pickupTargetColor: AppColors.commonBlack,
+                          markers: markers,
+                          followDriver: c.isDriverFocused.value,
+                          followBearingEnabled: false,
+                          followZoom: c.followZoom.value,
+                          followTilt: c.isDriverFocused.value ? 45 : 0,
+                          polylines: RideRouteOverlays.buildRoutePolylines(
+                            routePoints: ui.polyline,
+                            origin: ui.driverLocation,
+                            destination: pickupLocation,
+                            idPrefix: 'route_pickup',
                           ),
+                          onMapCreated: (gm) => c.onMapCreated(gm, context),
+                        ),
                         IgnorePointer(
                           child: Container(
                             height: 190,
@@ -163,8 +164,10 @@ class PickingCustomerScreen extends StatelessWidget {
                                 muted
                                     ? const Color(0xFFE53935)
                                     : const Color(0xFF00A85E),
-                            onTap: () =>
-                                NavigationVoiceService.instance.toggleMuted(),
+                            onTap:
+                                () =>
+                                    NavigationVoiceService.instance
+                                        .toggleMuted(),
                           );
                         },
                       ),
@@ -172,7 +175,19 @@ class PickingCustomerScreen extends StatelessWidget {
                       Obx(
                         () => MapFocusToggleButton(
                           isDriverFocused: c.isDriverFocused.value,
-                          onFocusDriver: () => c.focusDriverMarker(zoom: 17.2),
+                          onFocusDriver: () {
+                            final ms = _mapKey.currentState;
+                            if (ms == null) {
+                              c.focusDriverMarker(zoom: 17.2);
+                              return;
+                            }
+                            ms.pauseAutoFollow(const Duration(seconds: 4));
+                            ms.focusDriver(
+                              zoom: 17.2,
+                              tilt: 0,
+                              bearingEnabled: true,
+                            );
+                          },
                           onFitBounds: () {
                             final ms = _mapKey.currentState;
                             if (ms == null) return;
@@ -520,16 +535,10 @@ class PickingCustomerScreen extends StatelessWidget {
                                               if (c
                                                   .isArrivedSubmitting
                                                   .value) ...[
-                                                const SizedBox(
-                                                  height: 16,
-                                                  width: 16,
-                                                  child: CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    valueColor:
-                                                        AlwaysStoppedAnimation<
-                                                          Color
-                                                        >(Colors.white),
-                                                  ),
+                                                const HopprCircularLoader(
+                                                  radius: 8,
+                                                  size: 16,
+                                                  color: Colors.white,
                                                 ),
                                                 const SizedBox(width: 10),
                                               ],
@@ -832,32 +841,30 @@ class PickingCustomerScreen extends StatelessWidget {
         ),
       ),
       subtitle: Center(
-        child: Obx(
-          () {
-            final nameLine =
-                c.customerName.value.trim().isEmpty
-                    ? 'Picking up Rider'
-                    : 'Picking up ${c.customerName.value.trim()}';
-            final distLine = _routeDistanceText(driverStatusController, '');
+        child: Obx(() {
+          final nameLine =
+              c.customerName.value.trim().isEmpty
+                  ? 'Picking up Rider'
+                  : 'Picking up ${c.customerName.value.trim()}';
+          final distLine = _routeDistanceText(driverStatusController, '');
 
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CustomTextfield.textWithStylesSmall(
-                  nameLine,
-                  fontSize: 14,
-                  colors: AppColors.textColorGrey,
-                ),
-                const SizedBox(height: 2),
-                CustomTextfield.textWithStylesSmall(
-                  distLine,
-                  fontSize: 12,
-                  colors: AppColors.textColorGrey,
-                ),
-              ],
-            );
-          },
-        ),
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CustomTextfield.textWithStylesSmall(
+                nameLine,
+                fontSize: 14,
+                colors: AppColors.textColorGrey,
+              ),
+              const SizedBox(height: 2),
+              CustomTextfield.textWithStylesSmall(
+                distLine,
+                fontSize: 12,
+                colors: AppColors.textColorGrey,
+              ),
+            ],
+          );
+        }),
       ),
     );
   }
@@ -885,13 +892,7 @@ class PickingCustomerScreen extends StatelessWidget {
                 width: 42,
                 fit: BoxFit.cover,
                 placeholder:
-                    (_, __) => const SizedBox(
-                      height: 42,
-                      width: 42,
-                      child: Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
+                    (_, __) => const HopprCircularLoader(size: 42, radius: 12),
                 errorWidget:
                     (_, __, ___) =>
                         const Icon(Icons.person, size: 36, color: Colors.black),
@@ -2064,13 +2065,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                                 (
                                                   context,
                                                   url,
-                                                ) => const SizedBox(
-                                                  height: 40,
-                                                  width: 40,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                      ),
+                                                ) => const HopprCircularLoader(
+                                                  size: 40,
+                                                  radius: 12,
                                                 ),
                                             errorWidget:
                                                 (context, url, error) =>
@@ -2267,13 +2264,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                                   (
                                                     context,
                                                     url,
-                                                  ) => const SizedBox(
-                                                    height: 25,
-                                                    width: 25,
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                        ),
+                                                  ) => const HopprCircularLoader(
+                                                    size: 25,
+                                                    radius: 9,
                                                   ),
                                               errorWidget:
                                                   (context, url, error) =>
@@ -2378,14 +2371,11 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                                                       (
                                                         context,
                                                         url,
-                                                      ) => const SizedBox(
-                                                        height: 40,
-                                                        width: 40,
-                                                        child:
-                                                            CircularProgressIndicator(
-                                                              strokeWidth: 2,
-                                                            ),
-                                                      ),
+                                                      ) =>
+                                                          const HopprCircularLoader(
+                                                            size: 40,
+                                                            radius: 12,
+                                                          ),
                                                   errorWidget:
                                                       (context, url, error) =>
                                                           const Icon(

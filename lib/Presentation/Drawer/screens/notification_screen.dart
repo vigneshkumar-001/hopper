@@ -27,8 +27,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollController.addListener(_scrollListener);
 
-        notificationController.getNotification(isRefresh: true);
-
+      notificationController.getNotification(isRefresh: true);
     });
   }
 
@@ -83,7 +82,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
             Expanded(
               child: Obx(() {
                 if (notificationController.isLoading.value) {
-                  return Center(child: AppLoader.circularLoader());
+                  return AppLoader.circularLoader();
                 }
 
                 if (notificationController.notificationData.isEmpty) {
@@ -110,7 +109,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                           notificationController.notificationData.length) {
                         return Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Center(child: AppLoader.circularLoader()),
+                          child: AppLoader.circularLoader(),
                         );
                       }
 

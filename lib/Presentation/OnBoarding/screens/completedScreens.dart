@@ -18,6 +18,7 @@ import 'uploadExteriorPhotos.dart';
 import 'vehicleDetails.dart';
 import '../widgets/linearProgress.dart';
 import 'package:get/get.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 class CompletedScreens extends StatefulWidget {
   const CompletedScreens({Key? key}) : super(key: key);
@@ -167,7 +168,7 @@ class _CompletedScreensState extends State<CompletedScreens> {
           final steps = getSteps();
 
           return user == null
-              ? Center(child: CircularProgressIndicator())
+              ? const Center(child: HopprCircularLoader())
               : SingleChildScrollView(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(

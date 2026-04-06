@@ -8,6 +8,7 @@ import '../../../Core/Utility/images.dart';
 import '../../Authentication/widgets/textFields.dart';
 import '../controller/guidelines_Controller.dart';
 import '../widgets/bottomNavigation.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 class DriverDocGuideLines extends StatefulWidget {
   const DriverDocGuideLines({super.key});
@@ -31,7 +32,7 @@ class _DriverDocGuideLinesState extends State<DriverDocGuideLines> {
         child: Obx(() {
           if (controller.guidelinesList.isEmpty) {
             return const Center(
-              child: CircularProgressIndicator(color: AppColors.commonBlack),
+              child: HopprCircularLoader(color: AppColors.commonBlack),
             );
           }
 

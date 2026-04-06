@@ -6,11 +6,13 @@ import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
+import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
 
@@ -166,13 +168,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
               shape: BoxShape.circle,
               color: Color(0xFFF2F4F7),
             ),
-            child: const Center(
-              child: SizedBox(
-                height: 24,
-                width: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
+            child: const Center(child: HopprCircularLoader(size: 24, radius: 12)),
           ),
       errorWidget:
           (context, url, error) => Container(
@@ -449,13 +445,10 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                       onTap: _isSubmittingCash ? null : _submitCashCollected,
                       text:
                           _isSubmittingCash
-                              ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
+                              ? const HopprCircularLoader(
+                                size: 20,
+                                radius: 10,
+                                color: Colors.white,
                               )
                               : const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -650,13 +643,10 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                       },
                               text:
                                   isSubmittingRating
-                                      ? const SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: CircularProgressIndicator(
-                                          color: Colors.white,
-                                          strokeWidth: 2,
-                                        ),
+                                      ? const HopprCircularLoader(
+                                        size: 20,
+                                        radius: 10,
+                                        color: Colors.white,
                                       )
                                       : const Text('Submit Rating'),
                             ),

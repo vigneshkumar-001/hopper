@@ -558,8 +558,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: SizedBox(
                       width: 36,
                       height: 36,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.8,
+                      child: AppLoader.inlineCircularLoader(
+                        size: 36,
+                        radius: 18,
                         color: AppColors.changeButtonColor,
                       ),
                     ),
@@ -774,10 +775,10 @@ class _ChatScreenState extends State<ChatScreen> {
           (_, __) => CircleAvatar(
             radius: size / 2,
             backgroundColor: Colors.grey.shade200,
-            child: const SizedBox(
+            child: SizedBox(
               width: 16,
               height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: AppLoader.inlineCircularLoader(size: 16, radius: 8),
             ),
           ),
       errorWidget:
@@ -807,11 +808,11 @@ class _ChatScreenState extends State<ChatScreen> {
           (_, __) => SizedBox(
             width: w,
             height: h,
-            child: const Center(
+            child: Center(
               child: SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: AppLoader.inlineCircularLoader(size: 18, radius: 9),
               ),
             ),
           ),

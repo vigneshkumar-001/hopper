@@ -5,6 +5,7 @@ import 'package:hopper/Presentation/CustomerSupport/controller/customer_support_
 import 'package:hopper/Presentation/CustomerSupport/models/customer_support_models.dart';
 import 'package:hopper/Presentation/CustomerSupport/screens/create_customer_support_screen.dart';
 import 'package:hopper/Presentation/CustomerSupport/screens/customer_support_chat_screen.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:intl/intl.dart';
 
 class CustomerSupportListScreen extends StatefulWidget {
@@ -22,9 +23,10 @@ class _CustomerSupportListScreenState extends State<CustomerSupportListScreen> {
   @override
   void initState() {
     super.initState();
-    c = Get.isRegistered<CustomerSupportController>()
-        ? Get.find<CustomerSupportController>()
-        : Get.put(CustomerSupportController());
+    c =
+        Get.isRegistered<CustomerSupportController>()
+            ? Get.find<CustomerSupportController>()
+            : Get.put(CustomerSupportController());
     WidgetsBinding.instance.addPostFrameCallback((_) => c.refreshTickets());
   }
 
@@ -69,7 +71,7 @@ class _CustomerSupportListScreenState extends State<CustomerSupportListScreen> {
               child: Obx(() {
                 if (c.isLoading.value && c.tickets.isEmpty) {
                   return const Center(
-                    child: CircularProgressIndicator(color: Colors.black),
+                    child: HopprCircularLoader(color: Colors.black),
                   );
                 }
 
@@ -102,8 +104,9 @@ class _CustomerSupportListScreenState extends State<CustomerSupportListScreen> {
                         onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  CustomerSupportChatScreen(ticketId: t.id),
+                              builder:
+                                  (_) =>
+                                      CustomerSupportChatScreen(ticketId: t.id),
                             ),
                           );
                         },
@@ -134,10 +137,7 @@ class _CustomerSupportListScreenState extends State<CustomerSupportListScreen> {
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(
-                                      t.status.icon,
-                                      color: t.status.accent,
-                                    ),
+                                    Icon(t.status.icon, color: t.status.accent),
                                     const SizedBox(height: 4),
                                     Text(
                                       t.status.label,
@@ -197,9 +197,10 @@ class _CustomerSupportListScreenState extends State<CustomerSupportListScreen> {
                     onPressed: () async {
                       final res = await Navigator.of(context).push<bool>(
                         MaterialPageRoute(
-                          builder: (_) => CreateCustomerSupportScreen(
-                            prefillBookingId: widget.bookingId,
-                          ),
+                          builder:
+                              (_) => CreateCustomerSupportScreen(
+                                prefillBookingId: widget.bookingId,
+                              ),
                         ),
                       );
                       if (res == true) {

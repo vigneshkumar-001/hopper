@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/texts.dart';
@@ -69,7 +70,8 @@ class _VehicleDetailsState extends State<VehicleDetails> {
 
   @override
   Widget build(BuildContext context) {
-    serviceType = controller.vehicleType.isNotEmpty ? controller.vehicleType : 'Car';
+    serviceType =
+        controller.vehicleType.isNotEmpty ? controller.vehicleType : 'Car';
     return Scaffold(
       body: SafeArea(
         child: Obx(
@@ -177,8 +179,8 @@ class _VehicleDetailsState extends State<VehicleDetails> {
 
                                 Get.dialog(
                                   Center(
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                                    child: HopprCircularLoader(
+                                      radius: 14,
                                       color: AppColors.commonBlack,
                                     ),
                                   ),
@@ -230,8 +232,9 @@ class _VehicleDetailsState extends State<VehicleDetails> {
                                     controller.carModelController.text;
                                 Get.dialog(
                                   Center(
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: AppColors.commonBlack,
+                                    child: HopprCircularLoader(
+                                      radius: 14,
+                                      color: AppColors.commonBlack,
                                     ),
                                   ),
                                   barrierDismissible: false,
@@ -571,34 +574,36 @@ class _VehicleDetailsState extends State<VehicleDetails> {
       //           },
       //         ),
       bottomNavigationBar: Obx(
-            () => controller.isLoading.value
-            ? const SizedBox.shrink()
-            : BottomAppBar(
-          color: AppColors.commonWhite,
-          child: Column(
-            children: [
-              Buttons.button(
-                buttonColor: AppColors.commonBlack,
-                onTap: () async {
-                  if (_formKey.currentState!.validate()) {
-                    await controller.vehicleDetails(
-                      frontImageFile:
-                      frontImage.isNotEmpty ? File(frontImage) : null,
-                      backImageFile:
-                      backImage.isNotEmpty ? File(backImage) : null,
-                      context: context,
-                      serviceType: serviceType,
-                      fromCompleteScreen: widget.fromCompleteScreens,
-                    );
-                  }
-                },
-                text: const Text('Save & Next'),
-              ),
-            ],
-          ),
-        ),
+        () =>
+            controller.isLoading.value
+                ? const SizedBox.shrink()
+                : BottomAppBar(
+                  color: AppColors.commonWhite,
+                  child: Column(
+                    children: [
+                      Buttons.button(
+                        buttonColor: AppColors.commonBlack,
+                        onTap: () async {
+                          if (_formKey.currentState!.validate()) {
+                            await controller.vehicleDetails(
+                              frontImageFile:
+                                  frontImage.isNotEmpty
+                                      ? File(frontImage)
+                                      : null,
+                              backImageFile:
+                                  backImage.isNotEmpty ? File(backImage) : null,
+                              context: context,
+                              serviceType: serviceType,
+                              fromCompleteScreen: widget.fromCompleteScreens,
+                            );
+                          }
+                        },
+                        text: const Text('Save & Next'),
+                      ),
+                    ],
+                  ),
+                ),
       ),
-
     );
   }
 }

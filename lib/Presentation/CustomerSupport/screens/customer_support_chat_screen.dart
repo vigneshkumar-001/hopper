@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Presentation/CustomerSupport/controller/customer_support_controller.dart';
 import 'package:hopper/Presentation/CustomerSupport/models/customer_support_models.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:intl/intl.dart';
 
 class CustomerSupportChatScreen extends StatefulWidget {
@@ -22,9 +23,10 @@ class _CustomerSupportChatScreenState extends State<CustomerSupportChatScreen> {
   @override
   void initState() {
     super.initState();
-    c = Get.isRegistered<CustomerSupportController>()
-        ? Get.find<CustomerSupportController>()
-        : Get.put(CustomerSupportController());
+    c =
+        Get.isRegistered<CustomerSupportController>()
+            ? Get.find<CustomerSupportController>()
+            : Get.put(CustomerSupportController());
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (c.ticketById(widget.ticketId) == null) {
         await c.refreshTickets();
@@ -178,7 +180,7 @@ class _CustomerSupportChatScreenState extends State<CustomerSupportChatScreen> {
 
                 if (t == null && c.isLoading.value) {
                   return const Center(
-                    child: CircularProgressIndicator(color: Colors.black),
+                    child: HopprCircularLoader(color: Colors.black),
                   );
                 }
 
@@ -202,11 +204,14 @@ class _CustomerSupportChatScreenState extends State<CustomerSupportChatScreen> {
                     final m = messages[i];
                     final isMe = m.fromCustomer;
                     final bubbleColor =
-                        isMe ? const Color(0xFF101828) : const Color(0xFFF2F4F7);
+                        isMe
+                            ? const Color(0xFF101828)
+                            : const Color(0xFFF2F4F7);
                     final textColor = isMe ? Colors.white : Colors.black;
-                    final timeColor = isMe
-                        ? Colors.white.withOpacity(0.6)
-                        : const Color(0xFF98A2B3);
+                    final timeColor =
+                        isMe
+                            ? Colors.white.withOpacity(0.6)
+                            : const Color(0xFF98A2B3);
 
                     return Align(
                       alignment:
@@ -283,8 +288,10 @@ class _CustomerSupportChatScreenState extends State<CustomerSupportChatScreen> {
                           color: AppColors.commonBlack,
                           borderRadius: BorderRadius.circular(999),
                         ),
-                        child:
-                            const Icon(Icons.send_rounded, color: Colors.white),
+                        child: const Icon(
+                          Icons.send_rounded,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ],

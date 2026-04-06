@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 
@@ -159,8 +160,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         loading
                             ? null
                             : () async {
-                              final raw =
-                                  _withdrawAmountController.text.trim();
+                              final raw = _withdrawAmountController.text.trim();
                               final amt = double.tryParse(raw);
                               if (amt == null || amt <= 0) {
                                 Get.snackbar(
@@ -205,7 +205,7 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                     child:
                         loading
-                            ? const CupertinoActivityIndicator(
+                            ? const HopprCircularLoader(
                               radius: 14,
                               color: Colors.white,
                             )
@@ -279,9 +279,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 if (walletController.isLoading.value &&
                     walletController.traction.isEmpty) {
                   return SliverToBoxAdapter(
-                    child: const Center(
-                      child: CupertinoActivityIndicator(radius: 14),
-                    ),
+                    child: const Center(child: HopprCircularLoader(radius: 14)),
                   );
                 }
 
@@ -301,7 +299,7 @@ class _WalletScreenState extends State<WalletScreen> {
                           ? Padding(
                             padding: const EdgeInsets.all(16),
                             child: const Center(
-                              child: CupertinoActivityIndicator(radius: 14),
+                              child: HopprCircularLoader(radius: 14),
                             ),
                           )
                           : const SizedBox();

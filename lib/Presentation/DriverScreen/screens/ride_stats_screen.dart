@@ -18,6 +18,7 @@ import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 import '../controller/ride_starts_controller.dart';
 import 'cash_collected_screen.dart';
@@ -156,8 +157,10 @@ class RideStatsScreen extends StatelessWidget {
                                 muted
                                     ? const Color(0xFFE53935)
                                     : const Color(0xFF00A85E),
-                            onTap: () =>
-                                NavigationVoiceService.instance.toggleMuted(),
+                            onTap:
+                                () =>
+                                    NavigationVoiceService.instance
+                                        .toggleMuted(),
                           );
                         },
                       ),
@@ -165,7 +168,19 @@ class RideStatsScreen extends StatelessWidget {
                       Obx(
                         () => MapFocusToggleButton(
                           isDriverFocused: c.isDriverFocused.value,
-                          onFocusDriver: () => c.focusDriverMarker(zoom: 17.2),
+                          onFocusDriver: () {
+                            final ms = _mapKey.currentState;
+                            if (ms == null) {
+                              c.focusDriverMarker(zoom: 17.2);
+                              return;
+                            }
+                            ms.pauseAutoFollow(const Duration(seconds: 4));
+                            ms.focusDriver(
+                              zoom: 17.2,
+                              tilt: 0,
+                              bearingEnabled: true,
+                            );
+                          },
                           onFitBounds: () {
                             final ms = _mapKey.currentState;
                             if (ms == null) return;
@@ -420,19 +435,24 @@ class RideStatsScreen extends StatelessWidget {
                                     ),
                                     const SizedBox(width: 10),
                                     Obx(() {
-                                      final etaMin = driverStatusController
-                                          .dropDurationInMin
-                                          .value;
-                                      final distM = driverStatusController
-                                          .dropDistanceInMeters
-                                          .value;
+                                      final etaMin =
+                                          driverStatusController
+                                              .dropDurationInMin
+                                              .value;
+                                      final distM =
+                                          driverStatusController
+                                              .dropDistanceInMeters
+                                              .value;
                                       final arrived =
-                                          distM.isFinite && distM >= 0 && distM <= 60;
-                                      final label = arrived
-                                          ? 'Arrived'
-                                          : (etaMin.isFinite && etaMin < 1
-                                              ? '<1 min away'
-                                              : '${etaMin.ceil()} min away');
+                                          distM.isFinite &&
+                                          distM >= 0 &&
+                                          distM <= 60;
+                                      final label =
+                                          arrived
+                                              ? 'Arrived'
+                                              : (etaMin.isFinite && etaMin < 1
+                                                  ? '<1 min away'
+                                                  : '${etaMin.ceil()} min away');
                                       return Text(
                                         label,
                                         style: const TextStyle(
@@ -466,12 +486,12 @@ class RideStatsScreen extends StatelessWidget {
                                         const Duration(milliseconds: 700),
                                       );
 
-                                      final msg =
-                                          await driverStatusController.completeRideRequest(
-                                        context,
-                                        Amount: c.amount.value,
-                                        bookingId: bookingId,
-                                      );
+                                      final msg = await driverStatusController
+                                          .completeRideRequest(
+                                            context,
+                                            Amount: c.amount.value,
+                                            bookingId: bookingId,
+                                          );
 
                                       if (msg != null) {
                                         controller.success();
@@ -499,9 +519,13 @@ class RideStatsScreen extends StatelessWidget {
                                       );
                                       controller.reset();
                                       if (!context.mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
-                                          content: Text('Failed to complete ride'),
+                                          content: Text(
+                                            'Failed to complete ride',
+                                          ),
                                         ),
                                       );
                                     },
@@ -625,11 +649,8 @@ class RideStatsScreen extends StatelessWidget {
                     width: 45,
                     fit: BoxFit.cover,
                     placeholder:
-                        (_, __) => const SizedBox(
-                          height: 40,
-                          width: 40,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
+                        (_, __) =>
+                            const HopprCircularLoader(size: 40, radius: 12),
                     errorWidget:
                         (_, __, ___) => const Icon(
                           Icons.person,
@@ -719,13 +740,10 @@ class RideStatsScreen extends StatelessWidget {
                     },
             text:
                 c.cancelLoading.value
-                    ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
+                    ? const HopprCircularLoader(
+                      radius: 10,
+                      size: 20,
+                      color: Colors.white,
                     )
                     : const Text('Cancel this Ride'),
           ),
@@ -2148,11 +2166,8 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                     width: 45,
                     fit: BoxFit.cover,
                     placeholder:
-                        (context, url) => const SizedBox(
-                          height: 40,
-                          width: 40,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
+                        (context, url) =>
+                            const HopprCircularLoader(size: 40, radius: 12),
                     errorWidget:
                         (context, url, error) => const Icon(
                           Icons.person,

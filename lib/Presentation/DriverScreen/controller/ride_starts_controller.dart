@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -236,28 +236,58 @@ class RideStatsController extends GetxController
 
   Future<void> _applyBookingSnapshot(Map<String, dynamic> joined) async {
     try {
+      // Some backends wrap the booking details inside `basePayload` (e.g. socket
+      // `driver-location` events). Prefer it for location/name fields.
+      final Map<String, dynamic> payload =
+          (() {
+            final raw = joined['basePayload'];
+            if (raw is Map) return Map<String, dynamic>.from(raw as Map);
+            return joined;
+          })();
+
       driverStatusController.setServiceTypeFrom(
-        joined['rideType'] ?? joined['serviceType'],
+        payload['rideType'] ??
+            payload['serviceType'] ??
+            joined['rideType'] ??
+            joined['serviceType'],
       );
 
       final pickup =
+          _extractNestedLatLng(payload, 'pickupLocation') ??
           _extractNestedLatLng(joined, 'pickupLocation') ??
-          _extractLatLng(joined, latKey: 'fromLatitude', lngKey: 'fromLongitude') ??
+          _extractLatLng(
+            payload,
+            latKey: 'fromLatitude',
+            lngKey: 'fromLongitude',
+          ) ??
+          _extractLatLng(
+            joined,
+            latKey: 'fromLatitude',
+            lngKey: 'fromLongitude',
+          ) ??
           (() {
-            final raw = joined['customerLocation'];
+            final raw =
+                payload['customerLocation'] ?? joined['customerLocation'];
             if (raw is! Map) return null;
             final cl = Map<String, dynamic>.from(raw as Map);
             return _latLngFrom(
-                  cl['fromLatitude'] ?? cl['latitude'],
-                  cl['fromLongitude'] ?? cl['longitude'],
-                );
+              cl['fromLatitude'] ?? cl['latitude'],
+              cl['fromLongitude'] ?? cl['longitude'],
+            );
           })();
 
       final drop =
+          _extractNestedLatLng(payload, 'dropLocation') ??
           _extractNestedLatLng(joined, 'dropLocation') ??
+          _extractLatLng(
+            payload,
+            latKey: 'toLatitude',
+            lngKey: 'toLongitude',
+          ) ??
           _extractLatLng(joined, latKey: 'toLatitude', lngKey: 'toLongitude') ??
           (() {
-            final raw = joined['customerLocation'];
+            final raw =
+                payload['customerLocation'] ?? joined['customerLocation'];
             if (raw is! Map) return null;
             final cl = Map<String, dynamic>.from(raw as Map);
             return _latLngFrom(cl['toLatitude'], cl['toLongitude']);
@@ -267,10 +297,20 @@ class RideStatsController extends GetxController
       if (drop != null) bookingToLocation.value = drop;
 
       custName.value =
-          (joined['custName'] ?? joined['customerName'] ?? '').toString();
+          (payload['custName'] ??
+                  payload['customerName'] ??
+                  joined['custName'] ??
+                  joined['customerName'] ??
+                  '')
+              .toString();
       profilePic.value =
-          (joined['customerProfilePic'] ?? joined['profilePic'] ?? '').toString();
-      amount.value = (joined['amount'] ?? '').toString();
+          (payload['customerProfilePic'] ??
+                  payload['profilePic'] ??
+                  joined['customerProfilePic'] ??
+                  joined['profilePic'] ??
+                  '')
+              .toString();
+      amount.value = (payload['amount'] ?? joined['amount'] ?? '').toString();
 
       if ((pickupAddress ?? '').trim().isNotEmpty) {
         customerFrom.value = pickupAddress!.trim();
@@ -312,22 +352,22 @@ class RideStatsController extends GetxController
     _activeBookingSnapshotFetched = true;
     try {
       final result = await _apiDataSource.getDriverActiveBooking();
-      await result.fold(
-        (_) async {},
-        (DriverActiveBookingResponse response) async {
-          if (!response.hasBooking) return;
-          final data = response.data;
-          if (data == null) return;
+      await result.fold((_) async {}, (
+        DriverActiveBookingResponse response,
+      ) async {
+        if (!response.hasBooking) return;
+        final data = response.data;
+        if (data == null) return;
 
-          final snapshot = Map<String, dynamic>.from(data);
-          JoinedBookingData().setData(snapshot);
-          await _applyBookingSnapshot(snapshot);
-        },
-      );
+        final snapshot = Map<String, dynamic>.from(data);
+        JoinedBookingData().setData(snapshot);
+        await _applyBookingSnapshot(snapshot);
+      });
     } catch (e) {
       CommonLogger.log.e('fetchActiveBookingSnapshot error: $e');
     }
   }
+
   Future<void> _primeDriverLocationAndRoute() async {
     try {
       final pos = await Geolocator.getCurrentPosition(
@@ -434,6 +474,21 @@ class RideStatsController extends GetxController
     socketService.on('driver-location', (data) {
       CommonLogger.log.i('driver-location : $data');
       if (data == null) return;
+
+      // If we haven't hydrated booking coordinates yet, try to hydrate from the
+      // socket payload itself (some backends include a `basePayload` wrapper).
+      if ((bookingToLocation.value == null ||
+              bookingFromLocation.value == null) &&
+          data is Map) {
+        final m = Map<String, dynamic>.from(data as Map);
+        final raw = m['basePayload'];
+        if (raw is Map) {
+          unawaited(
+            _applyBookingSnapshot(Map<String, dynamic>.from(raw as Map)),
+          );
+        }
+      }
+
       final dropM = (data['dropDistanceInMeters'] ?? 0).toDouble();
       final dropMin = (data['dropDurationInMin'] ?? 0).toDouble();
 
@@ -448,11 +503,18 @@ class RideStatsController extends GetxController
       // incorrectly flip UI into "reached destination".
       if (dropM > 0) {
         final reached = dropM <= _REACHED_DESTINATION_RADIUS_M;
-        final exit = dropM >= _REACHED_DESTINATION_EXIT_RADIUS_M;
+
+        // Preference: if we know the drop coordinates, the GPS-based distance
+        // check (`_updateReachedDestinationByDistance`) is the source of truth.
+        // Use socket distance only as a positive fallback.
+        final hasDropCoords = bookingToLocation.value != null;
         if (!driverCompletedRide.value && reached) {
           driverCompletedRide.value = true;
-        } else if (driverCompletedRide.value && exit) {
-          driverCompletedRide.value = false;
+        } else if (!hasDropCoords) {
+          final exit = dropM >= _REACHED_DESTINATION_EXIT_RADIUS_M;
+          if (driverCompletedRide.value && exit) {
+            driverCompletedRide.value = false;
+          }
         }
       }
     });
@@ -461,12 +523,14 @@ class RideStatsController extends GetxController
       if (data is! Map) return;
       final m = Map<String, dynamic>.from(data as Map);
 
-      final incomingBookingId = (m['bookingId'] ?? m['booking'] ?? '')
-          .toString()
-          .trim()
-          .toLowerCase();
+      final incomingBookingId =
+          (m['bookingId'] ?? m['booking'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
       final currentId = bookingId.trim().toLowerCase();
-      if (incomingBookingId.isNotEmpty && incomingBookingId != currentId) return;
+      if (incomingBookingId.isNotEmpty && incomingBookingId != currentId)
+        return;
 
       final rawStatus = m['status'];
       final reached =
@@ -495,7 +559,6 @@ class RideStatsController extends GetxController
       socketService.onConnect(() => CommonLogger.log.i('Socket connected'));
     }
   }
-
 
   Future<void> _joinBookingRoom() async {
     final did = (await SharedPrefHelper.getDriverId())?.toString().trim() ?? '';
@@ -1126,9 +1189,3 @@ class RideStatsController extends GetxController
     return 10.0;
   }
 }
-
-
-
-
-
-

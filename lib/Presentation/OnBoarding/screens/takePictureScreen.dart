@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:get/get.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import '../../../Core/Constants/Colors.dart';
 import '../../../Core/Constants/texts.dart';
 import '../../Authentication/widgets/textFields.dart';
@@ -56,22 +57,19 @@ class _TakePictureState extends State<TakePicture> {
   Future<void> _initializeCamera() async {
     final status = await Permission.camera.request();
     if (!status.isGranted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Camera permission denied')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Camera permission denied')));
       return;
     }
 
     final cameras = await availableCameras();
     final frontCamera = cameras.firstWhere(
-          (camera) => camera.lensDirection == CameraLensDirection.front,
+      (camera) => camera.lensDirection == CameraLensDirection.front,
       orElse: () => cameras.first,
     );
 
-    _cameraController = CameraController(
-      frontCamera,
-      ResolutionPreset.medium,
-    );
+    _cameraController = CameraController(frontCamera, ResolutionPreset.medium);
 
     await _cameraController!.initialize();
     setState(() => _isCameraInitialized = true);
@@ -105,7 +103,8 @@ class _TakePictureState extends State<TakePicture> {
   }
 
   Future<void> _takePicture() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    if (_cameraController == null || !_cameraController!.value.isInitialized)
+      return;
 
     final XFile picture = await _cameraController!.takePicture();
     final inputImage = InputImage.fromFilePath(picture.path);
@@ -113,8 +112,13 @@ class _TakePictureState extends State<TakePicture> {
 
     if (faces.isEmpty) {
       File(picture.path).delete();
-      Get.snackbar("Info", "No face detected. Please try again.",
-          snackPosition: SnackPosition.TOP, backgroundColor: Colors.red, colorText: Colors.white);
+      Get.snackbar(
+        "Info",
+        "No face detected. Please try again.",
+        snackPosition: SnackPosition.TOP,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
       return;
     }
 
@@ -126,12 +130,13 @@ class _TakePictureState extends State<TakePicture> {
 
     bool isFaceWellCentered =
         boundingBox.left > imageWidth * 0.1 &&
-            boundingBox.right < imageWidth * 0.9 &&
-            boundingBox.top > imageHeight * 0.2 &&
-            boundingBox.bottom < imageHeight * 0.8;
+        boundingBox.right < imageWidth * 0.9 &&
+        boundingBox.top > imageHeight * 0.2 &&
+        boundingBox.bottom < imageHeight * 0.8;
 
     bool isFaceBigEnough =
-        boundingBox.height > imageHeight * 0.4 && boundingBox.width > imageWidth * 0.4;
+        boundingBox.height > imageHeight * 0.4 &&
+        boundingBox.width > imageWidth * 0.4;
 
     if (isFaceWellCentered && isFaceBigEnough) {
       setState(() {
@@ -162,11 +167,12 @@ class _TakePictureState extends State<TakePicture> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(backgroundColor: AppColors.commonWhite),
-      body: _capturedImage != null
-          ? _buildPreview()
-          : _isCameraInitialized
-          ? _buildCamera()
-          : const Center(child: CircularProgressIndicator()),
+      body:
+          _capturedImage != null
+              ? _buildPreview()
+              : _isCameraInitialized
+              ? _buildCamera()
+              : const Center(child: HopprCircularLoader()),
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         onTap: () async {
           if (_isButtonDisabled) return;
@@ -190,11 +196,13 @@ class _TakePictureState extends State<TakePicture> {
             _isUploading = false;
           });
         },
-        title: Text(_isUploading
-            ? 'Uploading...'
-            : _capturedImage != null
-            ? 'Upload Photo'
-            : 'Take Photo'),
+        title: Text(
+          _isUploading
+              ? 'Uploading...'
+              : _capturedImage != null
+              ? 'Upload Photo'
+              : 'Take Photo',
+        ),
       ),
     );
   }
@@ -207,29 +215,25 @@ class _TakePictureState extends State<TakePicture> {
         children: [
           Text(
             AppTexts.avoidRejection,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 24),
-          CustomTextfield.concatenateText(title: AppTexts.avoidRejectionContent1),
-          CustomTextfield.concatenateText(title: AppTexts.avoidRejectionContent2),
-          CustomTextfield.concatenateText(title: AppTexts.avoidRejectionContent3),
+          CustomTextfield.concatenateText(
+            title: AppTexts.avoidRejectionContent1,
+          ),
+          CustomTextfield.concatenateText(
+            title: AppTexts.avoidRejectionContent2,
+          ),
+          CustomTextfield.concatenateText(
+            title: AppTexts.avoidRejectionContent3,
+          ),
           const SizedBox(height: 32),
           Center(
             child: Stack(
               alignment: Alignment.center,
               children: [
                 if (_isUploading)
-                  SizedBox(
-                    width: 310,
-                    height: 310,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
-                    ),
-                  ),
+                  const HopprCircularLoader(radius: 18, color: Colors.green),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(150),
                   child: Image.file(
@@ -305,7 +309,6 @@ class _TakePictureState extends State<TakePicture> {
     ),
   );
 }
-
 
 /*import 'dart:io';
 
@@ -482,7 +485,7 @@ class _TakePictureState extends State<TakePicture> {
           ? _buildPreview()
           : _isCameraInitialized
           ? _buildCamera()
-          : const Center(child: CircularProgressIndicator()),
+          : const Center(child: HopprCircularLoader()),
       bottomNavigationBar: CustomBottomNavigation.bottomNavigation(
         onTap: () async {
           if (_isButtonDisabled) return;
@@ -544,14 +547,7 @@ class _TakePictureState extends State<TakePicture> {
               alignment: Alignment.center,
               children: [
                 if (_isUploading)
-                  SizedBox(
-                    width: 310,
-                    height: 310,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
-                    ),
-                  ),
+                  const HopprCircularLoader(radius: 18, color: Colors.green),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(150),
                   child: Image.file(

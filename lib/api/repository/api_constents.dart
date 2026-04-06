@@ -11,7 +11,8 @@ class ApiConstents {
 
   static String sharedRideSocket = const String.fromEnvironment(
     'HOPPR_SHARED_SOCKET_URL',
-    defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com/api',
+    // Socket.io expects the origin/root URL (not `/api`).
+    defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com',
     // defaultValue: 'https://q29l3cr9-6000.inc1.devtunnels.ms',
   );
   static String googleMapApiKey = const String.fromEnvironment(
@@ -74,8 +75,7 @@ class ApiConstents {
   static String get sharedDriverActiveBooking => _u('/users/active-booking');
   // static String get sharedDriverActiveBooking => _u('/shared/driver/active-booking');
 
-  static String userImageUpload =
-     _u('/upload/image');
+  static String userImageUpload = _u('/upload/image');
 
   // Support
   static String get supportCustomerTickets => _u('/support/driver/tickets');

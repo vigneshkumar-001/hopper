@@ -80,7 +80,7 @@ class _RideAndPackageHistoryScreenState
               child: Obx(() {
                 final data = controller.rideHistoryData;
                 if (controller.isLoading.value) {
-                  return Center(child: AppLoader.circularLoader());
+                  return AppLoader.circularLoader();
                 } else if (data.isEmpty) {
                   return RefreshIndicator(
                     onRefresh: () async {
@@ -121,9 +121,9 @@ class _RideAndPackageHistoryScreenState
                       if (index == data.length) {
                         // bottom loader
                         return controller.isMoreLoading.value
-                            ? const Padding(
-                              padding: EdgeInsets.all(20),
-                              child: Center(child: CircularProgressIndicator()),
+                            ? Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: AppLoader.circularLoader(),
                             )
                             : const SizedBox.shrink();
                       }

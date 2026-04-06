@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:hopper/Presentation/Authentication/screens/GetStarted_Screens.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/session/logout_cleanup.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/Drawer/controller/notification_controller.dart';
@@ -25,12 +26,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    profileController = Get.isRegistered<ChooseServiceController>()
-        ? Get.find<ChooseServiceController>()
-        : Get.put(ChooseServiceController());
-    sharedController = Get.isRegistered<NotificationController>()
-        ? Get.find<NotificationController>()
-        : Get.put(NotificationController(), permanent: true);
+    profileController =
+        Get.isRegistered<ChooseServiceController>()
+            ? Get.find<ChooseServiceController>()
+            : Get.put(ChooseServiceController());
+    sharedController =
+        Get.isRegistered<NotificationController>()
+            ? Get.find<NotificationController>()
+            : Get.put(NotificationController(), permanent: true);
     if (Get.isRegistered<DriverStatusController>()) {
       statusController = Get.find<DriverStatusController>();
     }
@@ -67,7 +70,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         children: [
                           IconButton(
                             onPressed: () => Navigator.pop(context),
-                            icon: const Icon(Icons.arrow_back_rounded, size: 30),
+                            icon: const Icon(
+                              Icons.arrow_back_rounded,
+                              size: 30,
+                            ),
                           ),
                           const Expanded(
                             child: Text(
@@ -155,13 +161,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.badge_outlined,
                   title: 'Documents',
                   subtitle: 'Aadhaar, license, profile photo and status',
-                  onTap: () => Get.to(() => _DocumentsDetailsScreen(profile: profile)),
+                  onTap:
+                      () => Get.to(
+                        () => _DocumentsDetailsScreen(profile: profile),
+                      ),
                 ),
                 _SettingsRowTile(
                   icon: Icons.directions_car_filled_outlined,
                   title: 'Vehicles',
                   subtitle: 'Brand, model, plate and registration',
-                  onTap: () => Get.to(() => _VehicleDetailsScreen(profile: profile)),
+                  onTap:
+                      () =>
+                          Get.to(() => _VehicleDetailsScreen(profile: profile)),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
@@ -194,7 +205,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (isLoading)
                   const Padding(
                     padding: EdgeInsets.only(top: 20),
-                    child: Center(child: CircularProgressIndicator()),
+                    child: Center(child: HopprCircularLoader()),
                   ),
               ],
             ),
@@ -205,108 +216,114 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-  void _showSettingsLogoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Container(
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x22000000),
-                  blurRadius: 28,
-                  offset: Offset(0, 16),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  height: 72,
-                  width: 72,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFFE5E2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.logout_rounded,
-                    color: Color(0xFFB42318),
-                    size: 34,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  'Log out now?',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'You will need to sign in again to access your driver account on this device.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    height: 1.5,
-                    color: Color(0xFF667085),
-                  ),
-                ),
-                const SizedBox(height: 22),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          foregroundColor: const Color(0xFF111827),
-                          side: const BorderSide(color: Color(0xFFD0D5DD)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w700)),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          Navigator.pop(dialogContext);
-                          await _settingsLogout(context);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFB42318),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: const Text('Log out', style: TextStyle(fontWeight: FontWeight.w700)),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+void _showSettingsLogoutDialog(BuildContext context) {
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (dialogContext) {
+      return Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 28,
+                offset: Offset(0, 16),
+              ),
+            ],
           ),
-        );
-      },
-    );
-  }
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 72,
+                width: 72,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFE5E2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.logout_rounded,
+                  color: Color(0xFFB42318),
+                  size: 34,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Log out now?',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'You will need to sign in again to access your driver account on this device.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  height: 1.5,
+                  color: Color(0xFF667085),
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        foregroundColor: const Color(0xFF111827),
+                        side: const BorderSide(color: Color(0xFFD0D5DD)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(dialogContext);
+                        await _settingsLogout(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFB42318),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'Log out',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
 
 class _SettingsLogoutCard extends StatelessWidget {
   const _SettingsLogoutCard({required this.onTap});
@@ -342,7 +359,11 @@ class _SettingsLogoutCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Color(0xFFB42318)),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: Color(0xFFB42318),
+              ),
             ],
           ),
         ),
@@ -358,15 +379,16 @@ class _SettingsAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final child = (url != null && url!.isNotEmpty)
-        ? CachedNetworkImage(
-            imageUrl: url!,
-            height: 68,
-            width: 68,
-            fit: BoxFit.cover,
-            errorWidget: (_, __, ___) => _fallback(),
-          )
-        : _fallback();
+    final child =
+        (url != null && url!.isNotEmpty)
+            ? CachedNetworkImage(
+              imageUrl: url!,
+              height: 68,
+              width: 68,
+              fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => _fallback(),
+            )
+            : _fallback();
     return ClipOval(child: child);
   }
 
@@ -406,36 +428,36 @@ class _SettingsRowTile extends StatelessWidget {
             border: Border(bottom: BorderSide(color: Color(0xFFEAEAEA))),
           ),
           child: Row(
-        children: [
-          Icon(icon, color: const Color(0xFF111827), size: 26),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
-                  ),
+            children: [
+              Icon(icon, color: const Color(0xFF111827), size: 26),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF667085),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF667085),
-                  ),
-                ),
-              ],
-            ),
+              ),
+              const Icon(Icons.arrow_forward_ios_rounded, size: 18),
+            ],
           ),
-          const Icon(Icons.arrow_forward_ios_rounded, size: 18),
-        ],
-      ),
         ),
       ),
     );
@@ -581,11 +603,12 @@ class _PhotoSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cleanUrls = urls
-        .map((e) => e?.trim())
-        .whereType<String>()
-        .where((e) => e.isNotEmpty)
-        .toList();
+    final cleanUrls =
+        urls
+            .map((e) => e?.trim())
+            .whereType<String>()
+            .where((e) => e.isNotEmpty)
+            .toList();
 
     return Container(
       width: double.infinity,
@@ -642,18 +665,20 @@ class _PhotoThumb extends StatelessWidget {
         height: 86,
         width: 86,
         fit: BoxFit.cover,
-        placeholder: (_, __) => Container(
-          height: 55,
-          width: 55,
-          color: const Color(0xFFF2F4F7),
-          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-        ),
-        errorWidget: (_, __, ___) => Container(
-          height: 86,
-          width: 86,
-          color: const Color(0xFFF2F4F7),
-          child:  Icon(Icons.broken_image),
-        ),
+        placeholder:
+            (_, __) => Container(
+              height: 55,
+              width: 55,
+              color: const Color(0xFFF2F4F7),
+              child: const Center(child: HopprCircularLoader(radius: 12)),
+            ),
+        errorWidget:
+            (_, __, ___) => Container(
+              height: 86,
+              width: 86,
+              color: const Color(0xFFF2F4F7),
+              child: Icon(Icons.broken_image),
+            ),
       ),
     );
   }
@@ -710,7 +735,10 @@ Widget _statusRow(String label, bool approved) {
         ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(999),
+          ),
           child: Text(
             approved ? 'Verified' : 'Pending',
             style: TextStyle(color: color, fontWeight: FontWeight.w800),
@@ -732,23 +760,28 @@ String _rating(GetUserProfileModel? profile) {
 }
 
 String _phone(GetUserProfileModel? profile) {
-  final value = '${profile?.countryCode ?? ''} ${profile?.mobileNumber ?? ''}'.trim();
+  final value =
+      '${profile?.countryCode ?? ''} ${profile?.mobileNumber ?? ''}'.trim();
   return value.isEmpty ? 'Not available' : value;
 }
 
 String _address(GetUserProfileModel? profile) {
-  final values = [profile?.address, profile?.city, profile?.state]
-      .map((e) => e?.trim() ?? '')
-      .where((e) => e.isNotEmpty)
-      .toList();
+  final values =
+      [
+        profile?.address,
+        profile?.city,
+        profile?.state,
+      ].map((e) => e?.trim() ?? '').where((e) => e.isNotEmpty).toList();
   return values.isEmpty ? 'Not available' : values.join(', ');
 }
 
 String _vehicleName(GetUserProfileModel? profile) {
-  final values = (profile?.serviceType ?? '').toLowerCase() == 'bike'
-      ? [profile?.bikeBrand, profile?.bikeModel]
-      : [profile?.carBrand, profile?.carModel];
-  final clean = values.map((e) => e?.trim() ?? '').where((e) => e.isNotEmpty).toList();
+  final values =
+      (profile?.serviceType ?? '').toLowerCase() == 'bike'
+          ? [profile?.bikeBrand, profile?.bikeModel]
+          : [profile?.carBrand, profile?.carModel];
+  final clean =
+      values.map((e) => e?.trim() ?? '').where((e) => e.isNotEmpty).toList();
   return clean.isEmpty ? 'Not available' : clean.join(' ');
 }
 
@@ -766,9 +799,10 @@ String _registration(GetUserProfileModel? profile) {
 }
 
 String _ownerName(GetUserProfileModel? profile) {
-  final value = (profile?.serviceType ?? '').toLowerCase() == 'bike'
-      ? profile?.bikeOwnerName
-      : profile?.carOwnerName;
+  final value =
+      (profile?.serviceType ?? '').toLowerCase() == 'bike'
+          ? profile?.bikeOwnerName
+          : profile?.carOwnerName;
   return _text(value);
 }
 
@@ -778,10 +812,6 @@ String _text(String? value) {
 }
 
 bool _approved(StatusModel? status) => (status?.status ?? 0) >= 3;
-
-
-
-
 
 class _DocumentsDetailsScreen extends StatelessWidget {
   const _DocumentsDetailsScreen({required this.profile});
@@ -798,7 +828,10 @@ class _DocumentsDetailsScreen extends StatelessWidget {
         elevation: 0,
         title: const Text(
           'Documents',
-          style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.w800),
+          style: TextStyle(
+            color: Color(0xFF111827),
+            fontWeight: FontWeight.w800,
+          ),
         ),
         iconTheme: const IconThemeData(color: Color(0xFF111827)),
       ),
@@ -809,9 +842,18 @@ class _DocumentsDetailsScreen extends StatelessWidget {
             _DetailsCard(
               title: 'Verification Status',
               children: [
-                _statusRow('Profile Photo', _approved(profile?.profilePhotoStatus)),
-                _statusRow('Aadhaar / NIN', _approved(profile?.ninVerificationStatus)),
-                _statusRow('Driver License', _approved(profile?.driversLicenseStatus)),
+                _statusRow(
+                  'Profile Photo',
+                  _approved(profile?.profilePhotoStatus),
+                ),
+                _statusRow(
+                  'Aadhaar / NIN',
+                  _approved(profile?.ninVerificationStatus),
+                ),
+                _statusRow(
+                  'Driver License',
+                  _approved(profile?.driversLicenseStatus),
+                ),
                 _statusRow('Address', _approved(profile?.driverAddressStatus)),
               ],
             ),
@@ -864,7 +906,10 @@ class _VehicleDetailsScreen extends StatelessWidget {
         elevation: 0,
         title: const Text(
           'Vehicles',
-          style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.w800),
+          style: TextStyle(
+            color: Color(0xFF111827),
+            fontWeight: FontWeight.w800,
+          ),
         ),
         iconTheme: const IconThemeData(color: Color(0xFF111827)),
       ),
@@ -875,10 +920,19 @@ class _VehicleDetailsScreen extends StatelessWidget {
             _DetailsCard(
               title: 'Vehicle Status',
               children: [
-                _statusRow('Vehicle Details', _approved(profile?.carDetailsStatus)),
+                _statusRow(
+                  'Vehicle Details',
+                  _approved(profile?.carDetailsStatus),
+                ),
                 _statusRow('Ownership', _approved(profile?.carOwnershipStatus)),
-                _statusRow('Exterior Photos', _approved(profile?.carExteriorPhotosStatus)),
-                _statusRow('Interior Photos', _approved(profile?.carInteriorPhotosStatus)),
+                _statusRow(
+                  'Exterior Photos',
+                  _approved(profile?.carExteriorPhotosStatus),
+                ),
+                _statusRow(
+                  'Interior Photos',
+                  _approved(profile?.carInteriorPhotosStatus),
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -887,10 +941,18 @@ class _VehicleDetailsScreen extends StatelessWidget {
               children: [
                 _detailRow('Service', _text(profile?.serviceType)),
                 _detailRow('Brand / Model', _vehicleName(profile)),
-                _detailRow('Year', profile?.carYear?.toString() ?? profile?.bikeYear?.toString() ?? 'Not available'),
+                _detailRow(
+                  'Year',
+                  profile?.carYear?.toString() ??
+                      profile?.bikeYear?.toString() ??
+                      'Not available',
+                ),
                 _detailRow('Color', _text(profile?.carColor)),
                 _detailRow('Owner', _ownerName(profile)),
-                _detailRow('Plate', _text(profile?.carPlateNumber ?? profile?.bikePlateNumber)),
+                _detailRow(
+                  'Plate',
+                  _text(profile?.carPlateNumber ?? profile?.bikePlateNumber),
+                ),
                 _detailRow('Registration', _registration(profile)),
               ],
             ),
@@ -908,7 +970,8 @@ class _VehicleDetailsScreen extends StatelessWidget {
             const SizedBox(height: 16),
             _PhotoSection(
               title: 'Exterior Photos',
-              urls: profile?.carExteriorPhotos ?? profile?.bikePhotos ?? const [],
+              urls:
+                  profile?.carExteriorPhotos ?? profile?.bikePhotos ?? const [],
               emptyLabel: 'No exterior photos uploaded yet',
             ),
             const SizedBox(height: 16),
@@ -924,7 +987,6 @@ class _VehicleDetailsScreen extends StatelessWidget {
   }
 }
 
-
 Future<void> _settingsLogout(BuildContext context) async {
   final prefs = await SharedPreferences.getInstance();
   await performLogoutCleanup();
@@ -939,4 +1001,3 @@ Future<void> _settingsLogout(BuildContext context) async {
     (route) => false,
   );
 }
-

@@ -146,6 +146,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 enum AppState {
   choosingLocation,
@@ -486,7 +487,7 @@ class UberCloneMainScreenState extends State<UberCloneMainScreen> {
       body: Stack(
         children: [
           _currentLocation == null
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(child: HopprCircularLoader())
               : GoogleMap(
                 initialCameraPosition: _initialCameraPosition,
                 onMapCreated: (GoogleMapController controller) {

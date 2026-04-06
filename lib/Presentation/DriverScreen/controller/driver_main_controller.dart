@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -44,7 +44,8 @@ class DriverMainController extends GetxController
   // --- motion thresholds to tame jitter ---
   static const double _MAX_ACCURACY_M = 25.0; // ignore noisy GPS fixes
   static const double _STATIONARY_JUMP_M = 30.0; // ignore big jumps when idle
-  static const double _JUMP_ACCEPT_ACCURACY_M = 12.0; // allow big move if very accurate
+  static const double _JUMP_ACCEPT_ACCURACY_M =
+      12.0; // allow big move if very accurate
   static const double _MOVING_SPEED_MS = 0.6;
   static const double _MOVING_METERS = 5.0;
 
@@ -83,6 +84,7 @@ class DriverMainController extends GetxController
   DateTime? _lastMovedAt;
   DateTime? _lastUpdateLocationEmitAt;
   DateTime? _lastHeartbeatEmitAt;
+  DateTime _lastHomeRefreshAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   String? driverId;
   String? currentBookingId;
@@ -117,7 +119,8 @@ class DriverMainController extends GetxController
   String? _lastDismissedBookingId;
   bool _appInForeground = true;
 
-  final Rxn<Map<String, dynamic>> activeBookingData = Rxn<Map<String, dynamic>>();
+  final Rxn<Map<String, dynamic>> activeBookingData =
+      Rxn<Map<String, dynamic>>();
   final RxBool showActiveBookingCard = false.obs;
 
   // ---------------- helpers ----------------
@@ -217,31 +220,31 @@ class DriverMainController extends GetxController
   //     carIcon = BitmapDescriptor.defaultMarker;
   //   }
   // }
-Future<void> loadCustomCarIcon() async {
-  try {
-    final bool isCar = statusController.isCar;
-    final String asset = isCar ? AppImages.movingCar : AppImages.parcelBike;
+  Future<void> loadCustomCarIcon() async {
+    try {
+      final bool isCar = statusController.isCar;
+      final String asset = isCar ? AppImages.movingCar : AppImages.parcelBike;
 
-    final double markerHeight = isCar ? 52.0 : 52.0;
-    final double markerWidth = isCar ? 27.0 : 32.0;
+      final double markerHeight = isCar ? 52.0 : 52.0;
+      final double markerWidth = isCar ? 27.0 : 32.0;
 
-    final ImageConfiguration cfg = ImageConfiguration(
-      size: Size(markerWidth, markerHeight),
-    );
+      final ImageConfiguration cfg = ImageConfiguration(
+        size: Size(markerWidth, markerHeight),
+      );
 
-    carIcon = await BitmapDescriptor.asset(
-      cfg,
-      asset,
-      width: markerWidth,
-      height: markerHeight,
-    );
-  } catch (e) {
-    if (kDebugMode) {
-      CommonLogger.log.w("Car icon load failed: $e");
+      carIcon = await BitmapDescriptor.asset(
+        cfg,
+        asset,
+        width: markerWidth,
+        height: markerHeight,
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        CommonLogger.log.w("Car icon load failed: $e");
+      }
+      carIcon = BitmapDescriptor.defaultMarker;
     }
-    carIcon = BitmapDescriptor.defaultMarker;
   }
-}
 
   // ---------------- marker update (animated) ----------------
   void updateCarMarker(LatLng newPos) {
@@ -411,15 +414,10 @@ Future<void> loadCustomCarIcon() async {
     final lat1 = origin.latitude * (pi / 180.0);
     final lng1 = origin.longitude * (pi / 180.0);
 
-    final lat2 = asin(
-      sin(lat1) * cos(d) + cos(lat1) * sin(d) * cos(b),
-    );
+    final lat2 = asin(sin(lat1) * cos(d) + cos(lat1) * sin(d) * cos(b));
     final lng2 =
         lng1 +
-        atan2(
-          sin(b) * sin(d) * cos(lat1),
-          cos(d) - sin(lat1) * sin(lat2),
-        );
+        atan2(sin(b) * sin(d) * cos(lat1), cos(d) - sin(lat1) * sin(lat2));
 
     return LatLng(lat2 * 180.0 / pi, lng2 * 180.0 / pi);
   }
@@ -494,7 +492,10 @@ Future<void> loadCustomCarIcon() async {
     _cancelNavInFlight = false;
   }
 
-  void _showCancellationDialog({required String title, required String message}) {
+  void _showCancellationDialog({
+    required String title,
+    required String message,
+  }) {
     try {
       if (Get.isDialogOpen == true) return;
     } catch (_) {}
@@ -504,7 +505,9 @@ Future<void> loadCustomCarIcon() async {
         barrierDismissible: false,
         Dialog(
           insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -581,6 +584,37 @@ Future<void> loadCustomCarIcon() async {
 
     try {
       await bg.stopDriverTrackingService();
+    } catch (_) {}
+
+    // Refresh home cards (earnings/rides/today activity) after a booking ends so
+    // the main screen shows updated totals without requiring manual pull-to-refresh.
+    unawaited(refreshHomeStats(force: true));
+  }
+
+  Future<void> refreshHomeStats({bool force = false}) async {
+    if (_disposed || isClosed) return;
+    final now = DateTime.now();
+    if (!force &&
+        now.difference(_lastHomeRefreshAt) < const Duration(seconds: 8)) {
+      return;
+    }
+    _lastHomeRefreshAt = now;
+
+    try {
+      await statusController.getDriverStatus();
+    } catch (_) {}
+
+    try {
+      await statusController.weeklyChallenges();
+    } catch (_) {}
+
+    final type = statusController.serviceType.value.trim().toLowerCase();
+    try {
+      if (type == 'car') {
+        await statusController.todayActivity();
+      } else {
+        await statusController.todayPackageActivity();
+      }
     } catch (_) {}
   }
 
@@ -696,9 +730,10 @@ Future<void> loadCustomCarIcon() async {
       if (ts == _lastSentLocationTimestamp) return;
 
       final movedAt = _lastMovedAt;
-      final idleFor = movedAt == null
-          ? const Duration(days: 9999)
-          : DateTime.now().difference(movedAt);
+      final idleFor =
+          movedAt == null
+              ? const Duration(days: 9999)
+              : DateTime.now().difference(movedAt);
       if (idleFor >= const Duration(seconds: 20)) {
         return;
       }
@@ -709,7 +744,7 @@ Future<void> loadCustomCarIcon() async {
       Get.find<DriverAnalyticsController>().trackOnlineTick(
         const Duration(seconds: 7),
       );
-       // Reference log is centralized in `SocketService.emit()` for `updateLocation`.
+      // Reference log is centralized in `SocketService.emit()` for `updateLocation`.
     });
 
     // Not moving but online => emit `driver-heartbeat` every 20–30s (we use 25s).
@@ -864,7 +899,8 @@ Future<void> loadCustomCarIcon() async {
     if (nested is Map) {
       final lat = nested['latitude'];
       final lng = nested['longitude'];
-      if (lat is num && lng is num) return LatLng(lat.toDouble(), lng.toDouble());
+      if (lat is num && lng is num)
+        return LatLng(lat.toDouble(), lng.toDouble());
       final latD = double.tryParse(lat?.toString() ?? '');
       final lngD = double.tryParse(lng?.toString() ?? '');
       if (latD != null && lngD != null) return LatLng(latD, lngD);
@@ -917,10 +953,8 @@ Future<void> loadCustomCarIcon() async {
     // For shared rides backend may use:
     // - parent shared room (sharedBookingId)
     // - individual rider booking rooms (bookingId / activeSharedBookings)
-    final rooms = <String>{
-      bookingId.trim(),
-      parentRoomId.trim(),
-    }..removeWhere((e) => e.isEmpty);
+    final rooms = <String>{bookingId.trim(), parentRoomId.trim()}
+      ..removeWhere((e) => e.isEmpty);
 
     if (liveTracking is Map) {
       final list = liveTracking['activeSharedBookings'];
@@ -958,7 +992,9 @@ Future<void> loadCustomCarIcon() async {
 
     final now = DateTime.now();
     final last = _lastActiveBookingCheckAt;
-    if (!force && last != null && now.difference(last) < const Duration(seconds: 8)) {
+    if (!force &&
+        last != null &&
+        now.difference(last) < const Duration(seconds: 8)) {
       return;
     }
     _lastActiveBookingCheckAt = now;
@@ -968,88 +1004,91 @@ Future<void> loadCustomCarIcon() async {
       final result = await _apiDataSource.getDriverActiveBooking();
       if (_disposed || isClosed) return;
 
-      await result.fold(
-        (_) async {},
-         (DriverActiveBookingResponse response) async {
-           if (!response.hasBooking) {
-             activeBookingData.value = null;
-             _lastDismissedBookingId = null;
-             showActiveBookingCard.value = false;
-             return;
-           }
-           final data = response.data;
-           if (data == null) {
-             activeBookingData.value = null;
-             showActiveBookingCard.value = false;
-             return;
-           }
+      await result.fold((_) async {}, (
+        DriverActiveBookingResponse response,
+      ) async {
+        if (!response.hasBooking) {
+          activeBookingData.value = null;
+          _lastDismissedBookingId = null;
+          showActiveBookingCard.value = false;
+          return;
+        }
+        final data = response.data;
+        if (data == null) {
+          activeBookingData.value = null;
+          showActiveBookingCard.value = false;
+          return;
+        }
 
-           final bookingId = (data['bookingId'] ?? '').toString().trim();
-           if (bookingId.isEmpty) return;
+        final bookingId = (data['bookingId'] ?? '').toString().trim();
+        if (bookingId.isEmpty) return;
 
-           final live = data['driverLiveTracking'];
-           final isShared =
-               _asBool(data['sharedBooking']) ||
-               _asBool(data['isShared']) ||
-               _asBool(data['shared']) ||
-               (live is Map && _asBool(live['sharedBooking']));
+        final live = data['driverLiveTracking'];
+        final isShared =
+            _asBool(data['sharedBooking']) ||
+            _asBool(data['isShared']) ||
+            _asBool(data['shared']) ||
+            (live is Map && _asBool(live['sharedBooking']));
 
-           final sharedBookingId =
-               (data['sharedBookingId'] ?? '').toString().trim();
-           // For shared rides, backend uses a parent shared booking id/room.
-           // Join that room so we receive pooled rider list (joined-booking).
-           final parentRoomId =
-               (isShared && sharedBookingId.isNotEmpty) ? sharedBookingId : bookingId;
+        final sharedBookingId =
+            (data['sharedBookingId'] ?? '').toString().trim();
+        // For shared rides, backend uses a parent shared booking id/room.
+        // Join that room so we receive pooled rider list (joined-booking).
+        final parentRoomId =
+            (isShared && sharedBookingId.isNotEmpty)
+                ? sharedBookingId
+                : bookingId;
 
-           currentBookingId = parentRoomId;
+        currentBookingId = parentRoomId;
 
-           final did = driverId;
-           if (did != null && did.trim().isNotEmpty) {
-             // Ensure socket/base-url mode matches the booking type so we join the
-             // correct backend immediately after resume/login.
-             try {
-               final cfg = Get.find<ApiConfigController>();
-               if (cfg.isSharedEnabled.value != isShared) {
-                 await cfg.setSharedEnabled(isShared);
-               }
-             } catch (_) {}
+        final did = driverId;
+        if (did != null && did.trim().isNotEmpty) {
+          // Important: do NOT auto-disable shared mode here. That preference
+          // is user-controlled (drawer toggle + server status) and is also
+          // used to decide which backend to connect to. We only auto-enable
+          // shared mode when the active booking is clearly a shared booking.
+          try {
+            final cfg = Get.find<ApiConfigController>();
+            if (isShared && cfg.isSharedEnabled.value != true) {
+              await cfg.setSharedEnabled(true);
+            }
+          } catch (_) {}
 
-             if (isShared) {
-               _joinSharedRoomsFromActiveBooking(
-                 driverId: did,
-                 bookingId: bookingId,
-                 parentRoomId: parentRoomId,
-                 liveTracking: live,
-               );
-             } else {
-               socketService.registerDriver(did, bookingId: bookingId);
-               socketService.joinBooking(bookingId, userId: did);
-             }
-           }
-
-           final status = (data['status'] ?? '').toString();
-           final cancelled = _isBookingCancelled(data, status);
-           final completed = _isBookingCompleted(data, status);
-          if (cancelled || completed) {
-            activeBookingData.value = null;
-            _lastDismissedBookingId = null;
-            showActiveBookingCard.value = false;
-            return;
-          }
-
-          activeBookingData.value = Map<String, dynamic>.from(data);
-
-          // Keep service type in sync so map marker icon (car/bike) matches resumed booking.
-          statusController.setServiceTypeFrom(data['rideType']);
-          JoinedBookingData().setData(Map<String, dynamic>.from(data));
-
-          if (_lastDismissedBookingId == bookingId) {
-            showActiveBookingCard.value = false;
+          if (isShared) {
+            _joinSharedRoomsFromActiveBooking(
+              driverId: did,
+              bookingId: bookingId,
+              parentRoomId: parentRoomId,
+              liveTracking: live,
+            );
           } else {
-            showActiveBookingCard.value = true;
+            socketService.registerDriver(did, bookingId: bookingId);
+            socketService.joinBooking(bookingId, userId: did);
           }
-        },
-      );
+        }
+
+        final status = (data['status'] ?? '').toString();
+        final cancelled = _isBookingCancelled(data, status);
+        final completed = _isBookingCompleted(data, status);
+        if (cancelled || completed) {
+          activeBookingData.value = null;
+          _lastDismissedBookingId = null;
+          showActiveBookingCard.value = false;
+          return;
+        }
+
+        activeBookingData.value = Map<String, dynamic>.from(data);
+
+        // Keep service type in sync so map marker icon (car/bike) matches resumed booking.
+        statusController.setServiceTypeFrom(data['rideType']);
+        JoinedBookingData().setData(Map<String, dynamic>.from(data));
+
+        if (_lastDismissedBookingId == bookingId) {
+          showActiveBookingCard.value = false;
+        } else {
+          showActiveBookingCard.value = true;
+        }
+      });
     } finally {
       _checkingActiveBooking = false;
     }
@@ -1084,7 +1123,8 @@ Future<void> loadCustomCarIcon() async {
     if (live is Map) {
       final lat = live['currentLatitude'];
       final lng = live['currentLongitude'];
-      if (lat is num && lng is num) return LatLng(lat.toDouble(), lng.toDouble());
+      if (lat is num && lng is num)
+        return LatLng(lat.toDouble(), lng.toDouble());
       final latD = double.tryParse(lat?.toString() ?? '');
       final lngD = double.tryParse(lng?.toString() ?? '');
       if (latD != null && lngD != null) return LatLng(latD, lngD);
@@ -1093,7 +1133,8 @@ Future<void> loadCustomCarIcon() async {
     if (driverLoc is Map) {
       final lat = driverLoc['latitude'];
       final lng = driverLoc['longitude'];
-      if (lat is num && lng is num) return LatLng(lat.toDouble(), lng.toDouble());
+      if (lat is num && lng is num)
+        return LatLng(lat.toDouble(), lng.toDouble());
       final latD = double.tryParse(lat?.toString() ?? '');
       final lngD = double.tryParse(lng?.toString() ?? '');
       if (latD != null && lngD != null) return LatLng(latD, lngD);
@@ -1139,8 +1180,7 @@ Future<void> loadCustomCarIcon() async {
         (data['pickupAddress'] ?? data['pickupLocationAddress'] ?? '')
             .toString();
     final dropAddress =
-        (data['dropAddress'] ?? data['dropLocationAddress'] ?? '')
-            .toString();
+        (data['dropAddress'] ?? data['dropLocationAddress'] ?? '').toString();
 
     final rideStarted =
         _asBool(data['rideStarted']) ||
@@ -1158,8 +1198,8 @@ Future<void> loadCustomCarIcon() async {
     if (did != null && did.trim().isNotEmpty) {
       try {
         final cfg = Get.find<ApiConfigController>();
-        if (cfg.isSharedEnabled.value != isShared) {
-          await cfg.setSharedEnabled(isShared);
+        if (isShared && cfg.isSharedEnabled.value != true) {
+          await cfg.setSharedEnabled(true);
         }
       } catch (_) {}
 
@@ -1323,6 +1363,9 @@ Future<void> loadCustomCarIcon() async {
     if (socketService.connected) {
       await startEmitLoop();
     }
+
+    // Update home stats when returning from other screens / background.
+    unawaited(refreshHomeStats());
   }
 
   // ---------------- âœ… listen shared toggle ----------------
@@ -1341,34 +1384,34 @@ Future<void> loadCustomCarIcon() async {
         socketService.switchUrl(newUrl);
         _bindSocketListeners();
 
-         socketService.registerDriver(
-           driverId ?? '',
-           bookingId: currentBookingId,
-         );
+        socketService.registerDriver(
+          driverId ?? '',
+          bookingId: currentBookingId,
+        );
 
-         await startEmitLoop();
+        await startEmitLoop();
 
-         if (statusController.isOnline.value) {
-           if (_appInForeground) {
-             unawaited(bg.stopDriverTrackingService());
-           } else {
-             unawaited(bg.stopDriverTrackingService());
-             unawaited(
-               Future.delayed(
-                 const Duration(milliseconds: 450),
-                 () => bg.ensureDriverTrackingServiceRunning(
-                   driverId: driverId,
-                   bookingId: _resolveBookingIdForLocationPayload(),
-                 ),
-               ),
-             );
-           }
-         }
-       } catch (e) {
-         CommonLogger.log.e("âŒ socket switch failed: $e");
-       }
-     });
-   }
+        if (statusController.isOnline.value) {
+          if (_appInForeground) {
+            unawaited(bg.stopDriverTrackingService());
+          } else {
+            unawaited(bg.stopDriverTrackingService());
+            unawaited(
+              Future.delayed(
+                const Duration(milliseconds: 450),
+                () => bg.ensureDriverTrackingServiceRunning(
+                  driverId: driverId,
+                  bookingId: _resolveBookingIdForLocationPayload(),
+                ),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        CommonLogger.log.e("âŒ socket switch failed: $e");
+      }
+    });
+  }
 
   void _listenServiceType() {
     _serviceTypeWorker?.dispose();
@@ -1495,7 +1538,8 @@ Future<void> loadCustomCarIcon() async {
       final android =
           FlutterLocalNotificationsPlugin()
               .resolvePlatformSpecificImplementation<
-                  AndroidFlutterLocalNotificationsPlugin>();
+                AndroidFlutterLocalNotificationsPlugin
+              >();
       final enabled = await android?.areNotificationsEnabled();
       if (enabled == false) return false;
 
@@ -1621,5 +1665,3 @@ Future<void> loadCustomCarIcon() async {
     super.onClose();
   }
 }
-
-

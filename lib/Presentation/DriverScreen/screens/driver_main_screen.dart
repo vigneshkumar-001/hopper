@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
@@ -22,6 +22,7 @@ import '../controller/driver_main_controller.dart';
 import 'SharedBooking/Controller/booking_request_controller.dart';
 import '../../Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 class DriverMainScreen extends StatefulWidget {
   const DriverMainScreen({super.key});
@@ -46,9 +47,10 @@ class _DriverMainScreenState extends State<DriverMainScreen>
       c = Get.put(DriverMainController(), permanent: true);
     }
 
-    profileController = Get.isRegistered<ChooseServiceController>()
-        ? Get.find<ChooseServiceController>()
-        : Get.put(ChooseServiceController(), permanent: true);
+    profileController =
+        Get.isRegistered<ChooseServiceController>()
+            ? Get.find<ChooseServiceController>()
+            : Get.put(ChooseServiceController(), permanent: true);
 
     // Home owns profile refresh; drawer should only read cached data.
     profileController.getUserDetails();
@@ -57,6 +59,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
       c.onAppResumed(); // ensure BG service is stopped in foreground
       c.checkAndResumeActiveBooking();
       c.goToCurrentLocation();
+      c.refreshHomeStats(force: true);
     });
   }
 
@@ -71,6 +74,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
     if (state == AppLifecycleState.resumed) {
       c.onAppResumed();
       c.checkAndResumeActiveBooking();
+      c.refreshHomeStats();
       return;
     }
 
@@ -94,7 +98,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
           body: SafeArea(
             child: Obx(() {
               if (!c.ready.value) {
-                return const Center(child: CupertinoActivityIndicator(radius: 14));
+                return const Center(child: HopprCircularLoader(radius: 14));
               }
 
               return Column(
@@ -124,19 +128,19 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                     ? {c.carMarker!}
                                     : <Marker>{};
 
-                              return RepaintBoundary(
-                                child: GoogleMap(
-                                  key: ValueKey<String>(
-                                    'driver_map_${c.mapStyle ?? 'default'}',
-                                  ),
-                                  mapType: MapType.normal,
-                                  style: c.mapStyle,
-                                  compassEnabled: false,
-                                 myLocationEnabled: false,
-                                 myLocationButtonEnabled: false,
-                                 zoomControlsEnabled: false,
-                                 buildingsEnabled: false,
-                                 trafficEnabled: false,
+                            return RepaintBoundary(
+                              child: GoogleMap(
+                                key: ValueKey<String>(
+                                  'driver_map_${c.mapStyle ?? 'default'}',
+                                ),
+                                mapType: MapType.normal,
+                                style: c.mapStyle,
+                                compassEnabled: false,
+                                myLocationEnabled: false,
+                                myLocationButtonEnabled: false,
+                                zoomControlsEnabled: false,
+                                buildingsEnabled: false,
+                                trafficEnabled: false,
                                 tiltGesturesEnabled: true,
                                 rotateGesturesEnabled: true,
                                 scrollGesturesEnabled: true,
@@ -150,22 +154,22 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                   zoom: 16.8,
                                 ),
                                 markers: markerSet,
-                                  onCameraMoveStarted: () {
-                                    // stop follow when user touches map
-                                    c.followDriver.value = false;
-                                  },
-                                  onCameraIdle: () {
-                                    // Defensive: ensure style stays applied across zoom/pan.
-                                    final style = c.mapStyle;
-                                    if (style != null) {
-                                      c.mapController?.setMapStyle(style);
-                                    }
-                                  },
-                                  onMapCreated: (gm) async {
-                                    c.mapController = gm;
-                                  },
-                                  gestureRecognizers: {
-                                    Factory<OneSequenceGestureRecognizer>(
+                                onCameraMoveStarted: () {
+                                  // stop follow when user touches map
+                                  c.followDriver.value = false;
+                                },
+                                onCameraIdle: () {
+                                  // Defensive: ensure style stays applied across zoom/pan.
+                                  final style = c.mapStyle;
+                                  if (style != null) {
+                                    c.mapController?.setMapStyle(style);
+                                  }
+                                },
+                                onMapCreated: (gm) async {
+                                  c.mapController = gm;
+                                },
+                                gestureRecognizers: {
+                                  Factory<OneSequenceGestureRecognizer>(
                                     () => EagerGestureRecognizer(),
                                   ),
                                 },
@@ -188,11 +192,9 @@ class _DriverMainScreenState extends State<DriverMainScreen>
 
                             final bookingId =
                                 (data['bookingId'] ?? '').toString();
-                            final status =
-                                (data['status'] ?? '').toString().replaceAll(
-                                  '_',
-                                  ' ',
-                                );
+                            final status = (data['status'] ?? '')
+                                .toString()
+                                .replaceAll('_', ' ');
                             final pickup =
                                 (data['pickupAddress'] ?? '').toString();
                             final drop = (data['dropAddress'] ?? '').toString();
@@ -266,8 +268,9 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                           'Drop: $drop',
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
-                                          style:
-                                              const TextStyle(fontSize: 12.5),
+                                          style: const TextStyle(
+                                            fontSize: 12.5,
+                                          ),
                                         ),
                                       ),
                                     const SizedBox(height: 12),
@@ -299,8 +302,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                         ),
                                         const SizedBox(width: 10),
                                         TextButton(
-                                          onPressed:
-                                              c.dismissActiveBookingCard,
+                                          onPressed: c.dismissActiveBookingCard,
                                           child: Text(
                                             'Not now',
                                             style: TextStyle(
@@ -414,15 +416,14 @@ class _GlassHeader extends StatelessWidget {
           const Spacer(),
           GestureDetector(
             onTap: onToggle,
-              child: Obx(() {
-                final isOnline = statusController.isOnline.value;
-                final isLoading = statusController.isToggleLoading.value;
-                // IMPORTANT: read serviceType inside Obx so the icon updates immediately.
-                final serviceType = statusController.serviceType.value;
-                final isCar = serviceType.trim().toLowerCase() == 'car';
-                final vehicleAsset = isCar
-                  ? AppImages.offlineCar
-                  : AppImages.bike;
+            child: Obx(() {
+              final isOnline = statusController.isOnline.value;
+              final isLoading = statusController.isToggleLoading.value;
+              // IMPORTANT: read serviceType inside Obx so the icon updates immediately.
+              final serviceType = statusController.serviceType.value;
+              final isCar = serviceType.trim().toLowerCase() == 'car';
+              final vehicleAsset =
+                  isCar ? AppImages.offlineCar : AppImages.bike;
 
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
@@ -439,13 +440,10 @@ class _GlassHeader extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (isLoading) ...[
-                      const SizedBox(
-                        height: 16,
-                        width: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
+                      const HopprCircularLoader(
+                        radius: 8,
+                        size: 16,
+                        color: Colors.white,
                       ),
                       const SizedBox(width: 10),
                     ],
@@ -725,7 +723,6 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                                   height: 26,
                                 ),
                               ),
-                             
                             ],
                           ),
                         );
@@ -839,20 +836,35 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                               child: Obx(() {
                                 final isCar = widget.statusController.isCar;
                                 final weeklyData =
-                                    widget.statusController.weeklyStatusData.value;
+                                    widget
+                                        .statusController
+                                        .weeklyStatusData
+                                        .value;
                                 final parcelWeekly =
-                                    widget.statusController.parcelBookingData.value?.weeklyProgress;
+                                    widget
+                                        .statusController
+                                        .parcelBookingData
+                                        .value
+                                        ?.weeklyProgress;
 
                                 final goal =
-                                    isCar ? (weeklyData?.goal ?? 0) : (parcelWeekly?.goal ?? 0);
+                                    isCar
+                                        ? (weeklyData?.goal ?? 0)
+                                        : (parcelWeekly?.goal ?? 0);
                                 final reward =
-                                    isCar ? (weeklyData?.reward ?? 0) : (parcelWeekly?.reward ?? 0);
-                                final totalTrips = isCar
-                                    ? (weeklyData?.totalTrips ?? 0)
-                                    : (parcelWeekly?.totalTrips ?? 0);
-                                final progressPercent = isCar
-                                    ? (weeklyData?.progressPercent ?? 0).toDouble()
-                                    : (parcelWeekly?.progressPercent ?? 0.0);
+                                    isCar
+                                        ? (weeklyData?.reward ?? 0)
+                                        : (parcelWeekly?.reward ?? 0);
+                                final totalTrips =
+                                    isCar
+                                        ? (weeklyData?.totalTrips ?? 0)
+                                        : (parcelWeekly?.totalTrips ?? 0);
+                                final progressPercent =
+                                    isCar
+                                        ? (weeklyData?.progressPercent ?? 0)
+                                            .toDouble()
+                                        : (parcelWeekly?.progressPercent ??
+                                            0.0);
 
                                 DateTime? endsOn;
                                 if (isCar) {
@@ -862,12 +874,72 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                                 } else {
                                   endsOn = parcelWeekly?.endsOn;
                                 }
-                                if (endsOn != null && endsOn.millisecondsSinceEpoch == 0) {
+                                if (endsOn != null &&
+                                    endsOn.millisecondsSinceEpoch == 0) {
                                   endsOn = null;
                                 }
-                                final endsLabel = endsOn == null
-                                    ? 'Ends on -'
-                                    : 'Ends on ${DateFormat('EEEE').format(endsOn)}';
+                                final endsLabel =
+                                    endsOn == null
+                                        ? 'Ends on -'
+                                        : 'Ends on ${DateFormat('EEEE').format(endsOn)}';
+
+                                final hasWeeklyData =
+                                    isCar
+                                        ? weeklyData != null
+                                        : parcelWeekly != null;
+
+                                final progress = (progressPercent / 100).clamp(
+                                  0.0,
+                                  1.0,
+                                );
+
+                                Widget progressWidget;
+                                if (!hasWeeklyData) {
+                                  progressWidget =
+                                      const CupertinoActivityIndicator(
+                                        radius: 16,
+                                      );
+                                } else if (defaultTargetPlatform ==
+                                    TargetPlatform.iOS) {
+                                  progressWidget = SizedBox(
+                                    width: 92,
+                                    height: 92,
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        CupertinoActivityIndicator.partiallyRevealed(
+                                          radius: 22,
+                                          progress: progress,
+                                        ),
+                                        Text(
+                                          "${progressPercent.round()}%",
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                } else {
+                                  progressWidget = CircularPercentIndicator(
+                                    radius: 45.0,
+                                    lineWidth: 10.0,
+                                    animation: true,
+                                    percent: progress,
+                                    center: Text(
+                                      "${progressPercent.round()}%",
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    circularStrokeCap: CircularStrokeCap.round,
+                                    backgroundColor: AppColors.drkGreen
+                                        .withOpacity(0.1),
+                                    progressColor: getTextColor(
+                                      color: AppColors.drkGreen,
+                                    ),
+                                  );
+                                }
 
                                 return Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -899,26 +971,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                                       ),
                                     ),
                                     const SizedBox(width: 15),
-                                    CircularPercentIndicator(
-                                      radius: 45.0,
-                                      lineWidth: 10.0,
-                                      animation: true,
-                                      percent: (progressPercent / 100)
-                                          .clamp(0.0, 1.0),
-                                      center: Text(
-                                        "${progressPercent.round()}%",
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      circularStrokeCap:
-                                          CircularStrokeCap.round,
-                                      backgroundColor: AppColors.drkGreen
-                                          .withOpacity(0.1),
-                                      progressColor: getTextColor(
-                                        color: AppColors.drkGreen,
-                                      ),
-                                    ),
+                                    progressWidget,
                                   ],
                                 );
                               }),
@@ -928,7 +981,9 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                           const SizedBox(height: 18),
 
                           CustomTextfield.textWithStyles700(
-                            isCar ? "Today's Activity" : "Today's Package Activity",
+                            isCar
+                                ? "Today's Activity"
+                                : "Today's Package Activity",
                             fontSize: 16,
                           ),
                           const SizedBox(height: 10),
@@ -1008,7 +1063,8 @@ class _CarBookingCardUI extends StatelessWidget {
                     Image.asset(AppImages.notification, height: 25, width: 25),
                     const SizedBox(width: 10),
                     CustomTextfield.textWithStyles600(
-                      (data['rideType'] ?? '').toString().toLowerCase() == 'bike'
+                      (data['rideType'] ?? '').toString().toLowerCase() ==
+                              'bike'
                           ? 'New Package Request'
                           : 'New Ride Request',
                       color: AppColors.commonWhite,
@@ -1351,12 +1407,16 @@ class _TodayActivityParcel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.commonBlack.withOpacity(0.1)),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
         child: Obx(() {
           final data = statusController.parcelBookingData.value;
           return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
                 flex: 2,
@@ -1378,24 +1438,30 @@ class _TodayActivityParcel extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 5),
-                    CustomTextfield.textWithImage(
-                      text: ((data?.earning ?? 0).toDouble()).toStringAsFixed(
-                        2,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: CustomTextfield.textWithImage(
+                        text: ((data?.earning ?? 0).toDouble()).toStringAsFixed(
+                          2,
+                        ),
+                        colors: AppColors.commonBlack,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        imagePath: AppImages.bCurrency,
                       ),
-                      colors: AppColors.commonBlack,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      imagePath: AppImages.bCurrency,
                     ),
                     const SizedBox(height: 5),
-                    CustomTextfield.textWithStylesSmall(
-                      'Earnings',
-                      colors: AppColors.grey,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: CustomTextfield.textWithStylesSmall(
+                        'Earnings',
+                        colors: AppColors.grey,
+                      ),
                     ),
                   ],
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 16),
               Expanded(
                 flex: 1,
                 child: Column(
@@ -1412,22 +1478,28 @@ class _TodayActivityParcel extends StatelessWidget {
                       child: Image.asset(AppImages.boxLine, height: 17),
                     ),
                     const SizedBox(height: 5),
-                    CustomTextfield.textWithImage(
-                      text: data?.completed.toString() ?? '0',
-                      colors: AppColors.commonBlack,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: CustomTextfield.textWithImage(
+                        text: data?.completed.toString() ?? '0',
+                        colors: AppColors.commonBlack,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
                     ),
                     const SizedBox(height: 5),
-                    CustomTextfield.textWithStylesSmall(
-                      'Deliveries',
-                      colors: AppColors.grey,
-                      maxLine: 1,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: CustomTextfield.textWithStylesSmall(
+                        'Deliveries',
+                        colors: AppColors.grey,
+                        maxLine: 1,
+                      ),
                     ),
                   ],
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 16),
               Expanded(
                 flex: 1,
                 child: Column(
@@ -1448,16 +1520,22 @@ class _TodayActivityParcel extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 5),
-                    CustomTextfield.textWithImage(
-                      text: data?.rating.toString() ?? '0',
-                      colors: AppColors.commonBlack,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: CustomTextfield.textWithImage(
+                        text: data?.rating.toString() ?? '0',
+                        colors: AppColors.commonBlack,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
                     ),
                     const SizedBox(height: 5),
-                    CustomTextfield.textWithStylesSmall(
-                      'Rating',
-                      colors: AppColors.grey,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: CustomTextfield.textWithStylesSmall(
+                        'Rating',
+                        colors: AppColors.grey,
+                      ),
                     ),
                   ],
                 ),
@@ -3192,5 +3270,3 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 //
-
-
