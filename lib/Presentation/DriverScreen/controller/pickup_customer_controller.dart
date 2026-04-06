@@ -1,4 +1,4 @@
-﻿// lib/Presentation/DriverScreen/controller/pickup_customer_controller.dart
+// lib/Presentation/DriverScreen/controller/pickup_customer_controller.dart
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -28,6 +28,7 @@ import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/app_map_style.dart';
 import 'package:hopper/utils/location/location_permission_guard.dart';
 import 'package:hopper/utils/map/polyline_snap.dart';
+import 'package:hopper/utils/map/maneuver_markers.dart';
 
 /// UI snapshot (keeps widget build super clean)
 class PickingUiState {
@@ -103,6 +104,8 @@ class PickingCustomerController extends GetxController {
   GoogleMapController? mapController;
   final Rxn<BitmapDescriptor> carIcon = Rxn<BitmapDescriptor>();
   Worker? _serviceTypeWorker;
+  final Rxn<LatLng> adjustedPickupLocation = Rxn<LatLng>();
+  final RxInt pickupAdjustMeters = 0.obs;
 
   // ----- socket -----
   late final SocketService socketService;
@@ -142,6 +145,8 @@ class PickingCustomerController extends GetxController {
 
   // ----- routing/polylines -----
   List<LatLng> _poly = [];
+  final RxList<Marker> maneuverMarkers = <Marker>[].obs;
+  int _maneuverGen = 0;
   DateTime _lastRouteFetch = DateTime.fromMillisecondsSinceEpoch(0);
   PickingUiState? _cachedUiState;
   bool _pendingRouteRetry = false;
@@ -297,7 +302,8 @@ class PickingCustomerController extends GetxController {
       // ✅ IMPORTANT: fill these so UI shows customer name
       customerName.value = (joined['customerName'] ?? '').toString();
       customerPhone.value = (joined['customerPhone'] ?? '').toString();
-      customerProfilePic.value = (joined['customerProfilePic'] ?? '').toString();
+      customerProfilePic.value =
+          (joined['customerProfilePic'] ?? '').toString();
 
       double? asDouble(dynamic v) {
         if (v is num) return v.toDouble();
@@ -305,9 +311,10 @@ class PickingCustomerController extends GetxController {
       }
 
       final locRaw = joined['customerLocation'];
-      final loc = locRaw is Map
-          ? Map<String, dynamic>.from(locRaw as Map)
-          : <String, dynamic>{};
+      final loc =
+          locRaw is Map
+              ? Map<String, dynamic>.from(locRaw as Map)
+              : <String, dynamic>{};
 
       final fromLat = asDouble(
         joined['fromLatitude'] ?? loc['fromLatitude'] ?? loc['latitude'],
@@ -362,7 +369,11 @@ class PickingCustomerController extends GetxController {
   }
 
   Future<void> _joinBookingRoom() async {
-    final did = (_driverId ?? await SharedPrefHelper.getDriverId())?.toString().trim() ?? '';
+    final did =
+        (_driverId ?? await SharedPrefHelper.getDriverId())
+            ?.toString()
+            .trim() ??
+        '';
     if (did.isNotEmpty) {
       socketService.registerDriver(did, bookingId: bookingId);
       socketService.joinBooking(bookingId, userId: did);
@@ -383,23 +394,27 @@ class PickingCustomerController extends GetxController {
 
       customerName.value = (joined['customerName'] ?? '').toString();
       customerPhone.value = (joined['customerPhone'] ?? '').toString();
-      customerProfilePic.value = (joined['customerProfilePic'] ?? '').toString();
+      customerProfilePic.value =
+          (joined['customerProfilePic'] ?? '').toString();
 
-      final pickText = (joined['pickupAddress'] ??
-              joined['pickupLocationAddress'] ??
-              pickupLocationAddress ??
-              '')
-          .toString();
-      final dropText = (joined['dropAddress'] ??
-              joined['dropLocationAddress'] ??
-              dropLocationAddress ??
-              '')
-          .toString();
+      final pickText =
+          (joined['pickupAddress'] ??
+                  joined['pickupLocationAddress'] ??
+                  pickupLocationAddress ??
+                  '')
+              .toString();
+      final dropText =
+          (joined['dropAddress'] ??
+                  joined['dropLocationAddress'] ??
+                  dropLocationAddress ??
+                  '')
+              .toString();
 
       if (pickText.trim().isNotEmpty) pickupAddressText.value = pickText;
       if (dropText.trim().isNotEmpty) dropAddressText.value = dropText;
 
-      if (pickupAddressText.value.isNotEmpty && dropAddressText.value.isNotEmpty) {
+      if (pickupAddressText.value.isNotEmpty &&
+          dropAddressText.value.isNotEmpty) {
         return;
       }
 
@@ -409,9 +424,10 @@ class PickingCustomerController extends GetxController {
       }
 
       final locRaw = joined['customerLocation'];
-      final loc = locRaw is Map
-          ? Map<String, dynamic>.from(locRaw as Map)
-          : <String, dynamic>{};
+      final loc =
+          locRaw is Map
+              ? Map<String, dynamic>.from(locRaw as Map)
+              : <String, dynamic>{};
 
       final fromLat = asDouble(
         joined['fromLatitude'] ?? loc['fromLatitude'] ?? loc['latitude'],
@@ -422,7 +438,9 @@ class PickingCustomerController extends GetxController {
       final toLat = asDouble(joined['toLatitude'] ?? loc['toLatitude']);
       final toLng = asDouble(joined['toLongitude'] ?? loc['toLongitude']);
 
-      if (pickupAddressText.value.isEmpty && fromLat != null && fromLng != null) {
+      if (pickupAddressText.value.isEmpty &&
+          fromLat != null &&
+          fromLng != null) {
         pickupAddressText.value = await getAddressFromLatLng(fromLat, fromLng);
       }
       if (dropAddressText.value.isEmpty && toLat != null && toLng != null) {
@@ -538,7 +556,7 @@ class PickingCustomerController extends GetxController {
 
       final origin = ui.value.driverLocation;
 
-      final result = await getRouteInfo(
+      final result = await getDriverFriendlyRouteInfo(
         origin: origin,
         destination: pickupLocation,
         // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ keep consistent
@@ -546,7 +564,22 @@ class PickingCustomerController extends GetxController {
         traffic: true,
         mode: "driving",
         routeIndex: 0,
+        maxAdjustMeters: 140,
       );
+
+      final adj = result['adjustedDestination'];
+      if (adj is Map) {
+        final lat = adj['lat'];
+        final lng = adj['lng'];
+        if (lat is num && lng is num) {
+          adjustedPickupLocation.value = LatLng(lat.toDouble(), lng.toDouble());
+        }
+      } else {
+        adjustedPickupLocation.value = null;
+      }
+      pickupAdjustMeters.value = (result['adjustedMeters'] is int)
+          ? (result['adjustedMeters'] as int)
+          : int.tryParse('${result['adjustedMeters']}') ?? 0;
 
       final poly = (result['polyline'] ?? '').toString();
       final pts = _simplifyPolyline(
@@ -574,6 +607,22 @@ class PickingCustomerController extends GetxController {
         distanceText: (result['distance'] ?? '').toString(),
         maneuver: (result['maneuver'] ?? '').toString(),
       );
+      final mp = result['maneuverPoints'];
+      final maneuverPoints =
+          mp is List
+              ? mp.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+              : const <Map<String, dynamic>>[];
+
+      final dest = adjustedPickupLocation.value ?? pickupLocation;
+      unawaited(
+        _rebuildManeuverMarkers(
+          pts,
+          idPrefix: 'pickup_$bookingId',
+          travelOrigin: origin,
+          avoid: <LatLng>[dest],
+          maneuverPoints: maneuverPoints,
+        ),
+      );
       final analytics = Get.find<DriverAnalyticsController>();
       analytics.setSlaFromEtaMinutes(
         driverStatusController.pickupDurationInMin.value,
@@ -598,9 +647,34 @@ class PickingCustomerController extends GetxController {
   }
 
   void _setDirectPolyline(LatLng origin) {
-    final direct = <LatLng>[origin, pickupLocation];
+    final dest = adjustedPickupLocation.value ?? pickupLocation;
+    final direct = <LatLng>[origin, dest];
     _poly = direct;
     ui.value = ui.value.copyWith(polyline: direct);
+    maneuverMarkers.clear();
+  }
+
+  Future<void> _rebuildManeuverMarkers(
+    List<LatLng> pts, {
+    required String idPrefix,
+    LatLng? travelOrigin,
+    List<LatLng> avoid = const <LatLng>[],
+    List<Map<String, dynamic>>? maneuverPoints,
+  }) async {
+    final gen = ++_maneuverGen;
+    try {
+      final m = await ManeuverMarkers.build(
+        polyline: pts,
+        idPrefix: idPrefix,
+        travelOrigin: travelOrigin,
+        avoidPositions: avoid,
+        maneuverPoints: maneuverPoints,
+      );
+      if (isClosed || gen != _maneuverGen) return;
+      maneuverMarkers.assignAll(m);
+    } catch (_) {
+      // ignore
+    }
   }
 
   void _scheduleRouteRetry() {
@@ -681,16 +755,16 @@ class PickingCustomerController extends GetxController {
     final ok = await _ensureLocationPermission();
     if (!ok) return;
 
-      try {
-        final pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.bestForNavigation,
-        );
-        final raw = LatLng(pos.latitude, pos.longitude);
-        final current = _maybeSnapToRoute(raw);
-        _lastPos = current;
-        _setDirectPolyline(current);
-        ui.value = ui.value.copyWith(driverLocation: current);
-        _updateDriverReachedByDistance(current);
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.bestForNavigation,
+      );
+      final raw = LatLng(pos.latitude, pos.longitude);
+      final current = _maybeSnapToRoute(raw);
+      _lastPos = current;
+      _setDirectPolyline(current);
+      ui.value = ui.value.copyWith(driverLocation: current);
+      _updateDriverReachedByDistance(current);
       await _fetchRoute(force: true);
     } catch (_) {}
 
@@ -783,11 +857,11 @@ class PickingCustomerController extends GetxController {
       // polyline maintenance
       _trimPolyline(current);
 
-       final offRoute = _isOffRoute(raw);
-       isOffRouteAlert.value = offRoute;
-       if (offRoute) {
-         await _fetchRoute(force: true);
-       } else {
+      final offRoute = _isOffRoute(raw);
+      isOffRouteAlert.value = offRoute;
+      if (offRoute) {
+        await _fetchRoute(force: true);
+      } else {
         await _fetchRoute(force: false);
       }
     });
@@ -1964,8 +2038,3 @@ class PickingCustomerController extends GetxController {
 //     return simplified;
 //   }
 // }
-
-
-
-
-

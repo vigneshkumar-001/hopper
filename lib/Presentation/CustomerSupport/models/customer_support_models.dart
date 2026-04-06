@@ -48,15 +48,23 @@ class CustomerSupportMessage {
   final String text;
   final DateTime createdAt;
   final bool fromCustomer;
-  final String? imageUrl;
+  final List<String> attachments;
+  final List<String> localFilePaths;
+  final bool pending;
+  final bool failed;
 
   CustomerSupportMessage({
     required this.id,
     required this.text,
     required this.createdAt,
     required this.fromCustomer,
-    this.imageUrl,
+    this.attachments = const <String>[],
+    this.localFilePaths = const <String>[],
+    this.pending = false,
+    this.failed = false,
   });
+
+  String? get imageUrl => attachments.isEmpty ? null : attachments.first;
 }
 
 class CustomerSupportTicket {
@@ -108,14 +116,17 @@ class CustomerSupportCategory {
 
   factory CustomerSupportCategory.fromJson(Map<String, dynamic> json) {
     final rawSubs = json['subcategories'];
-    final subs = (rawSubs is List)
-        ? rawSubs
-            .whereType<Map>()
-            .map((e) => CustomerSupportSubcategory.fromJson(
-                  Map<String, dynamic>.from(e as Map),
-                ))
-            .toList(growable: false)
-        : <CustomerSupportSubcategory>[];
+    final subs =
+        (rawSubs is List)
+            ? rawSubs
+                .whereType<Map>()
+                .map(
+                  (e) => CustomerSupportSubcategory.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList(growable: false)
+            : <CustomerSupportSubcategory>[];
 
     return CustomerSupportCategory(
       id: (json['id'] ?? '').toString().trim(),
@@ -150,24 +161,30 @@ class CustomerSupportCommonDetails {
 
   factory CustomerSupportCommonDetails.fromJson(Map<String, dynamic> json) {
     final rawCats = json['categories'];
-    final cats = (rawCats is List)
-        ? rawCats
-            .whereType<Map>()
-            .map((e) => CustomerSupportCategory.fromJson(
-                  Map<String, dynamic>.from(e as Map),
-                ))
-            .toList(growable: false)
-        : <CustomerSupportCategory>[];
+    final cats =
+        (rawCats is List)
+            ? rawCats
+                .whereType<Map>()
+                .map(
+                  (e) => CustomerSupportCategory.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList(growable: false)
+            : <CustomerSupportCategory>[];
 
     final rawPri = json['priorities'];
-    final pris = (rawPri is List)
-        ? rawPri
-            .whereType<Map>()
-            .map((e) => CustomerSupportPriority.fromJson(
-                  Map<String, dynamic>.from(e as Map),
-                ))
-            .toList(growable: false)
-        : <CustomerSupportPriority>[];
+    final pris =
+        (rawPri is List)
+            ? rawPri
+                .whereType<Map>()
+                .map(
+                  (e) => CustomerSupportPriority.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList(growable: false)
+            : <CustomerSupportPriority>[];
 
     return CustomerSupportCommonDetails(categories: cats, priorities: pris);
   }

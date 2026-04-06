@@ -12,6 +12,7 @@ import 'package:hopper/Presentation/Drawer/model/withdraw_request_response.dart'
 import 'package:hopper/Presentation/DriverScreen/models/get_driver_status.dart';
 import 'package:hopper/Presentation/DriverScreen/models/stop_request_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
+import 'package:hopper/Presentation/DriverScreen/models/demand_opportunities_models.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/models/baseinfo_response.dart';
 import 'package:hopper/Presentation/OnBoarding/models/chooseservice_model.dart';
@@ -1071,7 +1072,8 @@ class ApiDataSource extends BaseApiDataSource {
   // Support (Customer-style tickets)
   // ------------------------------------------------------------
 
-  Future<Either<Failure, List<Map<String, dynamic>>>> getSupportTickets() async {
+  Future<Either<Failure, List<Map<String, dynamic>>>>
+  getSupportTickets() async {
     try {
       final url = ApiConstents.supportMyTickets;
       final response = await Request.sendGetRequest(url, {}, 'GET', true);
@@ -1082,12 +1084,12 @@ class ApiDataSource extends BaseApiDataSource {
 
       final code = response.statusCode ?? 0;
       if (code < 200 || code >= 300) {
-        final msg = (response.data is Map<String, dynamic>)
-            ? (response.data['message'] ?? response.data['error'] ?? '').toString()
-            : '';
-        return Left(
-          ServerFailure(msg),
-        );
+        final msg =
+            (response.data is Map<String, dynamic>)
+                ? (response.data['message'] ?? response.data['error'] ?? '')
+                    .toString()
+                : '';
+        return Left(ServerFailure(msg));
       }
 
       final data = response.data;
@@ -1106,14 +1108,13 @@ class ApiDataSource extends BaseApiDataSource {
           payload is List
               ? payload
               : (payload is Map<String, dynamic> && payload['tickets'] is List)
-                  ? payload['tickets'] as List
-                  : <dynamic>[];
+              ? payload['tickets'] as List
+              : <dynamic>[];
 
-      final out =
-          list
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList(growable: false);
+      final out = list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList(growable: false);
 
       return Right(out);
     } catch (e, st) {
@@ -1149,7 +1150,9 @@ class ApiDataSource extends BaseApiDataSource {
             (raw is Map<String, dynamic>)
                 ? (raw['message'] ?? raw['error'] ?? '').toString()
                 : '';
-        return Left(ServerFailure(msg.isNotEmpty ? msg : (response.message ?? '')));
+        return Left(
+          ServerFailure(msg.isNotEmpty ? msg : (response.message ?? '')),
+        );
       }
 
       if (response is! Response) {
@@ -1158,9 +1161,11 @@ class ApiDataSource extends BaseApiDataSource {
 
       final code = response.statusCode ?? 0;
       if (code < 200 || code >= 300) {
-        final msg = (response.data is Map<String, dynamic>)
-            ? (response.data['message'] ?? response.data['error'] ?? '').toString()
-            : '';
+        final msg =
+            (response.data is Map<String, dynamic>)
+                ? (response.data['message'] ?? response.data['error'] ?? '')
+                    .toString()
+                : '';
         return Left(ServerFailure(msg));
       }
 
@@ -1195,7 +1200,8 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
-  Future<Either<Failure, Map<String, dynamic>>> getSupportCommonDetails() async {
+  Future<Either<Failure, Map<String, dynamic>>>
+  getSupportCommonDetails() async {
     try {
       final url = ApiConstents.supportCommonDetails;
       final response = await Request.sendGetRequest(url, {}, 'GET', true);
@@ -1206,9 +1212,11 @@ class ApiDataSource extends BaseApiDataSource {
 
       final code = response.statusCode ?? 0;
       if (code < 200 || code >= 300) {
-        final msg = (response.data is Map<String, dynamic>)
-            ? (response.data['message'] ?? response.data['error'] ?? '').toString()
-            : '';
+        final msg =
+            (response.data is Map<String, dynamic>)
+                ? (response.data['message'] ?? response.data['error'] ?? '')
+                    .toString()
+                : '';
         return Left(ServerFailure(msg));
       }
 
@@ -1230,6 +1238,111 @@ class ApiDataSource extends BaseApiDataSource {
       return Right(<String, dynamic>{});
     } catch (e, st) {
       CommonLogger.log.e("getSupportCommonDetails error: $e\n$st");
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, Map<String, dynamic>>> sendSupportTicketMessage({
+    required String ticketId,
+    required String message,
+    required List<String> attachments,
+  }) async {
+    try {
+      final url = ApiConstents.supportTicketMessage(ticketId: ticketId);
+      final payload = <String, dynamic>{
+        'message': message.trim(),
+        'attachments': attachments,
+      };
+
+      final response = await Request.sendRequest(url, payload, 'Post', true);
+
+      if (response is DioException) {
+        final dynamic raw = response.response?.data;
+        final String msg =
+            (raw is Map<String, dynamic>)
+                ? (raw['message'] ?? raw['error'] ?? '').toString()
+                : '';
+        return Left(
+          ServerFailure(msg.isNotEmpty ? msg : (response.message ?? '')),
+        );
+      }
+
+      if (response is! Response) {
+        return Left(ServerFailure(''));
+      }
+
+      final code = response.statusCode ?? 0;
+      if (code < 200 || code >= 300) {
+        final msg =
+            (response.data is Map<String, dynamic>)
+                ? (response.data['message'] ?? response.data['error'] ?? '')
+                    .toString()
+                : '';
+        return Left(ServerFailure(msg));
+      }
+
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        return Left(ServerFailure(''));
+      }
+
+      if (data['success'] != true) {
+        return Left(
+          ServerFailure((data['message'] ?? data['error'] ?? '').toString()),
+        );
+      }
+
+      final dynamic payloadData = data['data'];
+      if (payloadData is Map<String, dynamic>) {
+        return Right(payloadData);
+      }
+      return Right(<String, dynamic>{});
+    } catch (e, st) {
+      CommonLogger.log.e("sendSupportTicketMessage error: $e\n$st");
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, Map<String, dynamic>>> getSupportTicketDetail({
+    required String ticketId,
+  }) async {
+    try {
+      final url = ApiConstents.supportMyTicketDetail(ticketId: ticketId);
+      final response = await Request.sendGetRequest(url, {}, 'GET', true);
+
+      if (response == null) {
+        return Left(ServerFailure(''));
+      }
+
+      final code = response.statusCode ?? 0;
+      if (code < 200 || code >= 300) {
+        final msg =
+            (response.data is Map<String, dynamic>)
+                ? (response.data['message'] ?? response.data['error'] ?? '')
+                    .toString()
+                : '';
+        return Left(ServerFailure(msg));
+      }
+
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        return Left(ServerFailure(''));
+      }
+
+      if (data['success'] != true) {
+        return Left(
+          ServerFailure((data['message'] ?? data['error'] ?? '').toString()),
+        );
+      }
+
+      final dynamic payload = data['data'];
+      if (payload is Map<String, dynamic>) {
+        return Right(payload);
+      }
+
+      return Right(<String, dynamic>{});
+    } catch (e, st) {
+      CommonLogger.log.e("getSupportTicketDetail error: $e\n$st");
       return Left(ServerFailure(e.toString()));
     }
   }
@@ -1297,7 +1410,7 @@ class ApiDataSource extends BaseApiDataSource {
   }) async {
     try {
       String url = ApiConstents.generateOtp;
-CommonLogger.log.i("OTP Request URL: $url with bookingId: $bookingId");
+      CommonLogger.log.i("OTP Request URL: $url with bookingId: $bookingId");
       final response = await Request.sendRequest(
         url,
         {"bookingId": bookingId},
@@ -1591,6 +1704,31 @@ CommonLogger.log.i("OTP Request URL: $url with bookingId: $bookingId");
         } else {
           return Left(ServerFailure("Invalid or empty response"));
         }
+      } else if (response is Response && response.statusCode == 409) {
+        return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
+      } else if (response is Response) {
+        return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, DemandOpportunitiesResponse>>
+  getDemandOpportunities() async {
+    try {
+      final url = ApiConstents.demandOpportunities;
+      final response = await Request.sendGetRequest(url, {}, 'Get', false);
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data != null && response.data is Map<String, dynamic>) {
+          final result = DemandOpportunitiesResponse.fromJson(response.data);
+          return Right(result);
+        }
+        return Left(ServerFailure("Invalid or empty response"));
       } else if (response is Response && response.statusCode == 409) {
         return Left(ServerFailure(response.data['message'] ?? 'Conflict'));
       } else if (response is Response) {

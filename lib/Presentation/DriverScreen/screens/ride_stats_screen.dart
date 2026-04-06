@@ -81,7 +81,8 @@ class RideStatsScreen extends StatelessWidget {
                 child: Obx(() {
                   final from =
                       c.driverLocation.value ?? c.bookingFromLocation.value;
-                  final to = c.bookingToLocation.value;
+                  final toRaw = c.bookingToLocation.value;
+                  final to = c.adjustedDropLocation.value ?? toRaw;
 
                   final markers = <Marker>{
                     if (c.movingMarker.value != null)
@@ -104,6 +105,7 @@ class RideStatsScreen extends StatelessWidget {
                         visible: false,
                         infoWindow: InfoWindow.noText,
                       ),
+                    ...c.maneuverMarkers,
                   };
 
                   final initialPos = from ?? to ?? const LatLng(0, 0);
@@ -136,6 +138,33 @@ class RideStatsScreen extends StatelessWidget {
                   );
                 }),
               ),
+
+              Obx(() {
+                final meters = c.dropAdjustMeters.value;
+                if (meters <= 20) return const SizedBox.shrink();
+                return Positioned(
+                  top: 56,
+                  left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.82),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      'Recommended drop point • ${meters}m',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                );
+              }),
 
               // my location
               Obx(

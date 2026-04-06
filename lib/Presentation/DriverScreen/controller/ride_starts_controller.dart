@@ -19,6 +19,7 @@ import 'package:hopper/utils/map/route_info.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
+import 'package:hopper/utils/map/maneuver_markers.dart';
 import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
@@ -51,6 +52,8 @@ class RideStatsController extends GetxController
   final Rxn<LatLng> bookingFromLocation = Rxn<LatLng>();
   final Rxn<LatLng> bookingToLocation = Rxn<LatLng>();
   final Rxn<LatLng> driverLocation = Rxn<LatLng>();
+  final Rxn<LatLng> adjustedDropLocation = Rxn<LatLng>();
+  final RxInt dropAdjustMeters = 0.obs;
 
   /// marker state (moving car)
   final Rxn<Marker> movingMarker = Rxn<Marker>();
@@ -70,6 +73,8 @@ class RideStatsController extends GetxController
   final RxString directionText = ''.obs;
   final RxString distanceText = ''.obs;
   final RxString maneuver = ''.obs;
+  final RxList<Marker> maneuverMarkers = <Marker>[].obs;
+  int _maneuverGen = 0;
   List<LatLng> _cachedRoutePoints = <LatLng>[];
   String _cachedDirectionText = '';
   String _cachedDistanceText = '';
@@ -387,9 +392,11 @@ class RideStatsController extends GetxController
     if (to == null) return;
     if (from.latitude == to.latitude && from.longitude == to.longitude) {
       polylinePoints.assignAll(<LatLng>[from]);
+      maneuverMarkers.clear();
       return;
     }
     polylinePoints.assignAll(<LatLng>[from, to]);
+    maneuverMarkers.clear();
   }
 
   void _restoreCachedRoute() {
@@ -427,6 +434,25 @@ class RideStatsController extends GetxController
     distanceText.value = nextDistance;
     maneuver.value = nextManeuver;
     polylinePoints.assignAll(pts);
+    final mp = result['maneuverPoints'];
+    final maneuverPoints =
+        mp is List
+            ? mp.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+            : const <Map<String, dynamic>>[];
+
+    unawaited(
+      _rebuildManeuverMarkers(
+        pts,
+        idPrefix: 'ride_$bookingId',
+        travelOrigin:
+            driverLocation.value ?? _lastDriverPosition ?? pts.first,
+        avoid: <LatLng>[
+          if (adjustedDropLocation.value != null) adjustedDropLocation.value!,
+          if (bookingToLocation.value != null) bookingToLocation.value!,
+        ],
+        maneuverPoints: maneuverPoints,
+      ),
+    );
     _cachedRoutePoints = List<LatLng>.from(pts);
     _cachedDirectionText = nextDirection;
     _cachedDistanceText = nextDistance;
@@ -438,6 +464,44 @@ class RideStatsController extends GetxController
     );
     NavigationVoiceService.instance.speakTurn(voice);
     return true;
+  }
+
+  Future<void> _rebuildManeuverMarkers(
+    List<LatLng> pts, {
+    required String idPrefix,
+    LatLng? travelOrigin,
+    List<LatLng> avoid = const <LatLng>[],
+    List<Map<String, dynamic>>? maneuverPoints,
+  }) async {
+    final gen = ++_maneuverGen;
+    try {
+      final m = await ManeuverMarkers.build(
+        polyline: pts,
+        idPrefix: idPrefix,
+        travelOrigin: travelOrigin,
+        avoidPositions: avoid,
+        maneuverPoints: maneuverPoints,
+      );
+      if (isClosed || gen != _maneuverGen) return;
+      maneuverMarkers.assignAll(m);
+    } catch (_) {}
+  }
+
+  void _applyAdjustedDestination(Map<String, dynamic> result) {
+    final adj = result['adjustedDestination'];
+    if (adj is Map) {
+      final lat = adj['lat'];
+      final lng = adj['lng'];
+      if (lat is num && lng is num) {
+        adjustedDropLocation.value = LatLng(lat.toDouble(), lng.toDouble());
+      }
+    } else {
+      adjustedDropLocation.value = null;
+    }
+
+    dropAdjustMeters.value = (result['adjustedMeters'] is int)
+        ? (result['adjustedMeters'] as int)
+        : int.tryParse('${result['adjustedMeters']}') ?? 0;
   }
 
   Future<String> _reverseGeocode(double lat, double lng) async {
@@ -705,7 +769,12 @@ class RideStatsController extends GetxController
     _ensureVisibleRoute(from);
 
     try {
-      final result = await getRouteInfo(origin: from, destination: to);
+      final result = await getDriverFriendlyRouteInfo(
+        origin: from,
+        destination: to,
+        maxAdjustMeters: 140,
+      );
+      _applyAdjustedDestination(result);
       if (!_applyRouteResult(result)) {
         _ensureVisibleRoute(from);
         _scheduleRouteRetry(from);
@@ -724,7 +793,12 @@ class RideStatsController extends GetxController
     _ensureVisibleRoute(from);
 
     try {
-      final result = await getRouteInfo(origin: from, destination: to);
+      final result = await getDriverFriendlyRouteInfo(
+        origin: from,
+        destination: to,
+        maxAdjustMeters: 140,
+      );
+      _applyAdjustedDestination(result);
       if (!_applyRouteResult(result)) {
         _ensureVisibleRoute(from);
         _scheduleRouteRetry(from);

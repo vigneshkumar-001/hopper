@@ -62,6 +62,7 @@ Future<Map<String, dynamic>> getRouteInfo({
   }
 
   final laneGuidance = _extractLaneGuidance(primary, maneuver, directionText);
+  final maneuverPoints = _extractManeuverPoints(steps);
 
   return {
     "direction": directionText,
@@ -69,10 +70,76 @@ Future<Map<String, dynamic>> getRouteInfo({
     "polyline": polyline,
     "maneuver": maneuver,
     "laneGuidance": laneGuidance,
+    "maneuverPoints": maneuverPoints,
     "routeIndex": idx,
     "distanceToDestinationMeters": distanceToDestinationMeters,
     "raw": data,
   };
+}
+
+/// Driver-friendly route helper:
+/// - Computes a nearby "recommended" stop point using Directions step geometry
+/// - Refetches the route to that adjusted point (so polyline + maneuvers align)
+///
+/// Note: this is a pragmatic "snap to navigable road/approach" heuristic; it
+/// cannot fully detect no-parking, gates, or private roads without backend/map data.
+Future<Map<String, dynamic>> getDriverFriendlyRouteInfo({
+  required LatLng origin,
+  required LatLng destination,
+  String mode = "driving",
+  bool alternatives = false,
+  bool traffic = true,
+  String units = "metric",
+  String region = "in",
+  int routeIndex = 0,
+  double maxAdjustMeters = 120,
+}) async {
+  final base = await getRouteInfo(
+    origin: origin,
+    destination: destination,
+    mode: mode,
+    alternatives: alternatives,
+    traffic: traffic,
+    units: units,
+    region: region,
+    routeIndex: routeIndex,
+  );
+
+  final adjusted = _suggestDriverFriendlyStop(
+    routeInfo: base,
+    rawDestination: destination,
+    maxAdjustMeters: maxAdjustMeters,
+  );
+
+  if (adjusted == null) {
+    base['rawDestination'] = {'lat': destination.latitude, 'lng': destination.longitude};
+    base['adjustedDestination'] = {'lat': destination.latitude, 'lng': destination.longitude};
+    base['adjustedMeters'] = 0;
+    return base;
+  }
+
+  final delta = _distanceMeters(destination, adjusted);
+  if (delta <= 20) {
+    base['rawDestination'] = {'lat': destination.latitude, 'lng': destination.longitude};
+    base['adjustedDestination'] = {'lat': destination.latitude, 'lng': destination.longitude};
+    base['adjustedMeters'] = delta.round();
+    return base;
+  }
+
+  final refined = await getRouteInfo(
+    origin: origin,
+    destination: adjusted,
+    mode: mode,
+    alternatives: alternatives,
+    traffic: traffic,
+    units: units,
+    region: region,
+    routeIndex: routeIndex,
+  );
+  refined['rawDestination'] = {'lat': destination.latitude, 'lng': destination.longitude};
+  refined['adjustedDestination'] = {'lat': adjusted.latitude, 'lng': adjusted.longitude};
+  refined['adjustedMeters'] = delta.round();
+  return refined;
 }
 
 /// ✅ Typed helper for Customer (and if you want you can use in Driver too)
@@ -126,6 +193,7 @@ class DirectionsHelper {
     }
 
     final laneGuidance = _extractLaneGuidance(primary, maneuver, directionText);
+    final maneuverPointsRaw = _extractManeuverPoints(steps);
 
     return RouteInfo(
       polyline: polyline,
@@ -134,6 +202,9 @@ class DirectionsHelper {
       distanceText: distanceText,
       maneuver: maneuver,
       laneGuidance: laneGuidance,
+      maneuverPoints: maneuverPointsRaw
+          .map((e) => RouteManeuverPoint.fromJson(e))
+          .toList(growable: false),
       routeIndex: idx,
       raw: data,
     );
@@ -240,6 +311,64 @@ double _distanceMeters(LatLng a, LatLng b) {
 
 double _degToRad(double deg) => deg * (math.pi / 180.0);
 
+LatLng? _suggestDriverFriendlyStop({
+  required Map<String, dynamic> routeInfo,
+  required LatLng rawDestination,
+  required double maxAdjustMeters,
+}) {
+  try {
+    final raw = routeInfo['raw'];
+    if (raw is! Map) return null;
+
+    final routes = raw['routes'];
+    if (routes is! List || routes.isEmpty) return null;
+
+    final route = routes.first;
+    if (route is! Map) return null;
+    final legs = route['legs'];
+    if (legs is! List || legs.isEmpty) return null;
+    final leg = legs.first;
+    if (leg is! Map) return null;
+
+    final legEnd = _latLngFromMap(leg['end_location']);
+    if (legEnd == null) return null;
+
+    final endDelta = _distanceMeters(rawDestination, legEnd);
+    if (endDelta > 5 && endDelta <= maxAdjustMeters) {
+      return legEnd;
+    }
+
+    // If end_location is essentially the same as the user point, try moving to
+    // the start of the final step (often the last "approach" segment on-road).
+    final steps = leg['steps'];
+    if (steps is! List || steps.isEmpty) return null;
+    final last = steps.last;
+    if (last is! Map) return null;
+
+    final lastStart = _latLngFromMap(last['start_location']);
+    if (lastStart == null) return null;
+
+    int lastStepMeters = 0;
+    final dist = last['distance'];
+    if (dist is Map) {
+      final v = dist['value'];
+      if (v is int) lastStepMeters = v;
+      if (v is num) lastStepMeters = v.round();
+    }
+
+    final startDelta = _distanceMeters(rawDestination, lastStart);
+    if (lastStepMeters > 0 &&
+        lastStepMeters <= 250 &&
+        startDelta > 5 &&
+        startDelta <= maxAdjustMeters) {
+      return lastStart;
+    }
+  } catch (_) {
+    // ignore
+  }
+  return null;
+}
+
 String _normalizeManeuver(String rawManeuver, String directionHtml) {
   final m = rawManeuver.toLowerCase().trim().replaceAll('_', '-');
   if (m.isNotEmpty) return m;
@@ -258,10 +387,10 @@ String _normalizeManeuver(String rawManeuver, String directionHtml) {
   }
 
   if (text.contains('keep left') || text.contains('slight left')) {
-    return 'turn-left';
+    return 'turn-slight-left';
   }
   if (text.contains('keep right') || text.contains('slight right')) {
-    return 'turn-right';
+    return 'turn-slight-right';
   }
 
   if (text.contains(' left')) return 'turn-left';
@@ -366,6 +495,8 @@ class RouteInfo {
   final String maneuver;
   final String laneGuidance;
 
+  final List<RouteManeuverPoint> maneuverPoints;
+
   final int routeIndex;
   final Map<String, dynamic> raw;
 
@@ -376,9 +507,82 @@ class RouteInfo {
     required this.distanceText,
     required this.maneuver,
     required this.laneGuidance,
+    required this.maneuverPoints,
     required this.routeIndex,
     required this.raw,
   });
+}
+
+class RouteManeuverPoint {
+  final LatLng location;
+  final String maneuver;
+  final int distanceFromStartMeters;
+
+  const RouteManeuverPoint({
+    required this.location,
+    required this.maneuver,
+    required this.distanceFromStartMeters,
+  });
+
+  factory RouteManeuverPoint.fromJson(Map<String, dynamic> json) {
+    final lat = (json['lat'] as num?)?.toDouble() ?? 0.0;
+    final lng = (json['lng'] as num?)?.toDouble() ?? 0.0;
+    final d = json['distanceFromStartMeters'];
+
+    return RouteManeuverPoint(
+      location: LatLng(lat, lng),
+      maneuver: (json['maneuver'] ?? '').toString(),
+      distanceFromStartMeters: d is int ? d : int.tryParse('$d') ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'lat': location.latitude,
+    'lng': location.longitude,
+    'maneuver': maneuver,
+    'distanceFromStartMeters': distanceFromStartMeters,
+  };
+}
+
+List<Map<String, dynamic>> _extractManeuverPoints(List steps) {
+  if (steps.isEmpty) return const <Map<String, dynamic>>[];
+
+  final out = <Map<String, dynamic>>[];
+  int walked = 0;
+
+  for (final s in steps) {
+    if (s is! Map) continue;
+    final step = Map<String, dynamic>.from(s);
+
+    final startLoc = _latLngFromMap(step['start_location']);
+    if (startLoc == null) continue;
+
+    final html = step['html_instructions']?.toString() ?? '';
+    final rawManeuver = step['maneuver']?.toString() ?? '';
+    final normalized = _normalizeManeuver(rawManeuver, html);
+
+    final distanceAtStart = walked;
+    final dist = step['distance'];
+    if (dist is Map) {
+      final v = dist['value'];
+      if (v is int) walked += v;
+      if (v is num) walked += v.round();
+    }
+
+    // Keep only actionable points; fall back to "straight" later in UI if needed.
+    final m = normalized.trim();
+    if (m.isEmpty || m == 'straight') continue;
+
+    out.add(
+      RouteManeuverPoint(
+        location: startLoc,
+        maneuver: m,
+        distanceFromStartMeters: distanceAtStart,
+      ).toJson(),
+    );
+  }
+
+  return out;
 }
 
 String _extractLaneGuidance(

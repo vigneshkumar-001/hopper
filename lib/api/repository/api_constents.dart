@@ -75,12 +75,19 @@ class ApiConstents {
   static String get sharedDriverActiveBooking => _u('/users/active-booking');
   // static String get sharedDriverActiveBooking => _u('/shared/driver/active-booking');
 
+  // Demand opportunities
+  static String get demandOpportunities => _u('/users/demand-opportunities');
+
   static String userImageUpload = _u('/upload/image');
 
   // Support
   static String get supportCustomerTickets => _u('/support/driver/tickets');
   static String get supportCommonDetails => _u('/support/common-details');
   static String get supportMyTickets => _u('/support/my/tickets');
+  static String supportMyTicketDetail({required String ticketId}) =>
+      _u('/support/my/tickets/$ticketId');
+  static String supportTicketMessage({required String ticketId}) =>
+      _u('/support/driver/tickets/$ticketId/message');
 
   // ✅ These already functions - just use _u()
   static String driverOnlineStatus({required String driverId}) {

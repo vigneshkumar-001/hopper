@@ -11,6 +11,7 @@ import 'polyline_snap.dart';
 
 class DriverRouteUpdate {
   final LatLng driverLocation;
+  final LatLng destination;
   final double bearing;
   final List<LatLng> polylinePoints;
   final LatLng? nextPoint;
@@ -18,9 +19,11 @@ class DriverRouteUpdate {
   final String distanceText;
   final String maneuver;
   final String laneGuidance;
+  final List<Map<String, dynamic>> maneuverPoints;
 
   DriverRouteUpdate({
     required this.driverLocation,
+    required this.destination,
     required this.bearing,
     required this.polylinePoints,
     required this.nextPoint,
@@ -28,6 +31,7 @@ class DriverRouteUpdate {
     required this.distanceText,
     required this.maneuver,
     required this.laneGuidance,
+    required this.maneuverPoints,
   });
 }
 
@@ -41,6 +45,7 @@ class DriverRouteController {
 
   LatLng _destination;
   LatLng get destination => _destination;
+  LatLng? _adjustedDestination;
 
   final void Function(DriverRouteUpdate update) onRouteUpdate;
   final void Function(CameraPosition position)? onCameraUpdate;
@@ -70,6 +75,7 @@ class DriverRouteController {
   String _distanceText = '';
   String _maneuver = '';
   String _laneGuidance = '';
+  List<Map<String, dynamic>> _maneuverPoints = const <Map<String, dynamic>>[];
 
   StreamSubscription<Position>? _positionSub;
 
@@ -371,19 +377,44 @@ class DriverRouteController {
     _lastRouteFetchAt = now;
 
     try {
-      final result = await getRouteInfo(origin: origin, destination: dest);
+      final result = await getDriverFriendlyRouteInfo(
+        origin: origin,
+        destination: dest,
+        maxAdjustMeters: 140,
+      );
 
       _directionText = _parseHtmlString(result['direction']);
       _distanceText = (result['distance'] ?? '').toString();
       _maneuver = (result['maneuver'] ?? '').toString();
       _laneGuidance = (result['laneGuidance'] ?? '').toString();
       _polyline = decodePolyline((result['polyline'] ?? '').toString());
+
+      final adj = result['adjustedDestination'];
+      if (adj is Map) {
+        final lat = adj['lat'];
+        final lng = adj['lng'];
+        if (lat is num && lng is num) {
+          _adjustedDestination = LatLng(lat.toDouble(), lng.toDouble());
+        }
+      } else {
+        _adjustedDestination = null;
+      }
+
+      final mp = result['maneuverPoints'];
+      if (mp is List) {
+        _maneuverPoints =
+            mp.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      } else {
+        _maneuverPoints = const <Map<String, dynamic>>[];
+      }
     } catch (_) {
       // Never crash the route loop; fall back to a straight line.
       _directionText = '';
       _distanceText = '';
       _maneuver = '';
       _laneGuidance = '';
+      _maneuverPoints = const <Map<String, dynamic>>[];
+      _adjustedDestination = null;
       if (origin.latitude == dest.latitude && origin.longitude == dest.longitude) {
         _polyline = <LatLng>[origin];
       } else {
@@ -407,6 +438,7 @@ class DriverRouteController {
     onRouteUpdate(
       DriverRouteUpdate(
         driverLocation: loc,
+        destination: _adjustedDestination ?? _destination,
         bearing: _normalizeAngle(_displayBearing),
         polylinePoints: List<LatLng>.from(_polyline),
         nextPoint: _nextPoint,
@@ -414,6 +446,7 @@ class DriverRouteController {
         distanceText: _distanceText,
         maneuver: _maneuver,
         laneGuidance: _laneGuidance,
+        maneuverPoints: _maneuverPoints,
       ),
     );
 

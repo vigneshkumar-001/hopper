@@ -67,6 +67,8 @@ class PickingCustomerScreen extends StatelessWidget {
         child: Scaffold(
           body: Obx(() {
             final ui = c.ui.value;
+            final pickupTarget =
+                c.adjustedPickupLocation.value ?? pickupLocation;
 
             final markers = <Marker>{
               Marker(
@@ -79,16 +81,17 @@ class PickingCustomerScreen extends StatelessWidget {
               ),
               Marker(
                 markerId: const MarkerId('pickup'),
-                position: pickupLocation,
+                position: pickupTarget,
                 visible: false,
                 infoWindow: InfoWindow.noText,
               ),
+              ...c.maneuverMarkers,
             };
 
             final routePoints =
                 ui.polyline.length >= 2
                     ? ui.polyline
-                    : <LatLng>[ui.driverLocation, pickupLocation];
+                    : <LatLng>[ui.driverLocation, pickupTarget];
             c.ensureRouteReady();
             return Stack(
               children: [
@@ -109,9 +112,9 @@ class PickingCustomerScreen extends StatelessWidget {
                       children: [
                         SharedMap(
                           key: _mapKey,
-                          pickupPosition: pickupLocation,
+                          pickupPosition: pickupTarget,
                           myLocationEnabled: false,
-                          initialPosition: pickupLocation,
+                          initialPosition: pickupTarget,
                           pickupIndicatorStyle: PickupIndicatorStyle.pulse,
                           pickupIndicatorColor: const Color(0xFF00A85E),
                           pickupTargetColor: AppColors.commonBlack,
@@ -123,10 +126,36 @@ class PickingCustomerScreen extends StatelessWidget {
                           polylines: RideRouteOverlays.buildRoutePolylines(
                             routePoints: ui.polyline,
                             origin: ui.driverLocation,
-                            destination: pickupLocation,
+                            destination: pickupTarget,
                             idPrefix: 'route_pickup',
                           ),
                           onMapCreated: (gm) => c.onMapCreated(gm, context),
+                        ),
+                        Positioned(
+                          top: 56,
+                          left: 12,
+                          child: Obx(() {
+                            final meters = c.pickupAdjustMeters.value;
+                            if (meters <= 20) return const SizedBox.shrink();
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.82),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Text(
+                                'Recommended pickup point • ${meters}m',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            );
+                          }),
                         ),
                         IgnorePointer(
                           child: Container(

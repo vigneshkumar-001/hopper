@@ -31,6 +31,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_response.dart';
+import 'package:hopper/Presentation/DriverScreen/models/demand_opportunities_models.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/picking_shared_screens.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/share_ride_start_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
@@ -122,6 +123,22 @@ class DriverMainController extends GetxController
   final Rxn<Map<String, dynamic>> activeBookingData =
       Rxn<Map<String, dynamic>>();
   final RxBool showActiveBookingCard = false.obs;
+
+  // Demand opportunities (Home card)
+  final RxBool demandLoading = false.obs;
+  final Rxn<DemandOpportunitiesData> demandData =
+      Rxn<DemandOpportunitiesData>();
+  final RxList<DemandOpportunity> demandOpportunities =
+      <DemandOpportunity>[].obs;
+  final Rxn<DemandOpportunitiesSummary> demandSummary =
+      Rxn<DemandOpportunitiesSummary>();
+  Marker? demandMarker;
+  Circle? demandCircle;
+  final RxnString selectedDemandId = RxnString();
+  DateTime _lastDemandBannerAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastDemandRequestAt = DateTime.fromMillisecondsSinceEpoch(0);
+  LatLng? _lastDemandRequestPos;
+  double? _lastMapZoom;
 
   // ---------------- helpers ----------------
   double safeToDouble(dynamic value) {
@@ -616,6 +633,230 @@ class DriverMainController extends GetxController
         await statusController.todayPackageActivity();
       }
     } catch (_) {}
+
+    // Demand opportunities: refresh with same throttle window.
+    unawaited(fetchDemandOpportunities(silent: true));
+  }
+
+  bool get showDemandCard {
+    final d = demandData.value;
+    if (d == null) return demandOpportunities.isNotEmpty;
+    if (d.eligible != true) return false;
+    return demandOpportunities.isNotEmpty;
+  }
+
+  Future<void> fetchDemandOpportunities({bool silent = false}) async {
+    if (_disposed || isClosed) return;
+    if (!silent) demandLoading.value = true;
+
+    try {
+      final res = await _apiDataSource.getDemandOpportunities();
+      res.fold(
+        (failure) {
+          if (!silent) CustomSnackBar.showError(failure.message);
+        },
+        (response) {
+          final data = response.data;
+          demandData.value = data;
+          demandSummary.value = data?.summary;
+          demandOpportunities.assignAll(data?.opportunities ?? const []);
+
+          // If previously selected zone is gone, fall back to top item.
+          final sel = selectedDemandId.value?.trim() ?? '';
+          if (sel.isNotEmpty &&
+              !demandOpportunities.any((e) => e.id.trim() == sel)) {
+            selectedDemandId.value = null;
+          }
+          _syncDemandMarkerFromTop();
+        },
+      );
+    } catch (_) {
+      // ignore (safe fail)
+    } finally {
+      if (!silent) demandLoading.value = false;
+    }
+  }
+
+  void requestDemandOpportunities({required String reason}) {
+    if (_disposed || isClosed) return;
+
+    final now = DateTime.now();
+    if (now.difference(_lastDemandRequestAt) < const Duration(seconds: 10)) {
+      return;
+    }
+    _lastDemandRequestAt = now;
+
+    if (socketService.connected) {
+      socketService.emit('driver:request-demand-opportunities', {
+        'reason': reason,
+        'ts': now.toIso8601String(),
+      });
+    }
+
+    // Backstop with REST (reconnect + network restore safe).
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 1200), () async {
+        await fetchDemandOpportunities(silent: true);
+      }),
+    );
+  }
+
+  void _syncDemandMarkerFromTop() {
+    if (_disposed || isClosed) return;
+    if (!showDemandCard) {
+      demandMarker = null;
+      demandCircle = null;
+      update(['map']);
+      return;
+    }
+
+    final sel = selectedDemandId.value?.trim() ?? '';
+    DemandOpportunity? top;
+    if (sel.isNotEmpty) {
+      for (final o in demandOpportunities) {
+        if (o.id.trim() == sel) {
+          top = o;
+          break;
+        }
+      }
+    }
+    top ??= demandOpportunities.isNotEmpty ? demandOpportunities.first : null;
+    final lat = top?.latitude;
+    final lng = top?.longitude;
+    if (lat == null || lng == null) {
+      demandMarker = null;
+      demandCircle = null;
+      update(['map']);
+      return;
+    }
+
+    final isSelected = (top?.id.trim().isNotEmpty ?? false) &&
+        top?.id.trim() == sel;
+
+    demandMarker = Marker(
+      markerId: const MarkerId('demand_hotspot'),
+      position: LatLng(lat, lng),
+      icon: BitmapDescriptor.defaultMarkerWithHue(
+        isSelected ? BitmapDescriptor.hueRose : BitmapDescriptor.hueAzure,
+      ),
+      infoWindow: InfoWindow(
+        title: top?.title ?? 'Demand Opportunity',
+        snippet: (top?.message ?? '').isEmpty ? null : top?.message,
+      ),
+    );
+
+    demandCircle = Circle(
+      circleId: const CircleId('demand_highlight'),
+      center: LatLng(lat, lng),
+      radius: 320,
+      strokeWidth: 2,
+      strokeColor: const Color(0xFF1E88E5).withOpacity(0.55),
+      fillColor: const Color(0xFF1E88E5).withOpacity(0.12),
+      zIndex: 2,
+    );
+    update(['map']);
+  }
+
+  void _upsertDemandOpportunity(DemandOpportunity opp) {
+    if (_disposed || isClosed) return;
+    if (demandData.value != null && demandData.value?.eligible != true) return;
+
+    final id = opp.id.trim();
+    if (id.isEmpty) {
+      demandOpportunities.insert(0, opp);
+      return;
+    }
+
+    final idx = demandOpportunities.indexWhere((e) => e.id.trim() == id);
+    if (idx >= 0) {
+      demandOpportunities[idx] = opp;
+    } else {
+      demandOpportunities.insert(0, opp);
+    }
+
+    if (demandOpportunities.length > 3) {
+      demandOpportunities.removeRange(3, demandOpportunities.length);
+    }
+
+    _syncDemandMarkerFromTop();
+  }
+
+  void _maybeShowDemandBanner(DemandOpportunity opp) {
+    if (_disposed || isClosed) return;
+    if (!_appInForeground) return;
+
+    final now = DateTime.now();
+    if (now.difference(_lastDemandBannerAt) < const Duration(seconds: 10)) {
+      return;
+    }
+    _lastDemandBannerAt = now;
+
+    Get.rawSnackbar(
+      messageText: Text(
+        opp.title,
+        style: const TextStyle(color: Colors.white),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      snackPosition: SnackPosition.TOP,
+      backgroundColor: Colors.black.withOpacity(0.88),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      borderRadius: 14,
+      mainButton: TextButton(
+        onPressed: () async {
+          await focusDemandHotspot();
+          if (Get.isSnackbarOpen) Get.back();
+        },
+        child: Text(
+          opp.cta.isNotEmpty ? opp.cta : 'View',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+      ),
+      duration: const Duration(seconds: 4),
+    );
+  }
+
+  Future<void> focusDemandHotspot() async {
+    final top =
+        demandOpportunities.isNotEmpty ? demandOpportunities.first : null;
+    if (top == null) return;
+    await focusDemandOpportunity(top);
+  }
+
+  void onMapCameraMove(CameraPosition pos) {
+    _lastMapZoom = pos.zoom;
+  }
+
+  Future<void> focusDemandOpportunity(DemandOpportunity opp) async {
+    if (_disposed || isClosed) return;
+
+    final lat = opp.latitude;
+    final lng = opp.longitude;
+    if (lat == null || lng == null) return;
+
+    final id = opp.id.trim();
+    if (id.isNotEmpty) {
+      selectedDemandId.value = id;
+    }
+
+    _syncDemandMarkerFromTop();
+
+    final pos = LatLng(lat, lng);
+    final baseZoom = _lastMapZoom ?? 0.0;
+    final targetZoom = max(baseZoom, 15.8).clamp(14.8, 17.8);
+
+    try {
+      await mapController?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: pos, zoom: targetZoom),
+        ),
+      );
+    } catch (_) {}
+
+    // Reveal the info bubble for clarity.
+    try {
+      await mapController?.showMarkerInfoWindow(const MarkerId('demand_hotspot'));
+    } catch (_) {}
   }
 
   String? _resolveBookingIdForLocationPayload() {
@@ -673,6 +914,25 @@ class DriverMainController extends GetxController
       if (accuracyM > _MAX_ACCURACY_M) return;
 
       final current = LatLng(pos.latitude, pos.longitude);
+
+      // Demand opportunities refresh on significant movement (avoid spam).
+      final lastReqPos = _lastDemandRequestPos;
+      if (lastReqPos == null) {
+        _lastDemandRequestPos = current;
+      } else {
+        final moved = Geolocator.distanceBetween(
+          lastReqPos.latitude,
+          lastReqPos.longitude,
+          current.latitude,
+          current.longitude,
+        );
+        if (moved >= 500) {
+          _lastDemandRequestPos = current;
+          requestDemandOpportunities(
+            reason: 'location_moved_${moved.round()}m',
+          );
+        }
+      }
 
       // 2) freeze drift/jumps when almost stationary
       final prev = lastPosition;
@@ -787,6 +1047,8 @@ class DriverMainController extends GetxController
     // socketService.off('booking-request');
     socketService.off('driver-cancelled');
     socketService.off('customer-cancelled');
+    socketService.off('driver:demand-opportunity');
+    socketService.off('driver:demand-opportunities');
 
     socketService.on('connect', (_) {
       if (_disposed || isClosed) return;
@@ -802,6 +1064,7 @@ class DriverMainController extends GetxController
     socketService.on('registered', (_) async {
       if (_disposed || isClosed) return;
       await startEmitLoop();
+      requestDemandOpportunities(reason: 'socket_registered');
     });
 
     socketService.on('driver-cancelled', (data) async {
@@ -886,6 +1149,49 @@ class DriverMainController extends GetxController
         dropAddress: dropAddr,
       );
       startCountdown();
+    });
+
+    socketService.on('driver:demand-opportunities', (data) {
+      if (_disposed || isClosed) return;
+      final payload = _coerceSocketPayloadToMap(data);
+      if (payload == null) return;
+
+      // Payload may be {success,data} or just {data}.
+      final root =
+          payload.containsKey('data')
+              ? payload
+              : <String, dynamic>{'success': true, 'data': payload};
+
+      final parsed = DemandOpportunitiesResponse.fromJson(root);
+      final d = parsed.data;
+      if (d == null) return;
+
+      demandData.value = d;
+      demandSummary.value = d.summary;
+      demandOpportunities.assignAll(d.opportunities);
+      _syncDemandMarkerFromTop();
+    });
+
+    socketService.on('driver:demand-opportunity', (data) {
+      if (_disposed || isClosed) return;
+      final payload = _coerceSocketPayloadToMap(data);
+      if (payload == null) return;
+
+      final opp = DemandOpportunity.fromJson(payload);
+
+      // If REST snapshot hasn't arrived yet, allow socket pushes to render the card.
+      demandData.value ??= DemandOpportunitiesData(
+        eligible: true,
+        driverStatus: '',
+        serviceType: opp.serviceType,
+        generatedAt: DateTime.now(),
+        opportunities: const <DemandOpportunity>[],
+        summary: null,
+      );
+
+      _upsertDemandOpportunity(opp);
+      _syncDemandMarkerFromTop();
+      _maybeShowDemandBanner(opp);
     });
   }
 
@@ -1304,6 +1610,7 @@ class DriverMainController extends GetxController
       socketService.registerDriver(did, bookingId: currentBookingId);
       if (socketService.connected) {
         await startEmitLoop();
+        requestDemandOpportunities(reason: 'socket_already_connected');
       }
     }
 
@@ -1362,6 +1669,7 @@ class DriverMainController extends GetxController
     socketService.registerDriver(did, bookingId: currentBookingId);
     if (socketService.connected) {
       await startEmitLoop();
+      requestDemandOpportunities(reason: 'app_resumed');
     }
 
     // Update home stats when returning from other screens / background.
@@ -1616,6 +1924,7 @@ class DriverMainController extends GetxController
         statusController.weeklyChallenges();
         statusController.todayActivity();
         statusController.todayPackageActivity();
+        unawaited(fetchDemandOpportunities(silent: true));
       });
 
       _listenSharedToggle();
@@ -1638,6 +1947,8 @@ class DriverMainController extends GetxController
     socketService.off('booking-request');
     socketService.off('driver-cancelled');
     socketService.off('customer-cancelled');
+    socketService.off('driver:demand-opportunity');
+    socketService.off('driver:demand-opportunities');
 
     _sharedToggleWorker?.dispose();
     _serviceTypeWorker?.dispose();

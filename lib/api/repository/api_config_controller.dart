@@ -9,7 +9,7 @@ class ApiConfigController extends GetxController {
   static const String sharedBase = String.fromEnvironment(
     'HOPPR_SHARED_BASE_URL',
     defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com/api',
-        // defaultValue: 'https://q29l3cr9-6000.inc1.devtunnels.ms/api',
+    // defaultValue: 'https://q29l3cr9-6000.inc1.devtunnels.ms/api',
   );
   static const String singleBase = String.fromEnvironment(
     'HOPPR_SINGLE_BASE_URL',
@@ -57,6 +57,16 @@ class ApiConfigController extends GetxController {
     try {
       SocketService().initSocket(socketUrl);
     } catch (_) {}
+    update();
+  }
+
+  /// Like [setSharedEnabled] but does not touch the socket layer.
+  /// Use this during logout / app reset flows.
+  Future<void> setSharedEnabledSilently(bool value) async {
+    isSharedEnabled.value = value;
+    await SharedPrefHelper.instance.setSharedBookingEnabled(value);
+    CommonLogger.log.i("BaseUrl switched (silent) => $baseUrl");
+    CommonLogger.log.i("SocketUrl switched (silent) => $socketUrl");
     update();
   }
 }

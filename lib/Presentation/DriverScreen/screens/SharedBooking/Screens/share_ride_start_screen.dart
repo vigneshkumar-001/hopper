@@ -29,6 +29,7 @@ import 'package:hopper/utils/map/route_info.dart';
 import 'package:hopper/api/repository/api_constents.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
+import 'package:hopper/utils/map/maneuver_markers.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/shared_map.dart';
 import 'package:hopper/utils/map/ride_route_overlays.dart';
@@ -201,6 +202,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   double _animatedBearing = 0.0;
 
   List<LatLng> polylinePoints = const [];
+  Set<Marker> _maneuverMarkers = <Marker>{};
   String directionText = '';
   String distance = '';
   String maneuver = '';
@@ -223,6 +225,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
 
   DateTime? _lastUiUpdate;
   List<LatLng>? _lastPolyline;
+  LatLng? _adjustedTargetPos;
   String _lastDirectionText = '';
   String _lastDistanceText = '';
   String _lastManeuver = '';
@@ -329,6 +332,13 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       initialDestination,
     );
     _lastPolyline = polylinePoints;
+    unawaited(
+      _rebuildManeuverMarkers(
+        polylinePoints,
+        travelOrigin: widget.driverLocation,
+        avoid: <LatLng>[initialDestination],
+      ),
+    );
 
     _routeController = DriverRouteController(
       destination: initialDestination,
@@ -350,6 +360,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         final distText = update.distanceText;
         final man = update.maneuver;
         final lane = update.laneGuidance;
+        final adjDest = update.destination;
 
         final polyChanged =
             _lastPolyline == null ||
@@ -371,6 +382,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
           return;
 
         setState(() {
+          _adjustedTargetPos = adjDest;
           if (polyChanged) {
             polylinePoints = poly;
             _lastPolyline = poly;
@@ -387,6 +399,24 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
           }
           _isOffRouteAlert = offRouteNow;
         });
+
+        if (polyChanged) {
+          final activeNow = sharedRideController.activeTarget.value ?? initialTarget;
+          final destNow =
+              _adjustedTargetPos ??
+              (activeNow == null
+                  ? widget.pickupLocation
+                  : _destinationForTarget(activeNow));
+
+          unawaited(
+            _rebuildManeuverMarkers(
+              poly,
+              maneuverPoints: update.maneuverPoints,
+              travelOrigin: update.driverLocation,
+              avoid: <LatLng>[destNow],
+            ),
+          );
+        }
 
         final active = sharedRideController.activeTarget.value;
         final etaMinutes =
@@ -496,6 +526,29 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     return <LatLng>[origin, destination];
   }
 
+  Future<void> _rebuildManeuverMarkers(
+    List<LatLng> pts, {
+    List<Map<String, dynamic>>? maneuverPoints,
+    LatLng? travelOrigin,
+    List<LatLng> avoid = const <LatLng>[],
+  }) async {
+    try {
+      final markers = await ManeuverMarkers.build(
+        polyline: pts,
+        idPrefix: 'shared_route_${widget.bookingId}',
+        travelOrigin: travelOrigin,
+        avoidPositions: avoid,
+        maneuverPoints: maneuverPoints,
+      );
+      if (!mounted || _isDisposing) return;
+      setState(() {
+        _maneuverMarkers = markers.toSet();
+      });
+    } catch (_) {
+      // ignore
+    }
+  }
+
   Future<void> _syncActiveTargetRoute({
     SharedRiderItem? active,
     bool focusMap = true,
@@ -517,7 +570,15 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     setState(() {
       polylinePoints = _buildFallbackRoute(origin, dest);
       _lastPolyline = polylinePoints;
+      _adjustedTargetPos = null;
     });
+    unawaited(
+      _rebuildManeuverMarkers(
+        polylinePoints,
+        travelOrigin: origin,
+        avoid: <LatLng>[dest],
+      ),
+    );
 
     await _routeController.updateDestination(dest);
 
@@ -2280,12 +2341,13 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   Widget build(BuildContext context) {
     final driverPos = _animatedDriverPos ?? widget.driverLocation;
     final active = sharedRideController.activeTarget.value;
-    final targetPos =
+    final rawTargetPos =
         active == null
             ? widget.pickupLocation
             : (active.stage == SharedRiderStage.waitingPickup
                 ? active.pickupLatLng
                 : active.dropLatLng);
+    final targetPos = _adjustedTargetPos ?? rawTargetPos;
 
     final markers = <Marker>{
       Marker(
@@ -2297,13 +2359,11 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         flat: true,
         zIndex: 999,
       ),
+      ..._maneuverMarkers,
       if (active != null)
         Marker(
           markerId: const MarkerId('target_bounds'),
-          position:
-              active.stage == SharedRiderStage.waitingPickup
-                  ? active.pickupLatLng
-                  : active.dropLatLng,
+          position: targetPos,
           visible: false,
           infoWindow: InfoWindow.noText,
         ),

@@ -18,6 +18,7 @@ import 'package:hopper/utils/map/route_info.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
+import 'package:hopper/utils/map/maneuver_markers.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 
@@ -135,6 +136,10 @@ class PickingCustomerSharedController extends GetxController {
 
   // routing
   List<LatLng> _poly = [];
+  final RxList<Marker> maneuverMarkers = <Marker>[].obs;
+  final Rxn<LatLng> adjustedStopLocation = Rxn<LatLng>();
+  final RxInt stopAdjustMeters = 0.obs;
+  int _maneuverGen = 0;
   DateTime _lastRouteFetch = DateTime.fromMillisecondsSinceEpoch(0);
   SharedRouteUiState? _cachedRouteUi;
   bool _pendingRouteRetry = false;
@@ -328,7 +333,8 @@ class PickingCustomerSharedController extends GetxController {
       );
 
       // Decide which leg ETA to show (pickup vs drop).
-      final latestStatus = (map['latestStatus'] ?? map['status'] ?? '').toString();
+      final latestStatus =
+          (map['latestStatus'] ?? map['status'] ?? '').toString();
       final statusLower = latestStatus.toLowerCase();
       final startedLike =
           statusLower.contains('started') ||
@@ -354,8 +360,10 @@ class PickingCustomerSharedController extends GetxController {
       // Update global pickup/drop stats (used in other UI places too).
       final pickupMeters =
           (map['pickupDistanceInMeters'] as num?)?.toDouble() ?? 0.0;
-      final pickupMins = (map['pickupDurationInMin'] as num?)?.toDouble() ?? 0.0;
-      final dropMeters = (map['dropDistanceInMeters'] as num?)?.toDouble() ?? 0.0;
+      final pickupMins =
+          (map['pickupDurationInMin'] as num?)?.toDouble() ?? 0.0;
+      final dropMeters =
+          (map['dropDistanceInMeters'] as num?)?.toDouble() ?? 0.0;
       final dropMins = (map['dropDurationInMin'] as num?)?.toDouble() ?? 0.0;
       driverStatusController.pickupDistanceInMeters.value = pickupMeters;
       driverStatusController.pickupDurationInMin.value = pickupMins;
@@ -364,11 +372,17 @@ class PickingCustomerSharedController extends GetxController {
 
       // ✅ update cache always (so when user taps later, we instantly show latest)
       final effectiveStage =
-          startedLike ? SharedRiderStage.onboardDrop : (active?.stage ?? SharedRiderStage.waitingPickup);
+          startedLike
+              ? SharedRiderStage.onboardDrop
+              : (active?.stage ?? SharedRiderStage.waitingPickup);
       final meters =
-          effectiveStage == SharedRiderStage.onboardDrop ? dropMeters : pickupMeters;
+          effectiveStage == SharedRiderStage.onboardDrop
+              ? dropMeters
+              : pickupMeters;
       final mins =
-          effectiveStage == SharedRiderStage.onboardDrop ? dropMins : pickupMins;
+          effectiveStage == SharedRiderStage.onboardDrop
+              ? dropMins
+              : pickupMins;
       _etaCache[cacheKey] = _Eta(meters, mins, DateTime.now());
 
       // ✅ update UI ONLY if this event belongs to selected rider (or the locked initial id)
@@ -516,14 +530,29 @@ class PickingCustomerSharedController extends GetxController {
       final origin = routeUi.value.driverLocation;
       final destination = _getCurrentDestination();
 
-      final result = await getRouteInfo(
+      final result = await getDriverFriendlyRouteInfo(
         origin: origin,
         destination: destination,
         alternatives: false,
         traffic: true,
         mode: "driving",
         routeIndex: 0,
+        maxAdjustMeters: 140,
       );
+
+      final adj = result['adjustedDestination'];
+      if (adj is Map) {
+        final lat = adj['lat'];
+        final lng = adj['lng'];
+        if (lat is num && lng is num) {
+          adjustedStopLocation.value = LatLng(lat.toDouble(), lng.toDouble());
+        }
+      } else {
+        adjustedStopLocation.value = null;
+      }
+      stopAdjustMeters.value = (result['adjustedMeters'] is int)
+          ? (result['adjustedMeters'] as int)
+          : int.tryParse('${result['adjustedMeters']}') ?? 0;
 
       final poly = (result['polyline'] ?? '').toString();
       final pts = _simplifyPolyline(
@@ -564,6 +593,22 @@ class PickingCustomerSharedController extends GetxController {
         maneuver: (result['maneuver'] ?? '').toString(),
         laneGuidance: (result['laneGuidance'] ?? '').toString(),
       );
+      final mp = result['maneuverPoints'];
+      final maneuverPoints =
+          mp is List
+              ? mp.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+              : const <Map<String, dynamic>>[];
+
+      final dest = adjustedStopLocation.value ?? destination;
+      unawaited(
+        _rebuildManeuverMarkers(
+          pts,
+          idPrefix: 'shared_$bookingId',
+          travelOrigin: routeUi.value.driverLocation,
+          avoid: <LatLng>[dest],
+          maneuverPoints: maneuverPoints,
+        ),
+      );
       final analytics = Get.find<DriverAnalyticsController>();
       analytics.setSlaFromEtaMinutes(etaMinutes.value);
       final voiceLine = NavigationAssist.buildVoiceLine(
@@ -582,6 +627,27 @@ class PickingCustomerSharedController extends GetxController {
       }
       _scheduleRouteRetry();
     }
+  }
+
+  Future<void> _rebuildManeuverMarkers(
+    List<LatLng> pts, {
+    required String idPrefix,
+    LatLng? travelOrigin,
+    List<LatLng> avoid = const <LatLng>[],
+    List<Map<String, dynamic>>? maneuverPoints,
+  }) async {
+    final gen = ++_maneuverGen;
+    try {
+      final m = await ManeuverMarkers.build(
+        polyline: pts,
+        idPrefix: idPrefix,
+        travelOrigin: travelOrigin,
+        avoidPositions: avoid,
+        maneuverPoints: maneuverPoints,
+      );
+      if (isClosed || gen != _maneuverGen) return;
+      maneuverMarkers.assignAll(m);
+    } catch (_) {}
   }
 
   void _scheduleRouteRetry() {
@@ -807,10 +873,9 @@ class PickingCustomerSharedController extends GetxController {
   }
 
   void _updateSmartAutoZoom(double speedMs) {
-    final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs).clamp(
-      15.2,
-      17.8,
-    );
+    final targetZoom = MapMotionProfile.targetZoomFromSpeed(
+      speedMs,
+    ).clamp(15.2, 17.8);
     followZoom.value = MapMotionProfile.smoothZoom(
       followZoom.value,
       targetZoom,

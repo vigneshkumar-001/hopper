@@ -1481,12 +1481,13 @@ class _PickingCustomerSharedScreenState
             final initialBookingRider = sharedRideController.riders
                 .firstWhereOrNull((r) => r.bookingId == widget.bookingId);
             final resolvedTarget = activeTarget ?? initialBookingRider;
-            final currentTarget =
+            final rawTarget =
                 resolvedTarget == null
                     ? widget.pickupLocation
                     : (resolvedTarget.stage == SharedRiderStage.onboardDrop
                         ? resolvedTarget.dropLatLng
                         : resolvedTarget.pickupLatLng);
+            final currentTarget = c.adjustedStopLocation.value ?? rawTarget;
 
             final markers = <Marker>{
               Marker(
@@ -1513,6 +1514,7 @@ class _PickingCustomerSharedScreenState
                   infoWindow: InfoWindow.noText,
                 ),
               ),
+              ...c.maneuverMarkers,
             };
 
             if (uiState.polyline.length < 2 &&

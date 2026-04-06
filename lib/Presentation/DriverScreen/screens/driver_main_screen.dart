@@ -123,10 +123,13 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                         GetBuilder<DriverMainController>(
                           id: 'map',
                           builder: (_) {
-                            final markerSet =
-                                (c.carMarker != null)
-                                    ? {c.carMarker!}
-                                    : <Marker>{};
+                            final markerSet = <Marker>{
+                              if (c.carMarker != null) c.carMarker!,
+                              if (c.demandMarker != null) c.demandMarker!,
+                            };
+                            final circles = <Circle>{
+                              if (c.demandCircle != null) c.demandCircle!,
+                            };
 
                             return RepaintBoundary(
                               child: GoogleMap(
@@ -154,6 +157,8 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                   zoom: 16.8,
                                 ),
                                 markers: markerSet,
+                                circles: circles,
+                                onCameraMove: c.onMapCameraMove,
                                 onCameraMoveStarted: () {
                                   // stop follow when user touches map
                                   c.followDriver.value = false;
@@ -571,6 +576,90 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
     });
   }
 
+  void _openDemandList(DriverMainController main) {
+    if (!main.showDemandCard) return;
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                const Text(
+                  'Demand Opportunities',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: main.demandOpportunities.length,
+                    separatorBuilder: (_, __) => const Divider(height: 18),
+                    itemBuilder: (_, i) {
+                      final opp = main.demandOpportunities[i];
+                      final km = opp.distanceKm;
+                      final distText =
+                          (km == null) ? '' : '${km.toStringAsFixed(1)} km';
+                      final cta = opp.cta.isNotEmpty ? opp.cta : 'View';
+
+                      return Obx(() {
+                        final selected =
+                            main.selectedDemandId.value?.trim() ?? '';
+                        final isSelected =
+                            selected.isNotEmpty && selected == opp.id.trim();
+
+                        return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        selected: isSelected,
+                        selectedTileColor: Colors.black.withOpacity(0.04),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        onTap: () async {
+                          await main.focusDemandOpportunity(opp);
+                        },
+                        title: Text(
+                          opp.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: Text(
+                          [
+                            opp.message,
+                            if (opp.demandLevel.isNotEmpty)
+                              opp.demandLevel.toUpperCase(),
+                            distText,
+                          ].where((e) => e.isNotEmpty).join(' • '),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: TextButton(
+                          onPressed: () async {
+                            await main.focusDemandOpportunity(opp);
+                          },
+                          child: Text(cta),
+                        ),
+                      );
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     _snapDebounce?.cancel();
@@ -620,6 +709,9 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                 onRefresh: () async {
                   await Get.find<ChooseServiceController>().getUserDetails();
                   await widget.statusController.weeklyChallenges();
+                  final main = Get.find<DriverMainController>();
+                  main.requestDemandOpportunities(reason: 'pull_to_refresh');
+                  await main.fetchDemandOpportunities(silent: true);
                   if (isCar) {
                     await widget.statusController.todayActivity();
                   } else {
@@ -644,6 +736,185 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                       ),
                     ),
                     const SizedBox(height: 10),
+
+                    // Demand opportunities card (hidden when empty/not eligible)
+                    Obx(() {
+                      final main = Get.find<DriverMainController>();
+                      if (!main.showDemandCard) return const SizedBox.shrink();
+
+                      final opp = main.demandOpportunities.first;
+                      final km = opp.distanceKm;
+                      final distText =
+                          (km == null) ? null : '${km.toStringAsFixed(1)} km away';
+                      final badge =
+                          (main.demandData.value?.serviceType ??
+                                  opp.serviceType)
+                              .toString()
+                              .trim();
+                      final level =
+                          opp.demandLevel.isNotEmpty
+                              ? opp.demandLevel.toUpperCase()
+                              : '';
+                      final cta = opp.cta.isNotEmpty ? opp.cta : 'View';
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 6,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            color: const Color(0xFFF7F8FA),
+                            border: Border.all(
+                              color: Colors.black.withOpacity(0.06),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Demand Opportunity',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                  if (main.demandOpportunities.length > 1)
+                                    TextButton(
+                                      onPressed: () => _openDemandList(main),
+                                      child: const Text('See more'),
+                                    ),
+                                ],
+                              ),
+                              Text(
+                                opp.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              if (opp.message.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Text(
+                                    opp.message,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.black.withOpacity(0.7),
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  if (distText != null)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: Colors.black.withOpacity(0.06),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        distText,
+                                        style: const TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  if (badge.isNotEmpty) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black,
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        badge,
+                                        style: const TextStyle(
+                                          fontSize: 12.5,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  if (level.isNotEmpty) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: Colors.black.withOpacity(0.06),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        level,
+                                        style: const TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  const Spacer(),
+                                  ElevatedButton(
+                                    onPressed: () async {
+                                      main.requestDemandOpportunities(
+                                        reason: 'card_view',
+                                      );
+                                      await main.focusDemandHotspot();
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.black,
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 10,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      cta,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
 
                     if (isCar) ...[
                       Center(
