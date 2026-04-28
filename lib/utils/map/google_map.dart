@@ -2,10 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:hopper/utils/map/app_map_style.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:hopper/utils/map/shared_map.dart';
 
-class CommonGoogleMap extends StatefulWidget {
+class CommonGoogleMap extends StatelessWidget {
   final LatLng initialPosition;
   final Set<Polyline> polylines;
   final Set<Marker> markers;
@@ -32,77 +31,27 @@ class CommonGoogleMap extends StatefulWidget {
   });
 
   @override
-  State<CommonGoogleMap> createState() => _CommonGoogleMapState();
-}
-
-class _CommonGoogleMapState extends State<CommonGoogleMap> {
-  GoogleMapController? _mapController;
-  String? _mapStyle;
-
-  @override
-  void initState() {
-    super.initState();
-    _setKeepAwake(true);
-    _loadMapStyle();
-  }
-
-  @override
-  void dispose() {
-    try {
-      _mapController?.dispose();
-    } catch (_) {}
-    _setKeepAwake(false);
-    super.dispose();
-  }
-
-  Future<void> _loadMapStyle() async {
-    try {
-      final style = await AppMapStyle.loadUberLight();
-      _mapStyle = style;
-      if (mounted) setState(() {});
-    } catch (_) {}
-  }
-
-  Future<void> _setKeepAwake(bool enabled) async {
-    if (!widget.keepScreenOn) return;
-    try {
-      await WakelockPlus.toggle(enable: enabled);
-    } catch (_) {}
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return GoogleMap(
-      style: _mapStyle,
-      onCameraMove: widget.onCameraMove,
-      initialCameraPosition: CameraPosition(
-        target: widget.initialPosition,
-        zoom: 15.2,
-      ),
-      onCameraMoveStarted: widget.onCameraMoveStarted,
-      onCameraIdle: widget.onCameraIdle,
-      polylines: widget.polylines,
-      markers: widget.markers,
-      myLocationEnabled: widget.myLocationEnabled,
-      myLocationButtonEnabled: false,
-      zoomControlsEnabled: false,
-      circles: widget.circles,
+    return SharedMap(
+      initialPosition: initialPosition,
+      initialZoom: 15.2,
+      polylines: polylines,
+      markers: markers,
+      circles: circles,
+      myLocationEnabled: myLocationEnabled,
+      fitToBounds: false,
       compassEnabled: false,
-      mapToolbarEnabled: false,
-      rotateGesturesEnabled: true,
+      keepScreenOn: keepScreenOn,
       tiltGesturesEnabled: false,
-      trafficEnabled: false,
-      buildingsEnabled: false,
-      indoorViewEnabled: false,
+      onCameraMoveStarted: onCameraMoveStarted,
+      onCameraMove: onCameraMove == null ? null : (p) => onCameraMove!(p),
+      onCameraIdle: onCameraIdle,
+      onMapCreated:
+          onMapCreated == null ? null : (c) => onMapCreated!.call(c),
       gestureRecognizers: {
         Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
-      },
-      onMapCreated: (controller) async {
-        _mapController = controller;
-        if (widget.onMapCreated != null) {
-          widget.onMapCreated!(controller);
-        }
       },
     );
   }
 }
+

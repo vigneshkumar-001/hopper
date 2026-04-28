@@ -26,6 +26,7 @@ import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/app_map_style.dart';
+import 'package:hopper/utils/map/vehicle_marker_icon.dart';
 import 'package:hopper/utils/location/location_permission_guard.dart';
 import 'package:hopper/utils/map/polyline_snap.dart';
 import 'package:hopper/utils/map/maneuver_markers.dart';
@@ -256,18 +257,8 @@ class PickingCustomerController extends GetxController {
 
   Future<void> _loadCarIcon() async {
     try {
-      final asset =
-          driverStatusController.isBike
-              ? AppImages.parcelBike
-              : AppImages.movingCar;
-
-      // Keep bike slightly smaller than car so it doesn't look oversized on map.
-      final markerHeight = driverStatusController.isBike ? 32.0 : 36.0;
-      const cfg = ImageConfiguration(size: Size(36, 36));
-      carIcon.value = await BitmapDescriptor.asset(
-        height: markerHeight,
-        cfg,
-        asset,
+      carIcon.value = await HopprVehicleMarkerIcon.loadForServiceType(
+        driverStatusController.serviceType.value,
       );
     } catch (_) {
       carIcon.value = BitmapDescriptor.defaultMarker;
@@ -582,10 +573,12 @@ class PickingCustomerController extends GetxController {
           : int.tryParse('${result['adjustedMeters']}') ?? 0;
 
       final poly = (result['polyline'] ?? '').toString();
+      final rawPts = decodePolyline(poly);
       final pts = _simplifyPolyline(
-        decodePolyline(poly),
-        minStepMeters: 6,
-        maxPoints: 220,
+        rawPts,
+        // Preserve turns (less corner cutting) for a cleaner, Uber-like route.
+        minStepMeters: 2.5,
+        maxPoints: 650,
       );
 
       if (pts.length < 2) {
@@ -616,7 +609,8 @@ class PickingCustomerController extends GetxController {
       final dest = adjustedPickupLocation.value ?? pickupLocation;
       unawaited(
         _rebuildManeuverMarkers(
-          pts,
+          // Use raw polyline for maneuver marker placement/rotation.
+          rawPts.length >= 2 ? rawPts : pts,
           idPrefix: 'pickup_$bookingId',
           travelOrigin: origin,
           avoid: <LatLng>[dest],

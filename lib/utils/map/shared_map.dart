@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/utils/map/app_map_style.dart';
@@ -10,15 +12,38 @@ enum PickupIndicatorStyle { pulse, dots, none }
 
 class SharedMap extends StatefulWidget {
   final LatLng initialPosition;
+  final double initialZoom;
   final LatLng? pickupPosition;
   final Set<Marker> markers;
   final Set<Polyline> polylines;
+  final Set<Circle> circles;
+  final EdgeInsets padding;
   final bool myLocationEnabled;
   final bool fitToBounds;
   final bool trafficEnabled;
   final bool compassEnabled;
+  final bool keepScreenOn;
+  final MapType mapType;
+  final String? mapStyle;
+  final bool rotateGesturesEnabled;
+  final bool tiltGesturesEnabled;
+  final bool scrollGesturesEnabled;
+  final bool zoomGesturesEnabled;
+  final bool buildingsEnabled;
+  final bool indoorViewEnabled;
+  final bool mapToolbarEnabled;
+  final MinMaxZoomPreference minMaxZoomPreference;
+  final Set<Factory<OneSequenceGestureRecognizer>> gestureRecognizers;
   final ValueChanged<GoogleMapController>? onMapCreated;
   final VoidCallback? onCameraMoveStarted;
+  final ValueChanged<CameraPosition>? onCameraMove;
+  final VoidCallback? onCameraIdle;
+  final ValueChanged<LatLng>? onTap;
+
+  /// Map tap UX: first tap zoom-in, second tap fit-bounds.
+  /// This is enabled by default so maps feel consistent across flows.
+  final bool tapZoomFitEnabled;
+  final Duration tapZoomFitResetAfter;
 
   /// ✅ Uber/Ola follow driver camera
   final bool followDriver;
@@ -34,15 +59,35 @@ class SharedMap extends StatefulWidget {
   const SharedMap({
     super.key,
     required this.initialPosition,
+    this.initialZoom = 14.6,
     this.pickupPosition,
     this.markers = const <Marker>{},
     this.polylines = const <Polyline>{},
+    this.circles = const <Circle>{},
+    this.padding = EdgeInsets.zero,
     this.myLocationEnabled = true,
     this.fitToBounds = true,
     this.trafficEnabled = false,
     this.compassEnabled = true,
+    this.keepScreenOn = true,
+    this.mapType = MapType.normal,
+    this.mapStyle,
+    this.rotateGesturesEnabled = true,
+    this.tiltGesturesEnabled = true,
+    this.scrollGesturesEnabled = true,
+    this.zoomGesturesEnabled = true,
+    this.buildingsEnabled = false,
+    this.indoorViewEnabled = false,
+    this.mapToolbarEnabled = false,
+    this.minMaxZoomPreference = const MinMaxZoomPreference(11.0, 18.0),
+    this.gestureRecognizers = const <Factory<OneSequenceGestureRecognizer>>{},
     this.onMapCreated,
     this.onCameraMoveStarted,
+    this.onCameraMove,
+    this.onCameraIdle,
+    this.onTap,
+    this.tapZoomFitEnabled = true,
+    this.tapZoomFitResetAfter = const Duration(seconds: 3),
     this.followDriver = false,
     this.followBearingEnabled = true,
     this.followZoom = 16.2,
@@ -76,10 +121,16 @@ class SharedMapState extends State<SharedMap> {
   DateTime _followPausedUntil = DateTime.fromMillisecondsSinceEpoch(0);
   bool _isProgrammaticCameraMove = false;
 
+  CameraPosition? _lastCameraPosition;
+  Timer? _tapZoomResetTimer;
+  int _tapStage = 0;
+
   @override
   void initState() {
     super.initState();
-    _loadMapStyle();
+    if (widget.mapStyle == null) {
+      _loadMapStyle();
+    }
     _setKeepAwake(true);
     _updatePulseTimer();
   }
@@ -87,6 +138,15 @@ class SharedMapState extends State<SharedMap> {
   @override
   void didUpdateWidget(covariant SharedMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.keepScreenOn != widget.keepScreenOn) {
+      _setKeepAwake(widget.keepScreenOn);
+    }
+    if (oldWidget.mapStyle != widget.mapStyle) {
+      if (widget.mapStyle == null && _mapStyle == null) {
+        _loadMapStyle();
+      }
+      if (mounted) setState(() {});
+    }
     if (oldWidget.pickupIndicatorStyle != widget.pickupIndicatorStyle ||
         oldWidget.pickupPosition != widget.pickupPosition) {
       _updatePulseTimer();
@@ -144,6 +204,7 @@ class SharedMapState extends State<SharedMap> {
     _followDebounce?.cancel();
     _programmaticCameraTimer?.cancel();
     _pulseTimer?.cancel();
+    _tapZoomResetTimer?.cancel();
     _mapController?.dispose();
     _setKeepAwake(false);
     super.dispose();
@@ -151,6 +212,11 @@ class SharedMapState extends State<SharedMap> {
 
   Future<void> _setKeepAwake(bool enabled) async {
     try {
+      if (!enabled) {
+        await WakelockPlus.toggle(enable: false);
+        return;
+      }
+      if (!widget.keepScreenOn) return;
       await WakelockPlus.toggle(enable: enabled);
     } catch (_) {}
   }
@@ -186,7 +252,7 @@ class SharedMapState extends State<SharedMap> {
       // as soon as markers/polyline arrive.
       _mapController!.moveCamera(
         CameraUpdate.newCameraPosition(
-          CameraPosition(target: widget.initialPosition, zoom: 14.6),
+          CameraPosition(target: widget.initialPosition, zoom: widget.initialZoom),
         ),
       );
       return;
@@ -195,9 +261,74 @@ class SharedMapState extends State<SharedMap> {
     _didInitialAutoFit = true;
     _mapController!.moveCamera(
       CameraUpdate.newCameraPosition(
-        CameraPosition(target: widget.initialPosition, zoom: 14.6),
+        CameraPosition(target: widget.initialPosition, zoom: widget.initialZoom),
       ),
     );
+  }
+
+  void _resetTapStage() {
+    _tapZoomResetTimer?.cancel();
+    _tapStage = 0;
+  }
+
+  void _bumpTapStage() {
+    _tapZoomResetTimer?.cancel();
+    _tapZoomResetTimer = Timer(widget.tapZoomFitResetAfter, () {
+      _tapStage = 0;
+    });
+  }
+
+  void _handleCameraMove(CameraPosition pos) {
+    _lastCameraPosition = pos;
+    widget.onCameraMove?.call(pos);
+  }
+
+  Future<void> _handleMapTap(LatLng pos) async {
+    widget.onTap?.call(pos);
+    if (!widget.tapZoomFitEnabled) return;
+
+    if (_mapController == null) return;
+
+    // First tap: zoom in towards tap point.
+    if (_tapStage == 0) {
+      _tapStage = 1;
+      _bumpTapStage();
+      pauseAutoFollow(const Duration(seconds: 2));
+
+      try {
+        final zoom = await _mapController!.getZoomLevel();
+        final nextZoom = (zoom + 1.0).clamp(11.5, 17.2);
+        final bearing = _lastCameraPosition?.bearing ?? 0.0;
+        final tilt = _lastCameraPosition?.tilt ?? 0.0;
+        _markProgrammaticCameraMove();
+        await _mapController!.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: pos,
+              zoom: nextZoom,
+              bearing: bearing,
+              tilt: tilt,
+            ),
+          ),
+        );
+      } catch (_) {}
+      return;
+    }
+
+    // Second tap (within reset window): fit bounds.
+    _resetTapStage();
+    final pts = _bestPolylinePoints();
+    if (pts.length >= 2) {
+      await fitPolylineBounds(pts, padding: 95);
+      return;
+    }
+    if (widget.markers.length >= 2) {
+      await fitRouteBounds();
+      return;
+    }
+    if (widget.markers.isNotEmpty) {
+      await focusDriver(zoom: (widget.initialZoom + 0.8).clamp(12.0, 17.2));
+    }
   }
 
   void _attemptInitialCameraMove() {
@@ -221,7 +352,7 @@ class SharedMapState extends State<SharedMap> {
 
   Future<void> fitPolylineBounds(
     List<LatLng> pts, {
-    double padding = 80,
+    double padding = 95,
   }) async {
     if (_mapController == null) return;
     if (pts.length < 2) {
@@ -685,31 +816,41 @@ class SharedMapState extends State<SharedMap> {
     }
 
     return GoogleMap(
-      style: _mapStyle,
+      mapType: widget.mapType,
+      style: widget.mapStyle ?? _mapStyle,
       initialCameraPosition: CameraPosition(
         target: widget.initialPosition,
-        zoom: 14.6,
+        zoom: widget.initialZoom,
       ),
       onMapCreated: _onMapCreated,
       onCameraMoveStarted: () {
         if (_isProgrammaticCameraMove) return;
+        _resetTapStage();
         widget.onCameraMoveStarted?.call();
         pauseAutoFollow(const Duration(seconds: 6));
       },
+      onCameraMove: _handleCameraMove,
+      onCameraIdle: widget.onCameraIdle,
+      onTap: _handleMapTap,
       markers: widget.markers,
       polylines: widget.polylines,
-      circles: _buildPickupCircles(),
+      circles: {...widget.circles, ..._buildPickupCircles()},
+      padding: widget.padding,
       myLocationEnabled: widget.myLocationEnabled,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
-      minMaxZoomPreference: const MinMaxZoomPreference(11.0, 18.0),
+      minMaxZoomPreference: widget.minMaxZoomPreference,
       compassEnabled: widget.compassEnabled,
-      buildingsEnabled: false,
-      indoorViewEnabled: false,
+      buildingsEnabled: widget.buildingsEnabled,
+      indoorViewEnabled: widget.indoorViewEnabled,
       // ✅ Uber feel: allow tilt gestures (optional)
-      tiltGesturesEnabled: true,
-      mapToolbarEnabled: false,
+      tiltGesturesEnabled: widget.tiltGesturesEnabled,
+      rotateGesturesEnabled: widget.rotateGesturesEnabled,
+      scrollGesturesEnabled: widget.scrollGesturesEnabled,
+      zoomGesturesEnabled: widget.zoomGesturesEnabled,
+      mapToolbarEnabled: widget.mapToolbarEnabled,
       trafficEnabled: widget.trafficEnabled,
+      gestureRecognizers: widget.gestureRecognizers,
     );
   }
 }

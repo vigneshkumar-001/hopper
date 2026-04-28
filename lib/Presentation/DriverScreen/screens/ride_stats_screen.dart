@@ -9,16 +9,17 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
 import 'package:hopper/utils/map/shared_map.dart';
 import 'package:hopper/utils/map/ride_route_overlays.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
-import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/driver_message_suggestions.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../controller/ride_starts_controller.dart';
 import 'cash_collected_screen.dart';
@@ -35,6 +36,17 @@ class RideStatsScreen extends StatelessWidget {
     this.pickupAddress,
     this.dropAddress,
   });
+
+  static Widget _roundIconBox(String asset) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.commonBlack.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(30),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Image.asset(asset, height: 25, width: 25),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -229,72 +241,7 @@ class RideStatsScreen extends StatelessWidget {
                 ),
               ),
 
-              // direction bar
-              Positioned(
-                top: 45,
-                left: 10,
-                right: 10,
-                child: Obx(() {
-                  return Row(
-                    children: [
-                      Expanded(
-                        flex: 1,
-                        child: Container(
-                          height: 100,
-                          color: AppColors.directionColor,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 20,
-                              horizontal: 10,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  NavigationAssist.iconForManeuver(
-                                    c.maneuver.value,
-                                  ),
-                                  size: 32,
-                                  color: AppColors.commonWhite,
-                                ),
-                                const SizedBox(height: 5),
-                                CustomTextfield.textWithStyles600(
-                                  c.distanceText.value,
-                                  color: AppColors.commonWhite,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 3,
-                        child: Container(
-                          height: 100,
-                          color: AppColors.directionColor1,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 20,
-                              horizontal: 10,
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                CustomTextfield.textWithStyles600(
-                                  maxLine: 2,
-                                  c.parseHtmlString(c.directionText.value),
-                                  fontSize: 13,
-                                  color: AppColors.commonWhite,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                }),
-              ),
+              // (Removed) Direction banner as requested.
 
               // bottom sheet
               Obx(() {
@@ -336,6 +283,54 @@ class RideStatsScreen extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 20),
+
+                            // Call + Chat (same UX as pickup screen)
+                            Obx(() {
+                              final phone = c.customerPhone.value.trim();
+                              return ListTile(
+                                leading: GestureDetector(
+                                  onTap: () async {
+                                    if (phone.isEmpty) return;
+                                    final url = Uri.parse('tel:$phone');
+                                    if (await canLaunchUrl(url)) {
+                                      await launchUrl(url);
+                                    }
+                                  },
+                                  child: _roundIconBox(AppImages.call),
+                                ),
+                                trailing: GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder:
+                                            (_) => ChatScreen(
+                                              bookingId: bookingId,
+                                            ),
+                                      ),
+                                    );
+                                  },
+                                  child: _roundIconBox(AppImages.msg),
+                                ),
+                                title: Center(
+                                  child: CustomTextfield.textWithStyles600(
+                                    c.custName.value.trim().isEmpty
+                                        ? 'Rider'
+                                        : c.custName.value.trim(),
+                                    fontSize: 18,
+                                  ),
+                                ),
+                                subtitle: Center(
+                                  child: CustomTextfield.textWithStylesSmall(
+                                    'Tap to call or chat',
+                                    fontSize: 13,
+                                    colors: AppColors.textColorGrey,
+                                  ),
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 6),
+
                             Obx(() {
                               final eta =
                                   driverStatusController.dropDurationInMin.value
@@ -1031,14 +1026,20 @@ class _RideStatsScreenState extends State<RideStatsScreen>
   // }
   Future<void> _loadMarkerIcons() async {
     try {
-      final cfg = const ImageConfiguration(size: Size(52, 52));
       final String asset =
           driverStatusController.isBike
               ? AppImages.parcelBike
               : AppImages.movingCar;
 
-      final height = driverStatusController.isBike ? 66.0 : 60.0;
-      final icon = await BitmapDescriptor.asset(height: height, cfg, asset);
+      final dpr = MediaQuery.of(context).devicePixelRatio;
+      final double markerHeight = 46.0;
+      final double markerWidth = driverStatusController.isBike ? 28.0 : 24.0;
+      final cfg = ImageConfiguration(
+        size: Size(markerWidth, markerHeight),
+        devicePixelRatio: dpr,
+      );
+
+      final icon = await BitmapDescriptor.fromAssetImage(cfg, asset);
       if (!mounted) return;
       setState(() {
         carIcon = icon;
@@ -1579,24 +1580,6 @@ class _RideStatsScreenState extends State<RideStatsScreen>
         .replaceAll('&amp;', '&');
   }
 
-  String _maneuverAsset(String m) {
-    final maneuver = m.toLowerCase().trim().replaceAll('_', '-');
-    if (maneuver.contains('roundabout')) {
-      if (maneuver.contains('left')) return 'assets/images/roundabout-left.png';
-      if (maneuver.contains('right')) {
-        return 'assets/images/roundabout-right.png';
-      }
-      return 'assets/images/roundabout-right.png';
-    }
-    if (maneuver.contains('uturn')) {
-      if (maneuver.contains('right')) return "assets/images/right-turn.png";
-      return "assets/images/left-turn.png";
-    }
-    if (maneuver.contains('left')) return "assets/images/left-turn.png";
-    if (maneuver.contains('right')) return "assets/images/right-turn.png";
-    return 'assets/images/straight.png';
-  }
-
   Future<void> _goToCurrentLocation() async {
     final pos = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
@@ -1730,71 +1713,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                 ),
               ),
 
-              Positioned(
-                top: 45,
-                left: 10,
-                right: 10,
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 1,
-                      child: Container(
-                        height: 100,
-                        color: AppColors.directionColor,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 20,
-                            horizontal: 10,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Icon(
-                                NavigationAssist.iconForManeuver(
-                                  maneuver,
-                                  directionText: directionText,
-                                ),
-                                size: 32,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(height: 5),
-                              CustomTextfield.textWithStyles600(
-                                distance,
-                                color: AppColors.commonWhite,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Container(
-                        height: 100,
-                        color: AppColors.directionColor1,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 20,
-                            horizontal: 10,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              CustomTextfield.textWithStyles600(
-                                maxLine: 2,
-                                parseHtmlString(directionText),
-                                fontSize: 13,
-                                color: AppColors.commonWhite,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // (Removed) Direction banner as requested.
               if (_isNetworkOffline || _pendingQueueCount > 0)
                 Positioned(
                   top: 150,

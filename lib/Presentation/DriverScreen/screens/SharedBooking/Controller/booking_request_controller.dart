@@ -14,6 +14,11 @@ class BookingRequestController extends GetxController {
   // 🆕 keep track of last handled booking (accepted/declined/expired)
   final RxnString lastHandledBookingId = RxnString();
 
+  // Prevent double-popups from quick duplicate socket events.
+  String? _lastShownBookingId;
+  DateTime _lastShownAt = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _duplicateShowWindow = Duration(seconds: 2);
+
   void showRequest({
     required Map<String, dynamic> rawData,
     required String pickupAddress,
@@ -26,12 +31,20 @@ class BookingRequestController extends GetxController {
     final incomingId = data['bookingId']?.toString();
 
     // 🛑 ignore if this booking was already handled
+    if (incomingId != null && incomingId == lastHandledBookingId.value) {
+      return;
+    }
+
+    final now = DateTime.now();
     if (incomingId != null &&
-        incomingId == lastHandledBookingId.value) {
+        incomingId == _lastShownBookingId &&
+        now.difference(_lastShownAt) < _duplicateShowWindow) {
       return;
     }
 
     bookingRequestData.value = data;
+    _lastShownBookingId = incomingId;
+    _lastShownAt = now;
     Get.find<DriverAnalyticsController>().trackOffer();
     _startTimer(requestPopupSeconds);
   }
@@ -45,11 +58,8 @@ class BookingRequestController extends GetxController {
         remainingSeconds.value--;
       } else {
         t.cancel();
-        // when timer ends, mark this booking as handled too
-        final currentId = bookingRequestData.value?['bookingId']?.toString();
-        if (currentId != null) {
-          lastHandledBookingId.value = currentId;
-        }
+        // On expiry, just close the popup.
+        // Do NOT mark as handled; backend may re-dispatch the same bookingId.
         clear();
       }
     });

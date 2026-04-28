@@ -18,7 +18,6 @@ import 'package:hopper/utils/map/shared_map.dart';
 import 'package:hopper/utils/map/ride_route_overlays.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
-import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/driver_message_suggestions.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
@@ -231,118 +230,7 @@ class PickingCustomerScreen extends StatelessWidget {
                   ),
                 ),
 
-                // Direction header
-                Positioned(
-                  top: 42,
-                  left: 12,
-                  right: 12,
-                  child: GestureDetector(
-                    onTap: () {
-                      final ms = _mapKey.currentState;
-                      if (ms == null) return;
-                      ms.pauseAutoFollow(const Duration(seconds: 4));
-                      ms.fitPolylineBounds(routePoints);
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x22000000),
-                            blurRadius: 20,
-                            offset: Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: Container(
-                                height: 86,
-                                color: AppColors.directionColor,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                  horizontal: 10,
-                                ),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      NavigationAssist.iconForManeuver(
-                                        ui.maneuver,
-                                      ),
-                                      size: 26,
-                                      color: Colors.white,
-                                    ),
-                                    const SizedBox(height: 6),
-                                    CustomTextfield.textWithStyles600(
-                                      _routeDistanceText(
-                                        driverStatusController,
-                                        ui.distanceText,
-                                      ),
-                                      color: AppColors.commonWhite,
-                                      fontSize: 13,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              flex: 5,
-                              child: Container(
-                                height: 86,
-                                color: AppColors.directionColor1,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                  horizontal: 14,
-                                ),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    CustomTextfield.textWithStyles600(
-                                      ui.directionText.isEmpty
-                                          ? _routeDirectionText(
-                                            driverStatusController,
-                                            ui.directionText,
-                                          )
-                                          : ui.directionText,
-                                      fontSize: 13,
-                                      color: AppColors.commonWhite,
-                                      maxLine: 2,
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      children: const [
-                                        Icon(
-                                          Icons.touch_app_rounded,
-                                          size: 13,
-                                          color: Colors.white70,
-                                        ),
-                                        SizedBox(width: 6),
-                                        Text(
-                                          'Tap for route overview',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.white70,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                // (Removed) Direction header as requested.
                 if (c.isNetworkOffline.value || c.pendingQueueCount.value > 0)
                   Positioned(
                     top: 145,
@@ -819,16 +707,6 @@ class PickingCustomerScreen extends StatelessWidget {
     return '${meters.round()} m';
   }
 
-  static String _routeDirectionText(
-    DriverStatusController driverStatusController,
-    String directionText,
-  ) {
-    if (directionText.trim().isNotEmpty) return directionText;
-    final eta = driverStatusController.pickupDurationInMin.value;
-    if (eta > 0) return 'ETA ${eta.round()} min';
-    return 'Route to pickup';
-  }
-
   static Widget _topActionRow({
     required PickingCustomerController c,
     required BuildContext context,
@@ -891,6 +769,18 @@ class PickingCustomerScreen extends StatelessWidget {
                 fontSize: 12,
                 colors: AppColors.textColorGrey,
               ),
+              Obx(() {
+                final label = driverStatusController.lastDriverLocationLabel;
+                if (label.isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: CustomTextfield.textWithStylesSmall(
+                    label,
+                    fontSize: 11,
+                    colors: AppColors.textColorGrey,
+                  ),
+                );
+              }),
             ],
           );
         }),
@@ -1153,14 +1043,20 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 
   Future<void> _loadMarkerIcons() async {
     try {
-      final cfg = const ImageConfiguration(size: Size(52, 52));
       final String asset =
           driverStatusController.isBike
               ? AppImages.parcelBike
               : AppImages.movingCar;
 
-      final height = driverStatusController.isBike ? 66.0 : 60.0;
-      final icon = await BitmapDescriptor.asset(height: height, cfg, asset);
+      final dpr = MediaQuery.of(context).devicePixelRatio;
+      final double markerHeight = 46.0;
+      final double markerWidth = driverStatusController.isBike ? 28.0 : 24.0;
+      final cfg = ImageConfiguration(
+        size: Size(markerWidth, markerHeight),
+        devicePixelRatio: dpr,
+      );
+
+      final icon = await BitmapDescriptor.fromAssetImage(cfg, asset);
       if (!mounted) return;
       setState(() {
         carIcon = icon;
@@ -1301,6 +1197,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
       CommonLogger.log.i('driver-location : $data');
 
       if (data != null) {
+        driverStatusController.setLastDriverLocationAtFrom(
+          data['timestamp'] ?? data['ts'],
+        );
         if (data['pickupDistanceInMeters'] != null) {
           driverStatusController.pickupDistanceInMeters.value =
               (data['pickupDistanceInMeters'] as num).toDouble();
@@ -1869,14 +1768,12 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                   },
                   initialPosition: widget.pickupLocation,
                   markers: markers,
-                  polylines: {
-                    Polyline(
-                      polylineId: const PolylineId("route"),
-                      color: AppColors.commonBlack,
-                      width: 5,
-                      points: polylinePoints,
-                    ),
-                  },
+                  polylines: RideRouteOverlays.buildRoutePolylines(
+                    routePoints: polylinePoints,
+                    origin: driverLocation ?? widget.driverLocation,
+                    destination: widget.pickupLocation,
+                    idPrefix: 'route_pickup',
+                  ),
                 ),
               ),
 
@@ -1894,68 +1791,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                 ),
               ),
 
-              Positioned(
-                top: 45,
-                left: 10,
-                right: 10,
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 1,
-                      child: Container(
-                        height: 100,
-                        color: AppColors.directionColor,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 20,
-                            horizontal: 10,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Image.asset(
-                                getManeuverIcon(maneuver),
-                                height: 32,
-                                width: 32,
-                              ),
-                              const SizedBox(height: 5),
-                              CustomTextfield.textWithStyles600(
-                                distance,
-                                color: AppColors.commonWhite,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: Container(
-                        height: 100,
-                        color: AppColors.directionColor1,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 20,
-                            horizontal: 10,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              CustomTextfield.textWithStyles600(
-                                maxLine: 2,
-                                parseHtmlString(directionText),
-                                fontSize: 13,
-                                color: AppColors.commonWhite,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // (Removed) Direction header as requested.
 
               // Bottom sheet + timer overlay
               Stack(

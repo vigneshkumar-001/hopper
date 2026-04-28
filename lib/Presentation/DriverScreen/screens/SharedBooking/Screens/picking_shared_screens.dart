@@ -10,15 +10,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
-import 'package:hopper/Core/Utility/app_loader.dart';
-import 'package:hopper/Core/Utility/images.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/share_ride_start_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
-import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/utils/map/shared_map.dart';
 import 'package:hopper/utils/map/ride_route_overlays.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
@@ -529,6 +525,10 @@ class _PickingCustomerSharedScreenState
   }
 
   Widget _buildDirectionHeader(dynamic uiState) {
+    // Direction UI removed as requested.
+    final show = DateTime.now().millisecondsSinceEpoch < 0;
+    if (!show) return const SizedBox.shrink();
+
     final dist = _sharedRouteDistanceText(uiState.distanceText);
     final dir =
         uiState.directionText.isEmpty
@@ -1410,7 +1410,26 @@ class _PickingCustomerSharedScreenState
                       ),
                     ),
                   ),
-                  if (showEta) _buildEtaRow(),
+                  if (showEta) ...[
+                    _buildEtaRow(),
+                    Obx(() {
+                      final label =
+                          c.driverStatusController.lastDriverLocationLabel;
+                      if (label.isEmpty) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _C.textMuted,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    }),
+                  ],
                   const SizedBox(height: 6),
                   Expanded(
                     child: ListView(
@@ -1504,16 +1523,15 @@ class _PickingCustomerSharedScreenState
                 visible: false,
                 infoWindow: InfoWindow.noText,
               ),
-              ...sharedRideController.riders.map(
-                (r) => Marker(
-                  markerId: MarkerId('pickup_${r.bookingId}'),
-                  position: r.pickupLatLng,
-                  icon: BitmapDescriptor.defaultMarkerWithHue(
-                    BitmapDescriptor.hueGreen,
-                  ),
+              if (c.stopPinIcon.value != null)
+                Marker(
+                  markerId: const MarkerId('stop'),
+                  position: currentTarget,
+                  icon: c.stopPinIcon.value!,
+                  anchor: const Offset(0.5, 1.0),
                   infoWindow: InfoWindow.noText,
+                  zIndexInt: 7,
                 ),
-              ),
               ...c.maneuverMarkers,
             };
 

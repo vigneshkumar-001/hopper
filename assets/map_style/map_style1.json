@@ -108,5 +108,10 @@
     "featureType": "road.highway",
     "elementType": "labels.text.fill",
     "stylers": [{ "color": "#374151" }]
+  },
+  {
+    "featureType": "road",
+    "elementType": "labels.icon",
+    "stylers": [{ "visibility": "on" }]
   }
 ]

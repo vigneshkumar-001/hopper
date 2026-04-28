@@ -19,6 +19,7 @@ import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/maneuver_markers.dart';
+import 'package:hopper/utils/map/vehicle_marker_icon.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 
@@ -102,6 +103,7 @@ class PickingCustomerSharedController extends GetxController {
 
   // map icon
   final Rxn<BitmapDescriptor> carIcon = Rxn<BitmapDescriptor>();
+  final Rxn<BitmapDescriptor> stopPinIcon = Rxn<BitmapDescriptor>();
   Worker? _serviceTypeWorker;
 
   // UI state
@@ -179,6 +181,7 @@ class PickingCustomerSharedController extends GetxController {
     _applySystemUi();
     _initConnectivityWatchdog();
     _loadDriverId();
+    _loadStopPinIcon();
     _loadCarIcon();
     _listenServiceTypeForIcon();
     _initSocket();
@@ -236,27 +239,9 @@ class PickingCustomerSharedController extends GetxController {
 
   Future<void> _loadCarIcon() async {
     try {
-      final ctx = Get.context;
-      final dpr = (ctx != null) ? MediaQuery.of(ctx).devicePixelRatio : 2.5;
-
-      final isCar = driverStatusController.isCar;
-      final String asset = isCar ? AppImages.movingCar : AppImages.parcelBike;
-
-      // Keep consistent marker sizing across single/shared screens.
-      final double markerHeight = 52.0;
-      final double markerWidth = isCar ? 27.0 : 32.0;
-      final ImageConfiguration cfg = ImageConfiguration(
-        size: Size(markerWidth, markerHeight),
-        devicePixelRatio: dpr,
+      carIcon.value = await HopprVehicleMarkerIcon.loadForServiceType(
+        driverStatusController.serviceType.value,
       );
-
-      final icon = await BitmapDescriptor.asset(
-        cfg,
-        asset,
-        width: markerWidth,
-        height: markerHeight,
-      );
-      carIcon.value = icon;
     } catch (e) {
       CommonLogger.log.e("car icon load failed: $e");
       carIcon.value = BitmapDescriptor.defaultMarker;
@@ -269,6 +254,21 @@ class PickingCustomerSharedController extends GetxController {
       driverStatusController.serviceType,
       (_) async => _loadCarIcon(),
     );
+  }
+
+  Future<void> _loadStopPinIcon() async {
+    try {
+      const double markerSize = 30.0;
+      const cfg = ImageConfiguration(size: Size(markerSize, markerSize));
+      stopPinIcon.value = await BitmapDescriptor.asset(
+        cfg,
+        AppImages.loc,
+        width: markerSize,
+        height: markerSize,
+      );
+    } catch (_) {
+      stopPinIcon.value = null;
+    }
   }
 
   // ---------------- SOCKET ----------------
@@ -322,10 +322,21 @@ class PickingCustomerSharedController extends GetxController {
 
     socketService.on('driver-location', (data) {
       if (data == null) return;
-      _syncDriverLocationFromSocket(data);
 
-      final map = Map<String, dynamic>.from(data);
+      dynamic payload = data;
+      if (payload is List && payload.isNotEmpty) {
+        // Some socket servers wrap args in a list.
+        payload = payload.first;
+      }
+      if (payload is! Map) return;
+
+      _syncDriverLocationFromSocket(payload);
+
+      final map = Map<String, dynamic>.from(payload);
       final eventBookingId = (map['bookingId'] ?? '').toString();
+      driverStatusController.setLastDriverLocationAtFrom(
+        map['timestamp'] ?? map['ts'],
+      );
 
       // Keep service type in sync so car/bike marker icon is correct.
       driverStatusController.setServiceTypeFrom(
@@ -357,18 +368,61 @@ class PickingCustomerSharedController extends GetxController {
       final cacheKey =
           eventBookingId.isNotEmpty ? eventBookingId : resolvedActiveId;
 
+      double? readNum(List<String> keys) {
+        for (final k in keys) {
+          if (!map.containsKey(k)) continue;
+          final v = map[k];
+          if (v == null) continue;
+          return _safeToDouble(v);
+        }
+        return null;
+      }
+
       // Update global pickup/drop stats (used in other UI places too).
+      // IMPORTANT: only overwrite when the key is present, otherwise we can
+      // erase valid values with zero.
+      final pickupMetersRaw = readNum(<String>[
+        'pickupDistanceInMeters',
+        'pickupDistanceMeters',
+        'pickupDistance',
+      ]);
+      final pickupMinsRaw = readNum(<String>[
+        'pickupDurationInMin',
+        'pickupDurationMin',
+        'pickupDuration',
+      ]);
+      final dropMetersRaw = readNum(<String>[
+        'dropDistanceInMeters',
+        'dropDistanceMeters',
+        'dropDistance',
+      ]);
+      final dropMinsRaw = readNum(<String>[
+        'dropDurationInMin',
+        'dropDurationMin',
+        'dropDuration',
+      ]);
+
+      if (pickupMetersRaw != null) {
+        driverStatusController.pickupDistanceInMeters.value = pickupMetersRaw;
+      }
+      if (pickupMinsRaw != null) {
+        driverStatusController.pickupDurationInMin.value = pickupMinsRaw;
+      }
+      if (dropMetersRaw != null) {
+        driverStatusController.dropDistanceInMeters.value = dropMetersRaw;
+      }
+      if (dropMinsRaw != null) {
+        driverStatusController.dropDurationInMin.value = dropMinsRaw;
+      }
+
       final pickupMeters =
-          (map['pickupDistanceInMeters'] as num?)?.toDouble() ?? 0.0;
+          pickupMetersRaw ?? driverStatusController.pickupDistanceInMeters.value;
       final pickupMins =
-          (map['pickupDurationInMin'] as num?)?.toDouble() ?? 0.0;
+          pickupMinsRaw ?? driverStatusController.pickupDurationInMin.value;
       final dropMeters =
-          (map['dropDistanceInMeters'] as num?)?.toDouble() ?? 0.0;
-      final dropMins = (map['dropDurationInMin'] as num?)?.toDouble() ?? 0.0;
-      driverStatusController.pickupDistanceInMeters.value = pickupMeters;
-      driverStatusController.pickupDurationInMin.value = pickupMins;
-      driverStatusController.dropDistanceInMeters.value = dropMeters;
-      driverStatusController.dropDurationInMin.value = dropMins;
+          dropMetersRaw ?? driverStatusController.dropDistanceInMeters.value;
+      final dropMins =
+          dropMinsRaw ?? driverStatusController.dropDurationInMin.value;
 
       // ✅ update cache always (so when user taps later, we instantly show latest)
       final effectiveStage =
@@ -383,13 +437,17 @@ class PickingCustomerSharedController extends GetxController {
           effectiveStage == SharedRiderStage.onboardDrop
               ? dropMins
               : pickupMins;
-      _etaCache[cacheKey] = _Eta(meters, mins, DateTime.now());
+      if (meters > 0 || mins > 0) {
+        _etaCache[cacheKey] = _Eta(meters, mins, DateTime.now());
+      }
 
       // ✅ update UI ONLY if this event belongs to selected rider (or the locked initial id)
       if (eventBookingId.isEmpty || eventBookingId == resolvedActiveId) {
-        etaMeters.value = meters;
-        etaMinutes.value = mins;
-        isEtaUpdating.value = false;
+        if (meters > 0 || mins > 0) {
+          etaMeters.value = meters;
+          etaMinutes.value = mins;
+          isEtaUpdating.value = false;
+        }
       }
     });
     socketService.on('location-updated', (data) {
@@ -555,10 +613,12 @@ class PickingCustomerSharedController extends GetxController {
           : int.tryParse('${result['adjustedMeters']}') ?? 0;
 
       final poly = (result['polyline'] ?? '').toString();
+      final rawPts = decodePolyline(poly);
       final pts = _simplifyPolyline(
-        decodePolyline(poly),
-        minStepMeters: 6,
-        maxPoints: 220,
+        rawPts,
+        // Preserve turns (Uber-like) while still keeping the map fast.
+        minStepMeters: 2.5,
+        maxPoints: 650,
       );
       if (pts.length < 2) {
         _pendingRouteRetry = true;
@@ -602,7 +662,8 @@ class PickingCustomerSharedController extends GetxController {
       final dest = adjustedStopLocation.value ?? destination;
       unawaited(
         _rebuildManeuverMarkers(
-          pts,
+          // Use raw polyline for turn icons so left/right markers align perfectly.
+          rawPts.length >= 2 ? rawPts : pts,
           idPrefix: 'shared_$bookingId',
           travelOrigin: routeUi.value.driverLocation,
           avoid: <LatLng>[dest],
@@ -1234,13 +1295,9 @@ class PickingCustomerSharedController extends GetxController {
 
   Future<void> _loadCarIcon() async {
     try {
-      final cfg = const ImageConfiguration(size: Size(42, 42));
-      final asset = driverStatusController.serviceType.value == "Bike"
-          ? AppImages.parcelBike
-          : AppImages.movingCar;
-
-      final icon = await BitmapDescriptor.fromAssetImage(cfg, asset);
-      carIcon.value = icon;
+      carIcon.value = await HopprVehicleMarkerIcon.loadForServiceType(
+        driverStatusController.serviceType.value,
+      );
     } catch (_) {
       carIcon.value = BitmapDescriptor.defaultMarker;
     }
@@ -1280,6 +1337,9 @@ class PickingCustomerSharedController extends GetxController {
 
       final map = Map<String, dynamic>.from(data);
       final String eventBookingId = (map['bookingId'] ?? '').toString();
+      driverStatusController.setLastDriverLocationAtFrom(
+        map['timestamp'] ?? map['ts'],
+      );
 
       driverStatusController.setServiceTypeFrom(
         map['serviceType'] ?? map['rideType'] ?? map['vehicleType'],

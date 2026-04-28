@@ -3,7 +3,6 @@ import 'dart:ui' as ui;
 
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Builds lightweight arrow/turn markers along a polyline.
@@ -12,6 +11,11 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 /// markers with small maneuver icons.
 class ManeuverMarkers {
   static final ManeuverMarkerIconCache _icons = ManeuverMarkerIconCache();
+
+  /// Toggle for drawing arrow/turn markers on top of the polyline.
+  ///
+  /// App requirement: no direction icons on the polyline (production safe).
+  static const bool enabled = false;
 
   /// Creates a small set of markers:
   /// - Direction arrows at an interval along the route
@@ -28,7 +32,9 @@ class ManeuverMarkers {
     int maxTurns = 6,
     double turnThresholdDeg = 45,
   }) async {
+    if (!enabled) return const <Marker>[];
     if (polyline.length < 2) return const <Marker>[];
+    if (maxArrows <= 0 && maxTurns <= 0) return const <Marker>[];
 
     await _icons.ensureLoaded();
 
@@ -57,11 +63,12 @@ class ManeuverMarkers {
 
       for (final mp in maneuverPoints) {
         if (turnCount >= maxTurns) break;
-        if (mp is! Map) continue;
         final lat = mp['lat'];
         final lng = mp['lng'];
         if (lat is! num || lng is! num) continue;
-        final pos = LatLng(lat.toDouble(), lng.toDouble());
+        final rawPos = LatLng(lat.toDouble(), lng.toDouble());
+        final snapped = _snapToPolylineWithBearing(pts, rawPos);
+        final pos = snapped.pos;
 
         final raw = (mp['maneuver'] ?? '').toString().trim().toLowerCase();
         final type = _maneuverType(raw);
@@ -76,14 +83,14 @@ class ManeuverMarkers {
         if (distFromStart - lastAddedAtM < 350) continue;
         if (isTooCloseToAvoid(pos)) continue;
 
-        final bearing = _bearingAtPosition(pts, pos);
-
         out.add(
           Marker(
             markerId: MarkerId('${idPrefix}_m_${turnCount}_$distFromStart'),
             position: pos,
             icon: icon,
-            rotation: bearing,
+            // Rotate so "forward" aligns to travel direction. Without rotation,
+            // left/right looks wrong when the route is not north-up.
+            rotation: snapped.bearing,
             anchor: const Offset(0.5, 0.5),
             flat: true,
             zIndexInt: 6,
@@ -166,6 +173,7 @@ class ManeuverMarkers {
           markerId: MarkerId('${idPrefix}_turn_$i'),
           position: cur,
           icon: icon,
+          // Rotate so "forward" aligns to travel direction.
           rotation: b1,
           anchor: const Offset(0.5, 0.5),
           flat: true,
@@ -177,6 +185,69 @@ class ManeuverMarkers {
     }
 
     return out;
+  }
+
+  static _SnapResult _snapToPolylineWithBearing(
+    List<LatLng> polyline,
+    LatLng point,
+  ) {
+    if (polyline.length < 2) return _SnapResult(point, 0.0);
+
+    double bestDist = double.infinity;
+    LatLng best = point;
+    double bestBearing = 0.0;
+
+    for (int i = 1; i < polyline.length; i++) {
+      final a = polyline[i - 1];
+      final b = polyline[i];
+      final snapped = _snapToSegment(a, b, point);
+      final d = Geolocator.distanceBetween(
+        point.latitude,
+        point.longitude,
+        snapped.latitude,
+        snapped.longitude,
+      );
+      if (d < bestDist) {
+        bestDist = d;
+        best = snapped;
+        bestBearing = _bearingDeg(a, b);
+      }
+    }
+
+    // Safety: if maneuver point is far away, don't snap to a wrong segment.
+    if (bestDist > 90) return _SnapResult(point, 0.0);
+    return _SnapResult(best, bestBearing);
+  }
+
+  // Equirectangular projection snap (good enough for short segments).
+  static LatLng _snapToSegment(LatLng a, LatLng b, LatLng p) {
+    final double lat0 = (a.latitude + b.latitude) * 0.5 * (math.pi / 180.0);
+    final double cosLat = math.cos(lat0).abs().clamp(0.2, 1.0);
+
+    final double ax = a.longitude * cosLat;
+    final double ay = a.latitude;
+    final double bx = b.longitude * cosLat;
+    final double by = b.latitude;
+    final double px = p.longitude * cosLat;
+    final double py = p.latitude;
+
+    final double abx = bx - ax;
+    final double aby = by - ay;
+    final double apx = px - ax;
+    final double apy = py - ay;
+
+    final double denom = (abx * abx + aby * aby);
+    if (denom <= 0) return a;
+
+    double t = (apx * abx + apy * aby) / denom;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+
+    final double sx = ax + abx * t;
+    final double sy = ay + aby * t;
+    final double lng = sx / cosLat;
+    final double lat = sy;
+    return LatLng(lat, lng);
   }
 
   static List<LatLng> _ensureTravelDirection(
@@ -217,31 +288,6 @@ class ManeuverMarkers {
       if (d <= meters) return true;
     }
     return false;
-  }
-
-  static double _bearingAtPosition(List<LatLng> polyline, LatLng pos) {
-    if (polyline.length < 2) return 0.0;
-
-    double best = double.infinity;
-    int bestIdx = 0;
-    for (int i = 0; i < polyline.length; i++) {
-      final p = polyline[i];
-      final d = Geolocator.distanceBetween(
-        pos.latitude,
-        pos.longitude,
-        p.latitude,
-        p.longitude,
-      );
-      if (d < best) {
-        best = d;
-        bestIdx = i;
-      }
-    }
-
-    if (bestIdx > 0) {
-      return _bearingDeg(polyline[bestIdx - 1], polyline[bestIdx]);
-    }
-    return _bearingDeg(polyline[0], polyline[1]);
   }
 
   static _ManeuverType _maneuverType(String normalized) {
@@ -316,6 +362,12 @@ class ManeuverMarkers {
 
 enum _ManeuverType { straight, slightLeft, slightRight, left, right, arrive }
 
+class _SnapResult {
+  const _SnapResult(this.pos, this.bearing);
+  final LatLng pos;
+  final double bearing;
+}
+
 class ManeuverMarkerIconCache {
   BitmapDescriptor? straight;
   BitmapDescriptor? left;
@@ -331,15 +383,18 @@ class ManeuverMarkerIconCache {
     try {
       // Uber-like compact markers: a small dark circle with a crisp icon.
       // This avoids the "black square PNG" look from legacy assets.
-      straight = await _fromIcon(Icons.navigation, diameterPx: 56);
-      left = await _fromIcon(Icons.turn_left, diameterPx: 56);
-      right = await _fromIcon(Icons.turn_right, diameterPx: 56);
+      // Keep them small + consistent across all devices.
+      straight = await _fromIconCircle(Icons.navigation, diameterPx: 44);
+
+      // Turns: user wants NO round background (more compact).
+      left = await _fromIconBare(Icons.turn_left, canvasPx: 36);
+      right = await _fromIconBare(Icons.turn_right, canvasPx: 36);
     } finally {
       _loading = false;
     }
   }
 
-  static Future<BitmapDescriptor> _fromIcon(
+  static Future<BitmapDescriptor> _fromIconCircle(
     IconData icon, {
     required int diameterPx,
   }) async {
@@ -367,7 +422,7 @@ class ManeuverMarkerIconCache {
 
     // Icon (white)
     final textPainter = TextPainter(textDirection: TextDirection.ltr);
-    final iconSize = diameterPx * 0.56;
+    final iconSize = diameterPx * 0.54;
     textPainter.text = TextSpan(
       text: String.fromCharCode(icon.codePoint),
       style: TextStyle(
@@ -388,6 +443,59 @@ class ManeuverMarkerIconCache {
     final picture = recorder.endRecording();
     final image = await picture.toImage(diameterPx, diameterPx);
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-    return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
+    return BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
+  }
+
+  static Future<BitmapDescriptor> _fromIconBare(
+    IconData icon, {
+    required int canvasPx,
+  }) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    final center = Offset(canvasPx / 2.0, canvasPx / 2.0);
+
+    // Soft shadow behind icon to keep contrast on any map theme.
+    final shadowPainter = TextPainter(textDirection: TextDirection.ltr);
+    final iconSize = canvasPx * 0.80;
+    shadowPainter.text = TextSpan(
+      text: String.fromCharCode(icon.codePoint),
+      style: TextStyle(
+        fontSize: iconSize,
+        fontFamily: icon.fontFamily,
+        package: icon.fontPackage,
+        color: const Color(0xAA000000),
+        height: 1.0,
+      ),
+    );
+    shadowPainter.layout();
+    final shadowOffset = Offset(
+      center.dx - shadowPainter.width / 2.0 + 1.2,
+      center.dy - shadowPainter.height / 2.0 + 1.6,
+    );
+    shadowPainter.paint(canvas, shadowOffset);
+
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
+    textPainter.text = TextSpan(
+      text: String.fromCharCode(icon.codePoint),
+      style: TextStyle(
+        fontSize: iconSize,
+        fontFamily: icon.fontFamily,
+        package: icon.fontPackage,
+        color: Colors.white,
+        height: 1.0,
+      ),
+    );
+    textPainter.layout();
+    final offset = Offset(
+      center.dx - textPainter.width / 2.0,
+      center.dy - textPainter.height / 2.0,
+    );
+    textPainter.paint(canvas, offset);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(canvasPx, canvasPx);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
   }
 }

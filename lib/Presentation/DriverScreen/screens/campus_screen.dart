@@ -147,6 +147,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
+import 'package:hopper/utils/map/shared_map.dart';
+import 'package:hopper/utils/map/vehicle_marker_icon.dart';
 
 enum AppState {
   choosingLocation,
@@ -347,10 +349,7 @@ class UberCloneMainScreenState extends State<UberCloneMainScreen> {
       imageConfiguration,
       'assets/images/pin.png',
     );
-    _carIcon = await BitmapDescriptor.asset(
-      imageConfiguration,
-      'assets/images/car.png',
-    );
+    _carIcon = await HopprVehicleMarkerIcon.loadForType(HopprVehicleType.car);
   }
 
   void _goToNextState() {
@@ -488,15 +487,17 @@ class UberCloneMainScreenState extends State<UberCloneMainScreen> {
         children: [
           _currentLocation == null
               ? const Center(child: HopprCircularLoader())
-              : GoogleMap(
-                initialCameraPosition: _initialCameraPosition,
-                onMapCreated: (GoogleMapController controller) {
-                  _mapController = controller;
-                },
+              : SharedMap(
+                initialPosition: _initialCameraPosition.target,
+                initialZoom: _initialCameraPosition.zoom,
+                fitToBounds: false,
                 myLocationEnabled: true,
                 onCameraMove: _onCameraMove,
                 polylines: _polylines,
                 markers: _markers,
+                onMapCreated: (GoogleMapController controller) {
+                  _mapController = controller;
+                },
               ),
         ],
       ),

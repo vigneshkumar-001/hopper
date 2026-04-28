@@ -15,9 +15,11 @@ import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/date_time_converter.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
+import 'package:hopper/utils/map/shared_map.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/models/demand_opportunities_models.dart';
 import '../controller/driver_main_controller.dart';
 import 'SharedBooking/Controller/booking_request_controller.dart';
 import '../../Authentication/widgets/textFields.dart';
@@ -127,35 +129,28 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                               if (c.carMarker != null) c.carMarker!,
                               if (c.demandMarker != null) c.demandMarker!,
                             };
-                            final circles = <Circle>{
-                              if (c.demandCircle != null) c.demandCircle!,
-                            };
+                            final circles = <Circle>{...c.demandCircles};
 
                             return RepaintBoundary(
-                              child: GoogleMap(
+                              child: SharedMap(
                                 key: ValueKey<String>(
                                   'driver_map_${c.mapStyle ?? 'default'}',
                                 ),
+                                initialPosition:
+                                    c.currentPosition.value ??
+                                    const LatLng(9.914, 78.097),
+                                initialZoom: 15.4,
+                                fitToBounds: false,
                                 mapType: MapType.normal,
-                                style: c.mapStyle,
+                                mapStyle: c.mapStyle,
                                 compassEnabled: false,
                                 myLocationEnabled: false,
-                                myLocationButtonEnabled: false,
-                                zoomControlsEnabled: false,
-                                buildingsEnabled: false,
                                 trafficEnabled: false,
-                                tiltGesturesEnabled: true,
+                                padding: const EdgeInsets.only(bottom: 260),
                                 rotateGesturesEnabled: true,
+                                tiltGesturesEnabled: true,
                                 scrollGesturesEnabled: true,
                                 zoomGesturesEnabled: true,
-                                liteModeEnabled: false,
-                                padding: const EdgeInsets.only(bottom: 260),
-                                initialCameraPosition: CameraPosition(
-                                  target:
-                                      c.currentPosition.value ??
-                                      const LatLng(9.914, 78.097),
-                                  zoom: 16.8,
-                                ),
                                 markers: markerSet,
                                 circles: circles,
                                 onCameraMove: c.onMapCameraMove,
@@ -169,9 +164,11 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                   if (style != null) {
                                     c.mapController?.setMapStyle(style);
                                   }
+                                  unawaited(c.updateDemandLabelOffset());
                                 },
                                 onMapCreated: (gm) async {
                                   c.mapController = gm;
+                                  unawaited(c.updateDemandLabelOffset());
                                 },
                                 gestureRecognizers: {
                                   Factory<OneSequenceGestureRecognizer>(
@@ -182,6 +179,8 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                             );
                           },
                         ),
+
+                        // (Removed) map anchored label: user requested no label on map.
 
                         // Active booking resume card (do NOT auto-navigate)
                         Positioned(
@@ -195,6 +194,12 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                               return const SizedBox.shrink();
                             }
 
+                            bool asBool(dynamic v) {
+                              if (v == true) return true;
+                              final s = v?.toString().toLowerCase().trim();
+                              return s == 'true' || s == '1' || s == 'yes';
+                            }
+
                             final bookingId =
                                 (data['bookingId'] ?? '').toString();
                             final status = (data['status'] ?? '')
@@ -203,6 +208,30 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                             final pickup =
                                 (data['pickupAddress'] ?? '').toString();
                             final drop = (data['dropAddress'] ?? '').toString();
+
+                            final live = data['driverLiveTracking'];
+                            final isShared =
+                                asBool(data['sharedBooking']) ||
+                                asBool(data['isShared']) ||
+                                asBool(data['shared']) ||
+                                (live is Map && asBool(live['sharedBooking']));
+
+                            final sharedBookingId =
+                                (data['sharedBookingId'] ?? '').toString();
+                            final displayBookingId =
+                                isShared && sharedBookingId.trim().isNotEmpty
+                                    ? sharedBookingId
+                                    : bookingId;
+
+                            final connectedCount =
+                                int.tryParse(
+                                  (data['connectedCustomersCount'] ?? '')
+                                      .toString(),
+                                ) ??
+                                (data['connectedCustomers'] is List
+                                    ? (data['connectedCustomers'] as List)
+                                        .length
+                                    : 0);
 
                             return Material(
                               color: Colors.transparent,
@@ -237,9 +266,9 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                           ),
                                         ),
                                         Text(
-                                          bookingId.isEmpty
+                                          displayBookingId.isEmpty
                                               ? ''
-                                              : '#$bookingId',
+                                              : '#$displayBookingId',
                                           style: TextStyle(
                                             fontWeight: FontWeight.w700,
                                             color: Colors.black.withOpacity(
@@ -258,6 +287,39 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                           color: Colors.black.withOpacity(0.60),
                                         ),
                                       ),
+                                    if (isShared) ...[
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.drkGreen
+                                                  .withOpacity(0.10),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                              border: Border.all(
+                                                color: AppColors.drkGreen
+                                                    .withOpacity(0.25),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              connectedCount > 0
+                                                  ? 'Shared ride • $connectedCount riders'
+                                                  : 'Shared ride',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppColors.drkGreen,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                     const SizedBox(height: 10),
                                     if (pickup.trim().isNotEmpty)
                                       Text(
@@ -270,7 +332,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                       Padding(
                                         padding: const EdgeInsets.only(top: 6),
                                         child: Text(
-                                          'Drop: $drop',
+                                          'Drop: ${isShared && connectedCount > 1 ? 'Multiple destinations' : drop}',
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
@@ -530,7 +592,8 @@ class DriverBottomSheet extends StatefulWidget {
   State<DriverBottomSheet> createState() => _DriverBottomSheetState();
 }
 
-class _DriverBottomSheetState extends State<DriverBottomSheet> {
+class _DriverBottomSheetState extends State<DriverBottomSheet>
+    with SingleTickerProviderStateMixin {
   final DraggableScrollableController _sheetCtrl =
       DraggableScrollableController();
 
@@ -538,6 +601,27 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
   double _currentSize = _snaps[1];
   bool _isSnapping = false;
   Timer? _snapDebounce;
+
+  String? _expandedDemandId;
+  bool _demandExpanded = false;
+
+  void _toggleDemandExpanded(DemandOpportunity opp) {
+    final id = opp.id.trim();
+    setState(() {
+      if (_expandedDemandId == id) {
+        _demandExpanded = !_demandExpanded;
+      } else {
+        _expandedDemandId = id;
+        _demandExpanded = true;
+      }
+    });
+    HapticFeedback.selectionClick();
+  }
+
+  bool _isDemandExpanded(DemandOpportunity opp) {
+    final id = opp.id.trim();
+    return _demandExpanded && _expandedDemandId == id;
+  }
 
   double _nearestSnap(double size) {
     double best = _snaps.first;
@@ -581,78 +665,327 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
 
     showModalBottomSheet(
       context: context,
-      showDragHandle: true,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
       builder: (_) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
+        final cs = Theme.of(context).colorScheme;
+
+        Color demandColor(String level) {
+          final l = level.trim().toLowerCase();
+          if (l.contains('high')) return const Color(0xFFEF4444);
+          if (l.contains('medium')) return const Color(0xFFF59E0B);
+          if (l.contains('low')) return const Color(0xFF10B981);
+          return cs.primary;
+        }
+
+        Widget metaChip({required IconData icon, required String label}) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+            ),
+            child: Row(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 8),
-                const Text(
-                  'Demand Opportunities',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                Icon(
+                  icon,
+                  size: 15,
+                  color: Colors.black.withValues(alpha: 0.60),
                 ),
-                const SizedBox(height: 12),
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: main.demandOpportunities.length,
-                    separatorBuilder: (_, __) => const Divider(height: 18),
-                    itemBuilder: (_, i) {
-                      final opp = main.demandOpportunities[i];
-                      final km = opp.distanceKm;
-                      final distText =
-                          (km == null) ? '' : '${km.toStringAsFixed(1)} km';
-                      final cta = opp.cta.isNotEmpty ? opp.cta : 'View';
-
-                      return Obx(() {
-                        final selected =
-                            main.selectedDemandId.value?.trim() ?? '';
-                        final isSelected =
-                            selected.isNotEmpty && selected == opp.id.trim();
-
-                        return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        selected: isSelected,
-                        selectedTileColor: Colors.black.withOpacity(0.04),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        onTap: () async {
-                          await main.focusDemandOpportunity(opp);
-                        },
-                        title: Text(
-                          opp.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        subtitle: Text(
-                          [
-                            opp.message,
-                            if (opp.demandLevel.isNotEmpty)
-                              opp.demandLevel.toUpperCase(),
-                            distText,
-                          ].where((e) => e.isNotEmpty).join(' • '),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: TextButton(
-                          onPressed: () async {
-                            await main.focusDemandOpportunity(opp);
-                          },
-                          child: Text(cta),
-                        ),
-                      );
-                      });
-                    },
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black.withValues(alpha: 0.72),
+                    letterSpacing: 0.1,
                   ),
                 ),
               ],
+            ),
+          );
+        }
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(28),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    blurRadius: 28,
+                    offset: const Offset(0, -12),
+                    color: Colors.black.withValues(alpha: 0.12),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 48,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          color: Colors.black.withValues(alpha: 0.10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Demand Opportunities',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(999),
+                            color: cs.primary.withValues(alpha: 0.10),
+                            border: Border.all(
+                              color: cs.primary.withValues(alpha: 0.18),
+                            ),
+                          ),
+                          child: Text(
+                            '${main.demandOpportunities.length}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                              color: cs.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Tap one to focus on the map.',
+                      style: TextStyle(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: main.demandOpportunities.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (ctx, i) {
+                          final opp = main.demandOpportunities[i];
+                          final km = opp.distanceKm;
+                          final distText =
+                              (km == null) ? '' : '${km.toStringAsFixed(1)} km';
+                          final cta = opp.cta.isNotEmpty ? opp.cta : 'View';
+                          final level = opp.demandLevel.trim();
+                          final levelColor =
+                              level.isEmpty ? cs.primary : demandColor(level);
+
+                          Future<void> focusAndClose() async {
+                            await main.focusDemandOpportunity(opp);
+                            if (!ctx.mounted) return;
+                            Navigator.of(ctx).pop();
+                          }
+
+                          return Obx(() {
+                            final selected =
+                                main.selectedDemandId.value?.trim() ?? '';
+                            final isSelected =
+                                selected.isNotEmpty &&
+                                selected == opp.id.trim();
+
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOutCubic,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                color:
+                                    isSelected
+                                        ? cs.primary.withValues(alpha: 0.06)
+                                        : Colors.black.withValues(alpha: 0.02),
+                                border: Border.all(
+                                  color:
+                                      isSelected
+                                          ? cs.primary.withValues(alpha: 0.28)
+                                          : Colors.black.withValues(
+                                            alpha: 0.06,
+                                          ),
+                                ),
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(16),
+                                  onTap: focusAndClose,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: levelColor.withValues(
+                                              alpha: 0.12,
+                                            ),
+                                            border: Border.all(
+                                              color: levelColor.withValues(
+                                                alpha: 0.22,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            Icons.local_fire_department_rounded,
+                                            color: levelColor,
+                                            size: 20,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                opp.title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 14,
+                                                  letterSpacing: 0.1,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                opp.message,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.60),
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Wrap(
+                                                spacing: 8,
+                                                runSpacing: 8,
+                                                children: [
+                                                  if (level.isNotEmpty)
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 7,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              999,
+                                                            ),
+                                                        color: levelColor
+                                                            .withValues(
+                                                              alpha: 0.10,
+                                                            ),
+                                                        border: Border.all(
+                                                          color: levelColor
+                                                              .withValues(
+                                                                alpha: 0.18,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      child: Text(
+                                                        level.toUpperCase(),
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w900,
+                                                          color: levelColor,
+                                                          letterSpacing: 0.3,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  if (distText.isNotEmpty)
+                                                    metaChip(
+                                                      icon:
+                                                          Icons.near_me_rounded,
+                                                      label: distText,
+                                                    ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        SizedBox(
+                                          height: 40,
+                                          child: FilledButton(
+                                            style: FilledButton.styleFrom(
+                                              backgroundColor:
+                                                  isSelected
+                                                      ? cs.primary
+                                                      : Colors.black.withValues(
+                                                        alpha: 0.88,
+                                                      ),
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                            ),
+                                            onPressed: focusAndClose,
+                                            child: Text(
+                                              cta,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                letterSpacing: 0.2,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         );
@@ -742,10 +1075,23 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                       final main = Get.find<DriverMainController>();
                       if (!main.showDemandCard) return const SizedBox.shrink();
 
-                      final opp = main.demandOpportunities.first;
+                      final sel = main.selectedDemandId.value?.trim() ?? '';
+                      DemandOpportunity? rawOpp;
+                      if (sel.isNotEmpty) {
+                        for (final o in main.demandOpportunities) {
+                          if (o.id.trim() == sel) {
+                            rawOpp = o;
+                            break;
+                          }
+                        }
+                      }
+                      final DemandOpportunity opp =
+                          rawOpp ?? main.demandOpportunities.first;
                       final km = opp.distanceKm;
                       final distText =
-                          (km == null) ? null : '${km.toStringAsFixed(1)} km away';
+                          (km == null)
+                              ? null
+                              : '${km.toStringAsFixed(1)} km away';
                       final badge =
                           (main.demandData.value?.serviceType ??
                                   opp.serviceType)
@@ -755,7 +1101,8 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                           opp.demandLevel.isNotEmpty
                               ? opp.demandLevel.toUpperCase()
                               : '';
-                      final cta = opp.cta.isNotEmpty ? opp.cta : 'View';
+                      final isSelected =
+                          sel.isNotEmpty && sel == (opp.id.trim());
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(
@@ -766,151 +1113,514 @@ class _DriverBottomSheetState extends State<DriverBottomSheet> {
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(16),
-                            color: const Color(0xFFF7F8FA),
+                            color:
+                                isSelected
+                                    ? Colors.black.withValues(alpha: 0.03)
+                                    : const Color(0xFFF7F8FA),
                             border: Border.all(
-                              color: Colors.black.withOpacity(0.06),
+                              color:
+                                  isSelected
+                                      ? Theme.of(context).colorScheme.primary
+                                          .withValues(alpha: 0.22)
+                                      : Colors.black.withOpacity(0.06),
                             ),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      'Demand Opportunity',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                  if (main.demandOpportunities.length > 1)
-                                    TextButton(
-                                      onPressed: () => _openDemandList(main),
-                                      child: const Text('See more'),
-                                    ),
-                                ],
-                              ),
-                              Text(
-                                opp.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              if (opp.message.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Text(
-                                    opp.message,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: Colors.black.withOpacity(0.7),
-                                    ),
-                                  ),
-                                ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  if (distText != null)
-                                    Container(
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () async {
+                                main.requestDemandOpportunities(
+                                  reason: 'card_tap',
+                                );
+                                await main.focusDemandOpportunity(opp);
+                              },
+                              child: Builder(
+                                builder: (context) {
+                                  final cs = Theme.of(context).colorScheme;
+                                  final levelText = level.trim();
+
+                                  Color levelColor() {
+                                    final l = levelText.toLowerCase();
+                                    if (l.contains('high'))
+                                      return const Color(0xFFEF4444);
+                                    if (l.contains('medium'))
+                                      return const Color(0xFFF59E0B);
+                                    if (l.contains('low'))
+                                      return const Color(0xFF10B981);
+                                    return cs.primary;
+                                  }
+
+                                  final lc = levelColor();
+                                  final expanded = _isDemandExpanded(opp);
+
+                                  Widget pill({
+                                    required Widget child,
+                                    Color? bg,
+                                    Color? border,
+                                  }) {
+                                    return Container(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
+                                        horizontal: 9,
+                                        vertical: 5,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(20),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                        color: bg ?? Colors.white,
                                         border: Border.all(
-                                          color: Colors.black.withOpacity(0.06),
+                                          color:
+                                              border ??
+                                              Colors.black.withValues(
+                                                alpha: 0.06,
+                                              ),
                                         ),
                                       ),
-                                      child: Text(
-                                        distText,
-                                        style: const TextStyle(
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w700,
+                                      child: child,
+                                    );
+                                  }
+
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Expanded(
+                                                  child: Text(
+                                                    'Demand Opportunity',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      letterSpacing: 0.1,
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (isSelected) ...[
+                                                  const SizedBox(width: 8),
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 4,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            999,
+                                                          ),
+                                                      color: cs.primary
+                                                          .withValues(
+                                                            alpha: 0.10,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: cs.primary
+                                                            .withValues(
+                                                              alpha: 0.18,
+                                                            ),
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      'Selected',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        color: cs.primary,
+                                                        letterSpacing: 0.2,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                          if (main.demandOpportunities.length >
+                                              1)
+                                            TextButton(
+                                              onPressed:
+                                                  () => _openDemandList(main),
+                                              style: TextButton.styleFrom(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 8,
+                                                    ),
+                                                foregroundColor: cs.primary,
+                                              ),
+                                              child: const Text(
+                                                'See more',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w900,
+                                                  letterSpacing: 0.1,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: [
+                                              Colors.white,
+                                              const Color(0xFFF2F6FF),
+                                              const Color(0xFFF4F1FF),
+                                            ],
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.06,
+                                            ),
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.10,
+                                              ),
+                                              blurRadius: 16,
+                                              offset: const Offset(0, 10),
+                                            ),
+                                          ],
+                                        ),
+                                        child: IntrinsicHeight(
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 5,
+                                                decoration: BoxDecoration(
+                                                  borderRadius:
+                                                      const BorderRadius.horizontal(
+                                                        left: Radius.circular(
+                                                          16,
+                                                        ),
+                                                      ),
+                                                  gradient: LinearGradient(
+                                                    begin: Alignment.topCenter,
+                                                    end: Alignment.bottomCenter,
+                                                    colors: [
+                                                      lc.withValues(
+                                                        alpha: 0.95,
+                                                      ),
+                                                      lc.withValues(
+                                                        alpha: 0.55,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Padding(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 10,
+                                                      ),
+                                                  child: AnimatedSize(
+                                                    duration: const Duration(
+                                                      milliseconds: 260,
+                                                    ),
+                                                    curve: Curves.easeOutCubic,
+                                                    alignment:
+                                                        Alignment.topCenter,
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Row(
+                                                          children: [
+                                                            Icon(
+                                                              Icons
+                                                                  .place_rounded,
+                                                              size: 16,
+                                                              color: lc,
+                                                            ),
+                                                            const SizedBox(
+                                                              width: 6,
+                                                            ),
+                                                            Expanded(
+                                                              child: Text(
+                                                                opp.title,
+                                                                maxLines:
+                                                                    expanded
+                                                                        ? 2
+                                                                        : 1,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                                style: const TextStyle(
+                                                                  fontSize: 14,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w900,
+                                                                  letterSpacing:
+                                                                      0.1,
+                                                                  color:
+                                                                      Colors
+                                                                          .black,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                            const SizedBox(
+                                                              width: 6,
+                                                            ),
+                                                            Material(
+                                                              color:
+                                                                  Colors
+                                                                      .transparent,
+                                                              child: InkWell(
+                                                                borderRadius:
+                                                                    BorderRadius.circular(
+                                                                      999,
+                                                                    ),
+                                                                onTap:
+                                                                    () =>
+                                                                        _toggleDemandExpanded(
+                                                                          opp,
+                                                                        ),
+                                                                child: Ink(
+                                                                  padding:
+                                                                      const EdgeInsets.all(
+                                                                        6,
+                                                                      ),
+                                                                  decoration: BoxDecoration(
+                                                                    shape:
+                                                                        BoxShape
+                                                                            .circle,
+                                                                    color: cs
+                                                                        .primary
+                                                                        .withValues(
+                                                                          alpha:
+                                                                              0.08,
+                                                                        ),
+                                                                    border: Border.all(
+                                                                      color: cs
+                                                                          .primary
+                                                                          .withValues(
+                                                                            alpha:
+                                                                                0.14,
+                                                                          ),
+                                                                    ),
+                                                                  ),
+                                                                  child: AnimatedRotation(
+                                                                    turns:
+                                                                        expanded
+                                                                            ? 0.5
+                                                                            : 0.0,
+                                                                    duration: const Duration(
+                                                                      milliseconds:
+                                                                          220,
+                                                                    ),
+                                                                    curve:
+                                                                        Curves
+                                                                            .easeOutCubic,
+                                                                    child: Icon(
+                                                                      Icons
+                                                                          .expand_more_rounded,
+                                                                      size: 20,
+                                                                      color:
+                                                                          cs.primary,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                        if (opp
+                                                            .message
+                                                            .isNotEmpty) ...[
+                                                          const SizedBox(
+                                                            height: 6,
+                                                          ),
+                                                          Text(
+                                                            opp.message,
+                                                            maxLines:
+                                                                expanded
+                                                                    ? 6
+                                                                    : 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            style: TextStyle(
+                                                              color: Colors
+                                                                  .black
+                                                                  .withValues(
+                                                                    alpha: 0.66,
+                                                                  ),
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                              height: 1.2,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                        const SizedBox(
+                                                          height: 8,
+                                                        ),
+                                                        Wrap(
+                                                          spacing: 6,
+                                                          runSpacing: 6,
+                                                          children: [
+                                                            if (distText !=
+                                                                null)
+                                                              pill(
+                                                                child: Text(
+                                                                  distText
+                                                                      .replaceAll(
+                                                                        ' away',
+                                                                        '',
+                                                                      ),
+                                                                  style: TextStyle(
+                                                                    fontSize:
+                                                                        11,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w900,
+                                                                    color: Colors
+                                                                        .black
+                                                                        .withValues(
+                                                                          alpha:
+                                                                              0.70,
+                                                                        ),
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            if (badge
+                                                                .isNotEmpty)
+                                                              pill(
+                                                                bg:
+                                                                    Colors
+                                                                        .black,
+                                                                border:
+                                                                    Colors
+                                                                        .black,
+                                                                child: Text(
+                                                                  badge,
+                                                                  style: const TextStyle(
+                                                                    fontSize:
+                                                                        11,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w900,
+                                                                    color:
+                                                                        Colors
+                                                                            .white,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            if (levelText
+                                                                .isNotEmpty)
+                                                              pill(
+                                                                bg: lc
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.10,
+                                                                    ),
+                                                                border: lc
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.18,
+                                                                    ),
+                                                                child: Text(
+                                                                  levelText
+                                                                      .toUpperCase(),
+                                                                  style: TextStyle(
+                                                                    fontSize:
+                                                                        11,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w900,
+                                                                    color: lc,
+                                                                    letterSpacing:
+                                                                        0.25,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                          ],
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                  right: 10,
+                                                  left: 10,
+                                                ),
+                                                child: SizedBox(
+                                                  width: 36,
+                                                  height: 36,
+                                                  child: DecoratedBox(
+                                                    decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: cs.primary,
+                                                      boxShadow: [
+                                                        BoxShadow(
+                                                          color: cs.primary
+                                                              .withValues(
+                                                                alpha: 0.25,
+                                                              ),
+                                                          blurRadius: 16,
+                                                          offset: const Offset(
+                                                            0,
+                                                            10,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    child: Material(
+                                                      color: Colors.transparent,
+                                                      shape:
+                                                          const CircleBorder(),
+                                                      child: InkWell(
+                                                        customBorder:
+                                                            const CircleBorder(),
+                                                        onTap: () async {
+                                                          main.requestDemandOpportunities(
+                                                            reason: 'card_view',
+                                                          );
+                                                          await main
+                                                              .focusDemandOpportunity(
+                                                                opp,
+                                                              );
+                                                        },
+                                                        child: const Icon(
+                                                          Icons
+                                                              .arrow_forward_rounded,
+                                                          color: Colors.white,
+                                                          size: 18,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  if (badge.isNotEmpty) ...[
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        badge,
-                                        style: const TextStyle(
-                                          fontSize: 12.5,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                  if (level.isNotEmpty) ...[
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(
-                                          color: Colors.black.withOpacity(0.06),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        level,
-                                        style: const TextStyle(
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                  const Spacer(),
-                                  ElevatedButton(
-                                    onPressed: () async {
-                                      main.requestDemandOpportunities(
-                                        reason: 'card_view',
-                                      );
-                                      await main.focusDemandHotspot();
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.black,
-                                      foregroundColor: Colors.white,
-                                      elevation: 0,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 10,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      cta,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                                    ],
+                                  );
+                                },
                               ),
-                            ],
+                            ),
                           ),
                         ),
                       );

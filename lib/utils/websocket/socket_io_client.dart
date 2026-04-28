@@ -25,6 +25,40 @@ class SocketService {
   DateTime _lastManualReconnectAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastUpdateLocationLogAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastHeartbeatLogAt = DateTime.fromMillisecondsSinceEpoch(0);
+  final Map<String, DateTime> _lastHighFreqEmitAtByKey = <String, DateTime>{};
+  final Map<String, String> _lastHighFreqEmitSigByKey = <String, String>{};
+
+  static const int _MAX_ACTIVE_BOOKING_ROOMS = 50;
+
+  List<String> _normalizeRooms(Iterable<String> rooms) {
+    final normalized =
+        rooms.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+    if (normalized.length <= _MAX_ACTIVE_BOOKING_ROOMS) return normalized;
+    return normalized.sublist(
+      normalized.length - _MAX_ACTIVE_BOOKING_ROOMS,
+      normalized.length,
+    );
+  }
+
+  /// Replaces the currently tracked booking rooms (used for shared rides).
+  /// Prevents emitting location/heartbeat to old/completed rooms.
+  void setActiveBookingRooms(
+    Iterable<String> rooms, {
+    String? primaryBookingId,
+  }) {
+    final normalized = _normalizeRooms(rooms);
+    _joinedRooms
+      ..clear()
+      ..addAll(normalized);
+    if (primaryBookingId != null && primaryBookingId.trim().isNotEmpty) {
+      _bookingId = primaryBookingId.trim();
+    }
+  }
+
+  void clearAllBookingRooms() {
+    _bookingId = null;
+    _joinedRooms.clear();
+  }
 
   void _ensureConnecting() {
     if (!_initialized) return;
@@ -72,6 +106,12 @@ class SocketService {
     final id = bookingId.trim();
     if (id.isEmpty) return;
     if (!_joinedRooms.contains(id)) _joinedRooms.add(id);
+    if (_joinedRooms.length > _MAX_ACTIVE_BOOKING_ROOMS) {
+      _joinedRooms.removeRange(
+        0,
+        _joinedRooms.length - _MAX_ACTIVE_BOOKING_ROOMS,
+      );
+    }
   }
 
   void clearBookingContext({String? bookingId}) {
@@ -380,6 +420,12 @@ class SocketService {
     };
 
     if (!_joinedRooms.contains(bookingId)) _joinedRooms.add(bookingId);
+    if (_joinedRooms.length > _MAX_ACTIVE_BOOKING_ROOMS) {
+      _joinedRooms.removeRange(
+        0,
+        _joinedRooms.length - _MAX_ACTIVE_BOOKING_ROOMS,
+      );
+    }
 
     if (!connected) {
       _ensureConnecting();
@@ -493,15 +539,25 @@ class SocketService {
         // If we only have 1 room, ensure bookingId is present.
         if (rooms.length == 1 && booking.isEmpty) {
           base['bookingId'] = rooms.first;
-          s.emit(event, base);
+          if (!_shouldSkipDuplicateHighFreqEmit(event: event, payload: base)) {
+            s.emit(event, base);
+          }
         } else if (rooms.length > 1) {
           for (final room in rooms) {
             final payload = Map<String, dynamic>.from(base);
             payload['bookingId'] = room;
+            if (_shouldSkipDuplicateHighFreqEmit(
+              event: event,
+              payload: payload,
+            )) {
+              continue;
+            }
             s.emit(event, payload);
           }
         } else {
-          s.emit(event, base);
+          if (!_shouldSkipDuplicateHighFreqEmit(event: event, payload: base)) {
+            s.emit(event, base);
+          }
         }
 
         _maybeLogEmit(event: event, payload: base, roomsCount: rooms.length);
@@ -509,11 +565,51 @@ class SocketService {
       }
     }
 
+    if (data is Map &&
+        _shouldSkipDuplicateHighFreqEmit(
+          event: event,
+          payload: Map<String, dynamic>.from(data),
+        )) {
+      return;
+    }
+
     s.emit(event, data);
 
     if (data is Map) {
       _maybeLogEmit(event: event, payload: Map<String, dynamic>.from(data));
     }
+  }
+
+  bool _shouldSkipDuplicateHighFreqEmit({
+    required String event,
+    required Map<String, dynamic> payload,
+  }) {
+    // Safety valve: if multiple timers/isolates accidentally send the same
+    // location/heartbeat payload in rapid succession, drop duplicates to avoid
+    // server-side "emit spam" and UI jitter.
+    if (event != 'updateLocation' && event != 'driver-heartbeat') return false;
+
+    final bookingId = (payload['bookingId'] ?? '').toString().trim();
+    final key = '$event|$bookingId';
+
+    final lat = payload['latitude'];
+    final lng = payload['longitude'];
+    final ts = payload['timestamp'];
+    final sig = '$lat,$lng,$ts';
+
+    final now = DateTime.now();
+    final lastAt = _lastHighFreqEmitAtByKey[key];
+    final lastSig = _lastHighFreqEmitSigByKey[key];
+
+    if (lastAt != null &&
+        lastSig == sig &&
+        now.difference(lastAt) < const Duration(seconds: 2)) {
+      return true;
+    }
+
+    _lastHighFreqEmitAtByKey[key] = now;
+    _lastHighFreqEmitSigByKey[key] = sig;
+    return false;
   }
 
   void _maybeLogDroppedEmit({
@@ -640,6 +736,12 @@ class SocketService {
     if (bookingId != null) {
       _bookingId = bookingId;
       if (!_joinedRooms.contains(bookingId)) _joinedRooms.add(bookingId);
+      if (_joinedRooms.length > _MAX_ACTIVE_BOOKING_ROOMS) {
+        _joinedRooms.removeRange(
+          0,
+          _joinedRooms.length - _MAX_ACTIVE_BOOKING_ROOMS,
+        );
+      }
     }
   }
 
@@ -654,13 +756,21 @@ class SocketService {
   }
 
   void _restoreJoinedRooms() {
-    for (final room in _joinedRooms) {
-      final payload = <String, dynamic>{
-        "bookingId": room,
-        "userId": _userId ?? _driverId,
-      };
+    final rooms = _normalizeRooms(_joinedRooms);
+    if (rooms.isEmpty) return;
+
+    final who = (_userId ?? _driverId)?.toString().trim();
+    final logEach = kDebugMode && rooms.length <= 6;
+    if (!logEach) {
+      CommonLogger.log.i("🔄 Restoring ${rooms.length} booking room(s)");
+    }
+
+    for (final room in rooms) {
+      final payload = <String, dynamic>{"bookingId": room, "userId": who};
       emit('join-booking', payload);
-      CommonLogger.log.i("🔄 Rejoined booking → $payload via $_socketUrl");
+      if (logEach) {
+        CommonLogger.log.i("🔄 Rejoined booking → $payload via $_socketUrl");
+      }
     }
   }
 

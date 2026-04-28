@@ -8,7 +8,6 @@ import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:hopper/Core/Constants/log.dart';
-import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_response.dart';
@@ -20,6 +19,7 @@ import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/maneuver_markers.dart';
+import 'package:hopper/utils/map/vehicle_marker_icon.dart';
 import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
@@ -89,6 +89,7 @@ class RideStatsController extends GetxController
   final RxString customerFrom = ''.obs;
   final RxString customerTo = ''.obs;
   final RxString custName = ''.obs;
+  final RxString customerPhone = ''.obs;
   final RxString profilePic = ''.obs;
   final RxString amount = ''.obs;
 
@@ -181,18 +182,9 @@ class RideStatsController extends GetxController
 
   Future<void> _loadMarkerIcons() async {
     try {
-      final cfg = const ImageConfiguration(size: Size(36, 36));
-      final String asset =
-          driverStatusController.isBike
-              ? AppImages.parcelBike
-              : AppImages.movingCar;
-      final markerHeight = driverStatusController.isBike ? 32.0 : 36.0;
-      final icon = await BitmapDescriptor.asset(
-        height: markerHeight,
-        cfg,
-        asset,
+      carIcon.value = await HopprVehicleMarkerIcon.loadForServiceType(
+        driverStatusController.serviceType.value,
       );
-      carIcon.value = icon;
     } catch (_) {
       carIcon.value = BitmapDescriptor.defaultMarker;
     }
@@ -306,6 +298,13 @@ class RideStatsController extends GetxController
                   payload['customerName'] ??
                   joined['custName'] ??
                   joined['customerName'] ??
+                  '')
+              .toString();
+      customerPhone.value =
+          (payload['customerPhone'] ??
+                  payload['phone'] ??
+                  joined['customerPhone'] ??
+                  joined['phone'] ??
                   '')
               .toString();
       profilePic.value =
@@ -437,15 +436,17 @@ class RideStatsController extends GetxController
     final mp = result['maneuverPoints'];
     final maneuverPoints =
         mp is List
-            ? mp.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+            ? mp
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
             : const <Map<String, dynamic>>[];
 
     unawaited(
       _rebuildManeuverMarkers(
         pts,
         idPrefix: 'ride_$bookingId',
-        travelOrigin:
-            driverLocation.value ?? _lastDriverPosition ?? pts.first,
+        travelOrigin: driverLocation.value ?? _lastDriverPosition ?? pts.first,
         avoid: <LatLng>[
           if (adjustedDropLocation.value != null) adjustedDropLocation.value!,
           if (bookingToLocation.value != null) bookingToLocation.value!,
@@ -499,9 +500,10 @@ class RideStatsController extends GetxController
       adjustedDropLocation.value = null;
     }
 
-    dropAdjustMeters.value = (result['adjustedMeters'] is int)
-        ? (result['adjustedMeters'] as int)
-        : int.tryParse('${result['adjustedMeters']}') ?? 0;
+    dropAdjustMeters.value =
+        (result['adjustedMeters'] is int)
+            ? (result['adjustedMeters'] as int)
+            : int.tryParse('${result['adjustedMeters']}') ?? 0;
   }
 
   Future<String> _reverseGeocode(double lat, double lng) async {

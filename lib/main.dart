@@ -84,6 +84,13 @@ class MyApp extends StatelessWidget {
           (context, child) => GetMaterialApp(
             theme: ThemeData(scaffoldBackgroundColor: Colors.white),
             debugShowCheckedModeBanner: false,
+            builder: (context, child) {
+              final mq = MediaQuery.of(context);
+              return MediaQuery(
+                data: mq.copyWith(boldText: false),
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
             home: const SplashScreen(),
           ),
     );

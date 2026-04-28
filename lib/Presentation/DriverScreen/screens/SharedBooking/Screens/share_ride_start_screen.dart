@@ -11,13 +11,12 @@ import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
-import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
-import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/booking_overlay_request.dart';
@@ -35,10 +34,12 @@ import 'package:hopper/utils/map/shared_map.dart';
 import 'package:hopper/utils/map/ride_route_overlays.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
+import 'package:hopper/utils/map/vehicle_marker_icon.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/api/repository/api_config_controller.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../../utils/websocket/socket_io_client.dart';
 import '../Controller/booking_request_controller.dart';
@@ -242,6 +243,17 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
 
   final Set<String> _expandedCards = {};
 
+  static Widget _roundIconBox(String asset) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.commonBlack.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(30),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Image.asset(asset, height: 25, width: 25),
+    );
+  }
+
   // Ã¢â€â‚¬Ã¢â€â‚¬ Exit Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   Future<void> _exitToHomeSafely() async {
     if (_leavingScreen) return;
@@ -401,7 +413,8 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         });
 
         if (polyChanged) {
-          final activeNow = sharedRideController.activeTarget.value ?? initialTarget;
+          final activeNow =
+              sharedRideController.activeTarget.value ?? initialTarget;
           final destNow =
               _adjustedTargetPos ??
               (activeNow == null
@@ -479,15 +492,22 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       _pulseController.dispose();
     } catch (_) {}
     try {
-      socketService.socket.off('driver-reached-destination');
-      socketService.socket.off('driver-location');
-      socketService.socket.off('driver-cancelled');
-      socketService.socket.off('customer-cancelled');
-      socketService.socket.off('joined-booking');
-      socketService.socket.off('booking-request');
-      try {
-        socketService.socket.offAny();
-      } catch (_) {}
+      // IMPORTANT: use SocketService.off(...) so we only remove handlers that
+      // this screen owns, without breaking DriverMainController listeners.
+      socketService.off('driver-reached-destination');
+      socketService.off('driver-location');
+      socketService.off('driver-cancelled');
+      socketService.off('customer-cancelled');
+      socketService.off('joined-booking');
+      socketService.off('booking-request');
+    } catch (_) {}
+
+    // Restore DriverMainController socket listeners so future booking requests
+    // show on home screen.
+    try {
+      if (Get.isRegistered<DriverMainController>()) {
+        Get.find<DriverMainController>().ensureCoreSocketListeners();
+      }
     } catch (_) {}
     super.dispose();
   }
@@ -836,6 +856,9 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       driverStatusController.setServiceTypeFrom(
         data['serviceType'] ?? data['rideType'] ?? data['vehicleType'],
       );
+      driverStatusController.setLastDriverLocationAtFrom(
+        data['timestamp'] ?? data['ts'],
+      );
 
       final dropM = _safeNum(data['dropDistanceInMeters']) ?? 0.0;
       final dropMin = _safeNum(data['dropDurationInMin']) ?? 0.0;
@@ -863,25 +886,8 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
               ? Get.find<DriverStatusController>()
               : Get.put(DriverStatusController(), permanent: true);
 
-      final ctx = context;
-      final dpr = MediaQuery.of(ctx).devicePixelRatio;
-
-      final bool isCar = status.isCar;
-      final String asset = isCar ? AppImages.movingCar : AppImages.parcelBike;
-
-      // Keep consistent marker sizing across single/shared screens.
-      final double markerHeight = 52.0;
-      final double markerWidth = isCar ? 27.0 : 32.0;
-      final ImageConfiguration cfg = ImageConfiguration(
-        size: Size(markerWidth, markerHeight),
-        devicePixelRatio: dpr,
-      );
-
-      final icon = await BitmapDescriptor.asset(
-        cfg,
-        asset,
-        width: markerWidth,
-        height: markerHeight,
+      final icon = await HopprVehicleMarkerIcon.loadForServiceType(
+        status.serviceType.value,
       );
       if (!mounted || _isDisposing) return;
       setState(() => carIcon = icon);
@@ -1001,6 +1007,10 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Direction header Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   Widget _buildDirectionHeader() {
+    // Direction UI removed as requested.
+    final show = DateTime.now().millisecondsSinceEpoch < 0;
+    if (!show) return const SizedBox.shrink();
+
     final dist = distance.isEmpty ? '--' : distance;
     final dir =
         directionText.isEmpty ? 'Searching best route...' : directionText;
@@ -1364,6 +1374,30 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                   ),
                 ),
               ),
+              GestureDetector(
+                onTap: () async {
+                  final ph = active.phone.trim();
+                  if (ph.isEmpty) return;
+                  final url = Uri.parse('tel:$ph');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url);
+                  }
+                },
+                child: _roundIconBox(AppImages.call),
+              ),
+              const SizedBox(width: 10),
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(bookingId: active.bookingId),
+                    ),
+                  );
+                },
+                child: _roundIconBox(AppImages.msg),
+              ),
+              const SizedBox(width: 10),
               Text(
                 '#${active.bookingId}',
                 style: const TextStyle(fontSize: 10, color: _C.textMuted),
@@ -2358,6 +2392,15 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         anchor: const Offset(0.5, 0.5),
         flat: true,
         zIndex: 999,
+        onTap: () async {
+          final ms = _mapKey.currentState;
+          if (ms == null) return;
+          await ms.focusDriver(
+            zoom: (_followZoom + 0.9).clamp(16.2, 17.8),
+            tilt: 45,
+            bearingEnabled: true,
+          );
+        },
       ),
       ..._maneuverMarkers,
       if (active != null)
@@ -2449,7 +2492,11 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                         onFocusDriver: () async {
                           final ms = _mapKey.currentState;
                           if (ms == null) return;
-                          await ms.focusDriver(zoom: _followZoom, tilt: 45);
+                          await ms.focusDriver(
+                            zoom: (_followZoom + 0.9).clamp(16.2, 17.8),
+                            tilt: 45,
+                            bearingEnabled: true,
+                          );
                         },
                         onFitBounds: () {
                           final ms = _mapKey.currentState;

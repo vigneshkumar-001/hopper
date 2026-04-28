@@ -13,8 +13,8 @@ class RideRouteOverlays {
     Color mainColor = _main,
     Color outlineColor = Colors.white,
     double outlineOpacity = 0.95,
-    int outlineWidth = 10,
-    int mainWidth = 6,
+    int outlineWidth = 9,
+    int mainWidth = 5,
     bool drawFallbackDottedLine = true,
   }) {
     if (routePoints.length >= 2) {

@@ -37,6 +37,12 @@ class SharedController extends GetxController {
 
   late final SharedRideController sharedRideController;
 
+  double _safeToDouble(dynamic v) {
+    if (v == null) return 0.0;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? 0.0;
+  }
+
   @override
   void onInit() {
     super.onInit();
@@ -84,34 +90,34 @@ class SharedController extends GetxController {
       // Trip totals
       final tripMeters = data['tripDistanceInMeters'];
       if (tripMeters != null) {
-        tripDistanceInMeters.value = (tripMeters as num).toDouble();
+        tripDistanceInMeters.value = _safeToDouble(tripMeters);
       }
 
       final tripMinutes = data['tripDurationInMin'];
       if (tripMinutes != null) {
-        tripDurationInMin.value = (tripMinutes as num).toDouble();
+        tripDurationInMin.value = _safeToDouble(tripMinutes);
       }
 
       // Pickup ETA
       final pickupMeters = data['pickupDistanceInMeters'];
       if (pickupMeters != null) {
-        pickupDistanceInMeters.value = (pickupMeters as num).toDouble();
+        pickupDistanceInMeters.value = _safeToDouble(pickupMeters);
       }
 
       final pickupMinutes = data['pickupDurationInMin'];
       if (pickupMinutes != null) {
-        pickupDurationInMin.value = (pickupMinutes as num).toDouble();
+        pickupDurationInMin.value = _safeToDouble(pickupMinutes);
       }
 
       // Drop ETA
       final dropMeters = data['dropDistanceInMeters'];
       if (dropMeters != null) {
-        dropDistanceInMeters.value = (dropMeters as num).toDouble();
+        dropDistanceInMeters.value = _safeToDouble(dropMeters);
       }
 
       final dropMinutes = data['dropDurationInMin'];
       if (dropMinutes != null) {
-        dropDurationInMin.value = (dropMinutes as num).toDouble();
+        dropDurationInMin.value = _safeToDouble(dropMinutes);
       }
     });
   }

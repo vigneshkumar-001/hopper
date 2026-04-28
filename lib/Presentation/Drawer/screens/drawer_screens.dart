@@ -30,6 +30,124 @@ class _DrawerScreenState extends State<DrawerScreen> {
   );
   late final DriverStatusController statusController;
 
+  Future<bool> _confirmEnableSharedBooking() async {
+    final result = await Get.dialog<bool>(
+      Dialog(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 18),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+            boxShadow: [
+              BoxShadow(
+                blurRadius: 28,
+                offset: const Offset(0, 16),
+                color: Colors.black.withValues(alpha: 0.14),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.nBlue.withValues(alpha: 0.20),
+                      AppColors.drkGreen.withValues(alpha: 0.20),
+                    ],
+                  ),
+                ),
+                child: Icon(
+                  Icons.group_work_rounded,
+                  color: AppColors.nBlue,
+                  size: 30,
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Enable Shared Booking?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'When enabled, you can receive multiple pickup/drop requests in the same trip (shared rides). Make sure your vehicle has enough seats and you are ready to follow the in-app order.\n\nYou can turn this off anytime.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                  color: Color(0xFF6B7280),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Get.back(result: false),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        side: BorderSide(
+                          color: Colors.black.withValues(alpha: 0.12),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        foregroundColor: const Color(0xFF111827),
+                      ),
+                      child: const Text(
+                        'Not now',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Get.back(result: true),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        backgroundColor: AppColors.nBlue,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'Enable',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      barrierDismissible: true,
+    );
+    return result ?? false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -161,6 +279,15 @@ class _DrawerScreenState extends State<DrawerScreen> {
                                             ? null
                                             : (value) async {
                                               await HapticFeedback.selectionClick();
+                                              if (value == true &&
+                                                  sharedCtrl
+                                                          .isSharedEnabled
+                                                          .value !=
+                                                      true) {
+                                                final ok =
+                                                    await _confirmEnableSharedBooking();
+                                                if (!ok) return;
+                                              }
                                               await sharedCtrl.setSharedEnabled(
                                                 value,
                                               );

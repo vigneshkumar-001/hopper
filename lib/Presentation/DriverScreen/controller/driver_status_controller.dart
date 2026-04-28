@@ -1,12 +1,14 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Presentation/DriverScreen/models/today_parcel_activity_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
-import 'package:hopper/Presentation/DriverScreen/screens/cash_collected_screen.dart';
-import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
+import 'package:hopper/api/repository/api_config_controller.dart';
+import 'package:hopper/Presentation/Drawer/controller/notification_controller.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import '../../../Core/Utility/snackbar.dart';
@@ -15,8 +17,6 @@ import 'package:hopper/Presentation/DriverScreen/models/get_todays_activity_mode
 import '../screens/SharedBooking/Screens/picking_shared_screens.dart';
 import '../screens/driver_main_screen.dart';
 import '../screens/picking_customer_screen.dart';
-import '../screens/ride_stats_screen.dart';
-import '../screens/verify_rider_screen.dart';
 
 class DriverStatusController extends GetxController {
   var isOnline = false.obs;
@@ -31,6 +31,10 @@ class DriverStatusController extends GetxController {
   Rxn<WeeklyActivityData> weeklyStatusData = Rxn<WeeklyActivityData>();
   Rxn<ParcelBookingData> parcelBookingData = Rxn<ParcelBookingData>();
   ApiDataSource apiDataSource = ApiDataSource();
+  final ApiConfigController cfg =
+      Get.isRegistered<ApiConfigController>()
+          ? Get.find<ApiConfigController>()
+          : Get.put(ApiConfigController(), permanent: true);
 
   final tripDistanceInMeters = 0.0.obs;
   final tripDurationInMin = 0.obs;
@@ -42,6 +46,51 @@ class DriverStatusController extends GetxController {
   final pickupDistanceInMeters = 0.0.obs;
   var dropDurationInMin = 0.0.obs;
   var dropDistanceInMeters = 0.0.obs;
+
+  // Last time we received a `driver-location` socket update (for UI "Updated at").
+  final Rxn<DateTime> lastDriverLocationAt = Rxn<DateTime>();
+
+  void setLastDriverLocationAtFrom(dynamic raw) {
+    if (raw == null) return;
+    DateTime? parsed;
+    try {
+      if (raw is DateTime) {
+        parsed = raw;
+      } else if (raw is int) {
+        // Epoch ms is most common; fall back to seconds if too small.
+        parsed =
+            raw > 100000000000
+                ? DateTime.fromMillisecondsSinceEpoch(raw)
+                : DateTime.fromMillisecondsSinceEpoch(raw * 1000);
+      } else if (raw is num) {
+        final v = raw.toInt();
+        parsed =
+            v > 100000000000
+                ? DateTime.fromMillisecondsSinceEpoch(v)
+                : DateTime.fromMillisecondsSinceEpoch(v * 1000);
+      } else {
+        parsed = DateTime.tryParse(raw.toString());
+      }
+    } catch (_) {
+      parsed = null;
+    }
+
+    if (parsed == null) return;
+    final next = parsed.toLocal();
+    final prev = lastDriverLocationAt.value;
+    if (prev == null || next.isAfter(prev)) {
+      lastDriverLocationAt.value = next;
+    }
+  }
+
+  String get lastDriverLocationLabel {
+    final dt = lastDriverLocationAt.value;
+    if (dt == null) return '';
+    String two(int n) => n.toString().padLeft(2, '0');
+    final h = two(dt.hour);
+    final m = two(dt.minute);
+    return 'Updated $h:$m';
+  }
 
   @override
   void onInit() {
@@ -64,7 +113,6 @@ class DriverStatusController extends GetxController {
     return v;
   }
 
-
   void setServiceTypeFrom(dynamic raw) {
     final next = _normalizeServiceType(raw);
     if (next.isEmpty) return;
@@ -86,6 +134,7 @@ class DriverStatusController extends GetxController {
     serviceType.value = '';
     serviceType.refresh();
   }
+
   void toggleStatus() {
     isOnline.value = !isOnline.value;
   }
@@ -700,6 +749,18 @@ class DriverStatusController extends GetxController {
           // Ensure any listening UIs (marker/header) update even if the server
           // returns the same serviceType value as before.
           serviceType.refresh();
+
+          // ✅ Server is source of truth for shared booking; switch base+socket.
+          final shared = response.data.sharedBooking;
+          if (cfg.isSharedEnabled.value != shared) {
+            unawaited(cfg.setSharedEnabled(shared));
+          }
+          if (Get.isRegistered<NotificationController>()) {
+            final n = Get.find<NotificationController>();
+            if (!n.isSharedToggleLoading.value) {
+              n.isSharedEnabled.value = shared;
+            }
+          }
           CommonLogger.log.i(isOnline.value);
         },
       );
@@ -848,9 +909,3 @@ class DriverStatusController extends GetxController {
     }
   }
 }
-
-
-
-
-
-

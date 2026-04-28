@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +25,7 @@ import '../../../api/repository/api_config_controller.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/app_map_style.dart';
+import 'package:hopper/utils/map/vehicle_marker_icon.dart';
 import 'package:hopper/utils/location/location_permission_guard.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/background_service.dart'
     as bg;
@@ -34,6 +36,7 @@ import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_re
 import 'package:hopper/Presentation/DriverScreen/models/demand_opportunities_models.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/picking_shared_screens.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/share_ride_start_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/picking_customer_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/ride_stats_screen.dart';
@@ -41,7 +44,7 @@ import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dar
 import '../screens/SharedBooking/Controller/booking_request_controller.dart';
 
 class DriverMainController extends GetxController
-    with GetSingleTickerProviderStateMixin {
+    with GetTickerProviderStateMixin {
   // --- motion thresholds to tame jitter ---
   static const double _MAX_ACCURACY_M = 25.0; // ignore noisy GPS fixes
   static const double _STATIONARY_JUMP_M = 30.0; // ignore big jumps when idle
@@ -65,8 +68,11 @@ class DriverMainController extends GetxController
 
   // Marker
   BitmapDescriptor? carIcon;
+  String? _vehicleIconConfigKey;
+  bool _vehicleIconLoading = false;
   Marker? carMarker;
   LatLng? lastPosition;
+  BitmapDescriptor? demandPinIcon;
 
   // Animation
   late final AnimationController animCtrl;
@@ -86,6 +92,7 @@ class DriverMainController extends GetxController
   DateTime? _lastUpdateLocationEmitAt;
   DateTime? _lastHeartbeatEmitAt;
   DateTime _lastHomeRefreshAt = DateTime.fromMillisecondsSinceEpoch(0);
+  int _emitLoopToken = 0;
 
   String? driverId;
   String? currentBookingId;
@@ -101,7 +108,8 @@ class DriverMainController extends GetxController
   // Follow mode
   final RxBool followDriver = true.obs;
   Timer? cameraFollowTimer;
-  double _followZoom = 17.0;
+  double _followZoom = 15.4;
+  DateTime? _manualFollowZoomHoldUntil;
   LatLng? _lastCameraFollowTarget;
   double _lastCameraFollowBearing = 0;
   DateTime _lastCameraFollowMoveAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -133,12 +141,27 @@ class DriverMainController extends GetxController
   final Rxn<DemandOpportunitiesSummary> demandSummary =
       Rxn<DemandOpportunitiesSummary>();
   Marker? demandMarker;
-  Circle? demandCircle;
+  List<Circle> demandCircles = <Circle>[];
+  final Rxn<ui.Offset> demandLabelOffset = Rxn<ui.Offset>();
   final RxnString selectedDemandId = RxnString();
   DateTime _lastDemandBannerAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastDemandRequestAt = DateTime.fromMillisecondsSinceEpoch(0);
   LatLng? _lastDemandRequestPos;
   double? _lastMapZoom;
+
+  // Demand pulse (map ring animation)
+  late final AnimationController _demandPulseCtrl;
+  late final AnimationController _demandBounceCtrl;
+  LatLng? _demandPulseCenter;
+  Color? _demandPulseColor;
+  DateTime _lastDemandPulsePaintAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // Demand marker style toggle (kept mutable to avoid constant-folding)
+  bool useDefaultDemandMarker = false;
+
+  // Expose demand micro-interaction animations (for UI overlays).
+  Listenable get demandBounceListenable => _demandBounceCtrl;
+  double get demandBounceT => _demandBounceCtrl.value;
 
   // ---------------- helpers ----------------
   double safeToDouble(dynamic value) {
@@ -238,35 +261,41 @@ class DriverMainController extends GetxController
   //   }
   // }
   Future<void> loadCustomCarIcon() async {
+    final desiredKey = HopprVehicleMarkerIcon.currentConfigKeyForServiceType(
+      statusController.serviceType.value,
+    );
+    if (carIcon != null && _vehicleIconConfigKey == desiredKey) return;
+    if (_vehicleIconLoading) return;
+    _vehicleIconLoading = true;
     try {
-      final bool isCar = statusController.isCar;
-      final String asset = isCar ? AppImages.movingCar : AppImages.parcelBike;
-
-      final double markerHeight = isCar ? 52.0 : 52.0;
-      final double markerWidth = isCar ? 27.0 : 32.0;
-
-      final ImageConfiguration cfg = ImageConfiguration(
-        size: Size(markerWidth, markerHeight),
+      carIcon = await HopprVehicleMarkerIcon.loadForServiceType(
+        statusController.serviceType.value,
       );
-
-      carIcon = await BitmapDescriptor.asset(
-        cfg,
-        asset,
-        width: markerWidth,
-        height: markerHeight,
-      );
+      _vehicleIconConfigKey = desiredKey;
     } catch (e) {
       if (kDebugMode) {
         CommonLogger.log.w("Car icon load failed: $e");
       }
       carIcon = BitmapDescriptor.defaultMarker;
+      _vehicleIconConfigKey = desiredKey;
+    } finally {
+      _vehicleIconLoading = false;
     }
+  }
+
+  void _refreshVehicleIconIfNeeded() {
+    final currentKey = HopprVehicleMarkerIcon.currentConfigKeyForServiceType(
+      statusController.serviceType.value,
+    );
+    if (_vehicleIconConfigKey == currentKey) return;
+    unawaited(loadCustomCarIcon());
   }
 
   // ---------------- marker update (animated) ----------------
   void updateCarMarker(LatLng newPos) {
     // âœ… stop any callbacks after close
     if (_disposed || isClosed) return;
+    _refreshVehicleIconIfNeeded();
     final icon = carIcon ?? BitmapDescriptor.defaultMarker;
 
     if (lastPosition == null || carMarker == null) {
@@ -324,20 +353,39 @@ class DriverMainController extends GetxController
 
     await mapController?.animateCamera(
       CameraUpdate.newCameraPosition(
-        CameraPosition(target: latLng, zoom: _followZoom, tilt: 35),
+        CameraPosition(target: latLng, zoom: _followZoom, tilt: 26),
       ),
     );
   }
 
   Future<void> goToCurrentLocation() async {
-    final pos = await getCurrentPos();
-    if (_disposed || isClosed) return;
-    if (pos == null) return;
+    // Recenter should feel "zoom-in" every time (like Uber).
+    // Don't depend on speed-based follow zoom (which can be zoomed out).
+    final target = lastPosition ?? currentPosition.value;
+    LatLng? latLng = target;
 
-    final latLng = LatLng(pos.latitude, pos.longitude);
+    if (latLng == null) {
+      final pos = await getCurrentPos();
+      if (_disposed || isClosed) return;
+      if (pos == null) return;
+      latLng = LatLng(pos.latitude, pos.longitude);
+    }
+
+    // Hold zoom briefly so the next location tick won't immediately zoom-out.
+    _followZoom = 15.8;
+    _manualFollowZoomHoldUntil = DateTime.now().add(
+      const Duration(milliseconds: 2600),
+    );
+
+    final bearing = carMarker?.rotation ?? 0.0;
     await mapController?.animateCamera(
       CameraUpdate.newCameraPosition(
-        CameraPosition(target: latLng, zoom: _followZoom, tilt: 35),
+        CameraPosition(
+          target: latLng,
+          zoom: _followZoom,
+          tilt: 26,
+          bearing: bearing,
+        ),
       ),
     );
 
@@ -415,7 +463,7 @@ class DriverMainController extends GetxController
           CameraPosition(
             target: followTarget,
             zoom: _followZoom,
-            tilt: 35,
+            tilt: 26,
             bearing: bearing,
           ),
         ),
@@ -667,7 +715,7 @@ class DriverMainController extends GetxController
               !demandOpportunities.any((e) => e.id.trim() == sel)) {
             selectedDemandId.value = null;
           }
-          _syncDemandMarkerFromTop();
+          unawaited(_syncDemandMarkerFromTop());
         },
       );
     } catch (_) {
@@ -701,11 +749,15 @@ class DriverMainController extends GetxController
     );
   }
 
-  void _syncDemandMarkerFromTop() {
+  Future<void> _syncDemandMarkerFromTop() async {
     if (_disposed || isClosed) return;
     if (!showDemandCard) {
       demandMarker = null;
-      demandCircle = null;
+      demandCircles = <Circle>[];
+      demandLabelOffset.value = null;
+      _demandPulseCenter = null;
+      _demandPulseColor = null;
+      _stopDemandPulse();
       update(['map']);
       return;
     }
@@ -725,36 +777,174 @@ class DriverMainController extends GetxController
     final lng = top?.longitude;
     if (lat == null || lng == null) {
       demandMarker = null;
-      demandCircle = null;
+      demandCircles = <Circle>[];
+      demandLabelOffset.value = null;
+      _demandPulseCenter = null;
+      _demandPulseColor = null;
+      _stopDemandPulse();
       update(['map']);
       return;
     }
 
-    final isSelected = (top?.id.trim().isNotEmpty ?? false) &&
-        top?.id.trim() == sel;
+    final isSelected =
+        (top?.id.trim().isNotEmpty ?? false) && top?.id.trim() == sel;
 
+    final level = (top?.demandLevel ?? '').trim().toLowerCase();
+    final baseColor = _demandLevelColor(level);
+    final pinColor = isSelected ? const Color(0xFF0EA5E9) : baseColor;
+
+    // Use default marker hue (always visible) to avoid asset/theme issues.
+    final icon = BitmapDescriptor.defaultMarkerWithHue(
+      _demandMarkerHue(level, isSelected),
+    );
     demandMarker = Marker(
       markerId: const MarkerId('demand_hotspot'),
       position: LatLng(lat, lng),
-      icon: BitmapDescriptor.defaultMarkerWithHue(
-        isSelected ? BitmapDescriptor.hueRose : BitmapDescriptor.hueAzure,
-      ),
-      infoWindow: InfoWindow(
-        title: top?.title ?? 'Demand Opportunity',
-        snippet: (top?.message ?? '').isEmpty ? null : top?.message,
-      ),
+      icon: icon,
+      infoWindow: InfoWindow.noText,
+      anchor: const Offset(0.5, 1.0),
+      onTap: () {
+        _triggerDemandBounce();
+      },
     );
 
-    demandCircle = Circle(
-      circleId: const CircleId('demand_highlight'),
-      center: LatLng(lat, lng),
-      radius: 320,
-      strokeWidth: 2,
-      strokeColor: const Color(0xFF1E88E5).withOpacity(0.55),
-      fillColor: const Color(0xFF1E88E5).withOpacity(0.12),
-      zIndex: 2,
+    final center = LatLng(lat, lng);
+    _demandPulseCenter = center;
+    _demandPulseColor = pinColor;
+    _startDemandPulse();
+
+    demandCircles = _demandPulseRings(
+      center: center,
+      color: pinColor,
+      t: _demandPulseCtrl.value,
     );
+    unawaited(updateDemandLabelOffset());
     update(['map']);
+  }
+
+  Future<void> loadDemandPinIcon() async {
+    try {
+      // Compact pin (clean + premium; avoids overpowering the map).
+      const double markerHeight = 36.0;
+      const double markerWidth = 28.0;
+
+      final ImageConfiguration cfg = const ImageConfiguration(
+        size: Size(markerWidth, markerHeight),
+      );
+
+      demandPinIcon = await BitmapDescriptor.asset(
+        cfg,
+        AppImages.loc,
+        width: markerWidth,
+        height: markerHeight,
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        CommonLogger.log.w("Demand pin icon load failed: $e");
+      }
+      demandPinIcon = null;
+    }
+  }
+
+  double _demandMarkerHue(String level, bool isSelected) {
+    if (isSelected) return BitmapDescriptor.hueAzure;
+    if (level.contains('high')) return BitmapDescriptor.hueRed;
+    if (level.contains('medium')) return BitmapDescriptor.hueOrange;
+    if (level.contains('low')) return BitmapDescriptor.hueGreen;
+    return BitmapDescriptor.hueAzure;
+  }
+
+  Future<void> updateDemandLabelOffset() async {
+    final mc = mapController;
+    final center = _demandPulseCenter;
+    if (mc == null || center == null) {
+      demandLabelOffset.value = null;
+      return;
+    }
+    try {
+      final sc = await mc.getScreenCoordinate(center);
+      if (_disposed || isClosed) return;
+      demandLabelOffset.value = ui.Offset(sc.x.toDouble(), sc.y.toDouble());
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Color _demandLevelColor(String level) {
+    if (level.contains('high')) return const Color(0xFFEF4444);
+    if (level.contains('medium')) return const Color(0xFFF59E0B);
+    if (level.contains('low')) return const Color(0xFF10B981);
+    return const Color(0xFF0EA5E9);
+  }
+
+  void _startDemandPulse() {
+    if (_disposed || isClosed) return;
+    if (_demandPulseCenter == null || _demandPulseColor == null) return;
+    if (_demandPulseCtrl.isAnimating) return;
+    try {
+      _demandPulseCtrl.repeat();
+    } catch (_) {}
+  }
+
+  void _stopDemandPulse() {
+    try {
+      if (_demandPulseCtrl.isAnimating) _demandPulseCtrl.stop();
+    } catch (_) {}
+  }
+
+  void _triggerDemandBounce() {
+    try {
+      _demandBounceCtrl.forward(from: 0);
+    } catch (_) {}
+  }
+
+  List<Circle> _demandPulseRings({
+    required LatLng center,
+    required Color color,
+    required double t,
+  }) {
+    Color a(double o) => color.withValues(alpha: o.clamp(0.0, 1.0));
+
+    // t: 0..1
+    // Compact pulse (keeps the map clean)
+    final rippleRadius = ui.lerpDouble(110, 280, t) ?? 200;
+    final rippleAlpha = (1 - t).clamp(0.0, 1.0);
+
+    // A small breathing ring for "recommended zone" feel.
+    final breath = (0.5 - (t - 0.5).abs()) * 2; // 0..1..0
+    final bounce = Curves.elasticOut.transform(_demandBounceCtrl.value);
+    final coreRadius = 78 + (breath * 10) + (bounce * 10);
+    final coreFillAlpha = 0.08 + (bounce * 0.04);
+
+    return <Circle>[
+      Circle(
+        circleId: const CircleId('demand_ripple'),
+        center: center,
+        radius: rippleRadius,
+        strokeWidth: 2,
+        strokeColor: a(0.18 * rippleAlpha),
+        fillColor: a(0.00),
+        zIndex: 1,
+      ),
+      Circle(
+        circleId: const CircleId('demand_zone'),
+        center: center,
+        radius: 170,
+        strokeWidth: 2,
+        strokeColor: a(0.16),
+        fillColor: a(0.06),
+        zIndex: 2,
+      ),
+      Circle(
+        circleId: const CircleId('demand_core'),
+        center: center,
+        radius: coreRadius,
+        strokeWidth: 2,
+        strokeColor: a(0.22),
+        fillColor: a(coreFillAlpha),
+        zIndex: 3,
+      ),
+    ];
   }
 
   void _upsertDemandOpportunity(DemandOpportunity opp) {
@@ -774,11 +964,7 @@ class DriverMainController extends GetxController
       demandOpportunities.insert(0, opp);
     }
 
-    if (demandOpportunities.length > 3) {
-      demandOpportunities.removeRange(3, demandOpportunities.length);
-    }
-
-    _syncDemandMarkerFromTop();
+    unawaited(_syncDemandMarkerFromTop());
   }
 
   void _maybeShowDemandBanner(DemandOpportunity opp) {
@@ -809,7 +995,10 @@ class DriverMainController extends GetxController
         },
         child: Text(
           opp.cta.isNotEmpty ? opp.cta : 'View',
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
       duration: const Duration(seconds: 4),
@@ -839,7 +1028,8 @@ class DriverMainController extends GetxController
       selectedDemandId.value = id;
     }
 
-    _syncDemandMarkerFromTop();
+    await _syncDemandMarkerFromTop();
+    _triggerDemandBounce();
 
     final pos = LatLng(lat, lng);
     final baseZoom = _lastMapZoom ?? 0.0;
@@ -853,10 +1043,18 @@ class DriverMainController extends GetxController
       );
     } catch (_) {}
 
-    // Reveal the info bubble for clarity.
-    try {
-      await mapController?.showMarkerInfoWindow(const MarkerId('demand_hotspot'));
-    } catch (_) {}
+    // Use the custom on-map label container (no default Google info window).
+  }
+
+  DemandOpportunity? get selectedDemandOpportunity {
+    if (!showDemandCard) return null;
+    final sel = selectedDemandId.value?.trim() ?? '';
+    if (sel.isNotEmpty) {
+      for (final o in demandOpportunities) {
+        if (o.id.trim() == sel) return o;
+      }
+    }
+    return demandOpportunities.isNotEmpty ? demandOpportunities.first : null;
   }
 
   String? _resolveBookingIdForLocationPayload() {
@@ -887,11 +1085,13 @@ class DriverMainController extends GetxController
 
   // ---------------- location emit loop ----------------
   Future<void> startEmitLoop() async {
+    final int token = ++_emitLoopToken;
     await locationSub?.cancel();
     emitTimer?.cancel();
     heartbeatTimer?.cancel();
 
     if (_disposed || isClosed) return;
+    if (token != _emitLoopToken) return;
 
     locationSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
@@ -900,15 +1100,22 @@ class DriverMainController extends GetxController
       ),
     ).listen((pos) {
       if (_disposed || isClosed) return;
+      if (token != _emitLoopToken) return;
 
       final now = DateTime.now();
       final speedMs = (pos.speed.isFinite && pos.speed >= 0) ? pos.speed : 0.0;
       final accuracyM = (pos.accuracy.isFinite) ? pos.accuracy : 9999.0;
-      final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs);
-      _followZoom = MapMotionProfile.smoothZoom(
-        _followZoom,
-        targetZoom.clamp(15.2, 17.8),
-      ).clamp(15.2, 17.8);
+      final holdUntil = _manualFollowZoomHoldUntil;
+      final holdActive = holdUntil != null && now.isBefore(holdUntil);
+      if (!holdActive) {
+        final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs);
+        _followZoom = MapMotionProfile.smoothZoom(
+          _followZoom,
+          targetZoom.clamp(14.4, 16.4),
+        ).clamp(14.4, 16.4);
+      } else {
+        _followZoom = _followZoom.clamp(15.0, 16.4);
+      }
 
       // 1) ignore very inaccurate fixes
       if (accuracyM > _MAX_ACCURACY_M) return;
@@ -978,8 +1185,12 @@ class DriverMainController extends GetxController
       updateCarMarker(current);
     });
 
-    emitTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+    if (_disposed || isClosed) return;
+    if (token != _emitLoopToken) return;
+
+    final localEmitTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (_disposed || isClosed) return;
+      if (token != _emitLoopToken) return;
       if (!statusController.isOnline.value) return;
       final payload = latestLocationPayload;
       if (payload == null) return;
@@ -1006,10 +1217,18 @@ class DriverMainController extends GetxController
       );
       // Reference log is centralized in `SocketService.emit()` for `updateLocation`.
     });
+    emitTimer = localEmitTimer;
+    if (token != _emitLoopToken) {
+      localEmitTimer.cancel();
+      return;
+    }
 
     // Not moving but online => emit `driver-heartbeat` every 20–30s (we use 25s).
-    heartbeatTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+    final localHeartbeatTimer = Timer.periodic(const Duration(seconds: 25), (
+      _,
+    ) {
       if (_disposed || isClosed) return;
+      if (token != _emitLoopToken) return;
       if (!statusController.isOnline.value) return;
       final did = driverId?.trim() ?? '';
       if (did.isEmpty) return;
@@ -1038,13 +1257,18 @@ class DriverMainController extends GetxController
       _lastHeartbeatEmitAt = now;
       socketService.emit('driver-heartbeat', hb);
     });
+    heartbeatTimer = localHeartbeatTimer;
+    if (token != _emitLoopToken) {
+      localHeartbeatTimer.cancel();
+      return;
+    }
   }
 
   // ---------------- socket init + listeners ----------------
   void _bindSocketListeners() {
     socketService.off('connect');
     socketService.off('registered');
-    // socketService.off('booking-request');
+    socketService.off('booking-request');
     socketService.off('driver-cancelled');
     socketService.off('customer-cancelled');
     socketService.off('driver:demand-opportunity');
@@ -1169,7 +1393,7 @@ class DriverMainController extends GetxController
       demandData.value = d;
       demandSummary.value = d.summary;
       demandOpportunities.assignAll(d.opportunities);
-      _syncDemandMarkerFromTop();
+      unawaited(_syncDemandMarkerFromTop());
     });
 
     socketService.on('driver:demand-opportunity', (data) {
@@ -1190,7 +1414,7 @@ class DriverMainController extends GetxController
       );
 
       _upsertDemandOpportunity(opp);
-      _syncDemandMarkerFromTop();
+      unawaited(_syncDemandMarkerFromTop());
       _maybeShowDemandBanner(opp);
     });
   }
@@ -1250,17 +1474,168 @@ class DriverMainController extends GetxController
     return _statusHas(status, ['complete', 'completed', 'finished']);
   }
 
+  List<Map<String, dynamic>> _normalizeConnectedCustomers(dynamic v) {
+    if (v is! List) return const <Map<String, dynamic>>[];
+    final out = <Map<String, dynamic>>[];
+    for (final e in v) {
+      if (e is Map) {
+        out.add(Map<String, dynamic>.from(e));
+      }
+    }
+    return out;
+  }
+
+  bool _isSharedActiveBooking(Map<String, dynamic> data) {
+    final live = data['driverLiveTracking'];
+    return _asBool(data['sharedBooking']) ||
+        _asBool(data['isShared']) ||
+        _asBool(data['shared']) ||
+        (live is Map && _asBool(live['sharedBooking']));
+  }
+
+  Future<void> _seedSharedRideFromActiveBooking(
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final isShared = _isSharedActiveBooking(data);
+      if (!isShared) return;
+
+      final live = data['driverLiveTracking'];
+      final lat = (live is Map) ? live['currentLatitude'] : null;
+      final lng = (live is Map) ? live['currentLongitude'] : null;
+      final latD = (lat is num) ? lat.toDouble() : double.tryParse('$lat');
+      final lngD = (lng is num) ? lng.toDouble() : double.tryParse('$lng');
+
+      if (Get.isRegistered<SharedRideController>()) {
+        // ok
+      } else {
+        Get.put(SharedRideController(), permanent: true);
+      }
+      final sharedRide = Get.find<SharedRideController>();
+
+      // Reset so stale riders from previous sessions don't block UI on resume.
+      sharedRide.riders.clear();
+      sharedRide.activeTarget.value = null;
+
+      if (latD != null && lngD != null) {
+        sharedRide.driverLocation.value = LatLng(latD, lngD);
+      }
+
+      final connected = _normalizeConnectedCustomers(
+        data['connectedCustomers'],
+      );
+      final seedList =
+          connected.isNotEmpty ? connected : <Map<String, dynamic>>[data];
+
+      for (final r in seedList) {
+        final bid = (r['bookingId'] ?? '').toString().trim();
+        if (bid.isEmpty) continue;
+
+        final fromLat = r['fromLatitude'];
+        final fromLng = r['fromLongitude'];
+        final toLat = r['toLatitude'];
+        final toLng = r['toLongitude'];
+
+        final payload = <String, dynamic>{
+          'bookingId': bid,
+          'customerName': r['customerName'] ?? r['custName'] ?? r['name'],
+          'customerPhone': r['customerPhone'] ?? r['phone'] ?? r['mobile'],
+          'customerProfilePic':
+              r['customerProfilePic'] ?? r['profilePic'] ?? r['image'],
+          'amount': r['amount'] ?? r['total'] ?? r['driverReceivedAmount'],
+          'pickupLocationAddress': r['pickupAddress'],
+          'dropLocationAddress': r['dropAddress'],
+          'customerLocation': <String, dynamic>{
+            'fromLatitude': fromLat,
+            'fromLongitude': fromLng,
+            'toLatitude': toLat,
+            'toLongitude': toLng,
+          },
+          'status': r['status'],
+          'rideStarted': r['rideStarted'],
+          'destinationReached': r['destinationReached'],
+        };
+
+        await sharedRide.upsertFromSocket(payload);
+
+        final status = (r['status'] ?? '').toString();
+        final rideStarted =
+            _asBool(r['rideStarted']) ||
+            _statusHas(status, ['ride_in_progress', 'in_progress', 'started']);
+        final dropped =
+            _asBool(r['destinationReached']) ||
+            _statusHas(status, ['complete', 'completed', 'finished']);
+
+        if (dropped) {
+          sharedRide.markDropped(bid);
+        } else if (rideStarted) {
+          sharedRide.markOnboard(bid);
+        }
+      }
+    } catch (_) {
+      // best-effort only; socket joined-booking will still hydrate in most cases
+    }
+  }
+
+  String _resolveParentRoomIdFromActiveBooking(Map<String, dynamic> data) {
+    final bookingId = (data['bookingId'] ?? '').toString().trim();
+    final sharedBookingId = (data['sharedBookingId'] ?? '').toString().trim();
+    final isShared = _isSharedActiveBooking(data);
+    if (isShared && sharedBookingId.isNotEmpty) return sharedBookingId;
+    return bookingId;
+  }
+
+  String _resolveActiveBookingKeyId(Map<String, dynamic> data) {
+    // Use parent shared room id so dismiss/resume stays stable even if backend
+    // changes which rider booking it returns as `bookingId`.
+    final parentRoomId = _resolveParentRoomIdFromActiveBooking(data).trim();
+    if (parentRoomId.isNotEmpty) return parentRoomId;
+    return (data['bookingId'] ?? '').toString().trim();
+  }
+
+  int _resolveConnectedCustomersCount(Map<String, dynamic> data) {
+    final fromCount = int.tryParse(
+      (data['connectedCustomersCount'] ?? '').toString(),
+    );
+    if (fromCount != null && fromCount > 0) return fromCount;
+
+    final normalized = _normalizeConnectedCustomers(data['connectedCustomers']);
+    if (normalized.isNotEmpty) return normalized.length;
+
+    final live = data['driverLiveTracking'];
+    if (live is Map) {
+      final list = live['activeSharedBookings'];
+      if (list is List) return list.length;
+    }
+
+    return 0;
+  }
+
   void _joinSharedRoomsFromActiveBooking({
     required String driverId,
     required String bookingId,
     required String parentRoomId,
     required dynamic liveTracking,
+    required dynamic connectedCustomers,
   }) {
     // For shared rides backend may use:
     // - parent shared room (sharedBookingId)
     // - individual rider booking rooms (bookingId / activeSharedBookings)
     final rooms = <String>{bookingId.trim(), parentRoomId.trim()}
       ..removeWhere((e) => e.isEmpty);
+
+    // Newer API may return the full list of connected customers/riders.
+    // Join both their bookingId rooms and their sharedBookingId rooms so we
+    // keep receiving events even when `activeSharedBookings` is absent/stale.
+    if (connectedCustomers is List) {
+      for (final e in connectedCustomers) {
+        if (e is! Map) continue;
+        final bId = (e['bookingId'] ?? '').toString().trim();
+        final sId = (e['sharedBookingId'] ?? '').toString().trim();
+        if (bId.isNotEmpty) rooms.add(bId);
+        if (sId.isNotEmpty) rooms.add(sId);
+      }
+    }
 
     if (liveTracking is Map) {
       final list = liveTracking['activeSharedBookings'];
@@ -1272,19 +1647,19 @@ class DriverMainController extends GetxController
       }
     }
 
-    // Ensure emits/heartbeats go to all rooms even if join happens later.
-    for (final r in rooms) {
-      socketService.rememberBookingRoom(r);
-    }
+    // Ensure emits/heartbeats go only to the currently active rooms.
+    socketService.setActiveBookingRooms(rooms, primaryBookingId: bookingId);
 
-    // Make parent room the active booking context (registration + join).
-    socketService.registerDriver(driverId, bookingId: parentRoomId);
-    socketService.joinBooking(parentRoomId, userId: driverId);
+    // Keep the primary booking context as the rider bookingId (matches normal
+    // shared-accept flow). Also join the parent shared room (and others)
+    // without overwriting the socket's active booking context.
+    socketService.registerDriver(driverId, bookingId: bookingId);
+    socketService.joinBooking(bookingId, userId: driverId);
 
     // Also explicitly join other rooms immediately when already connected so
     // we receive `joined-booking` payloads right away.
     for (final r in rooms) {
-      if (r == parentRoomId) continue;
+      if (r == bookingId) continue;
       socketService.emit('join-booking', <String, dynamic>{
         'bookingId': r,
         'userId': driverId,
@@ -1317,12 +1692,14 @@ class DriverMainController extends GetxController
           activeBookingData.value = null;
           _lastDismissedBookingId = null;
           showActiveBookingCard.value = false;
+          socketService.clearAllBookingRooms();
           return;
         }
         final data = response.data;
         if (data == null) {
           activeBookingData.value = null;
           showActiveBookingCard.value = false;
+          socketService.clearAllBookingRooms();
           return;
         }
 
@@ -1330,11 +1707,7 @@ class DriverMainController extends GetxController
         if (bookingId.isEmpty) return;
 
         final live = data['driverLiveTracking'];
-        final isShared =
-            _asBool(data['sharedBooking']) ||
-            _asBool(data['isShared']) ||
-            _asBool(data['shared']) ||
-            (live is Map && _asBool(live['sharedBooking']));
+        final isShared = _isSharedActiveBooking(data);
 
         final sharedBookingId =
             (data['sharedBookingId'] ?? '').toString().trim();
@@ -1344,8 +1717,11 @@ class DriverMainController extends GetxController
             (isShared && sharedBookingId.isNotEmpty)
                 ? sharedBookingId
                 : bookingId;
+        final keyId = parentRoomId;
 
-        currentBookingId = parentRoomId;
+        // Keep current booking id as the rider bookingId (numeric) so the rest
+        // of the app behaves the same as normal shared accept flow.
+        currentBookingId = bookingId;
 
         final did = driverId;
         if (did != null && did.trim().isNotEmpty) {
@@ -1366,8 +1742,12 @@ class DriverMainController extends GetxController
               bookingId: bookingId,
               parentRoomId: parentRoomId,
               liveTracking: live,
+              connectedCustomers: data['connectedCustomers'],
             );
           } else {
+            socketService.setActiveBookingRooms(<String>[
+              bookingId,
+            ], primaryBookingId: bookingId);
             socketService.registerDriver(did, bookingId: bookingId);
             socketService.joinBooking(bookingId, userId: did);
           }
@@ -1380,16 +1760,26 @@ class DriverMainController extends GetxController
           activeBookingData.value = null;
           _lastDismissedBookingId = null;
           showActiveBookingCard.value = false;
+          socketService.clearAllBookingRooms();
           return;
         }
 
-        activeBookingData.value = Map<String, dynamic>.from(data);
+        final normalized = Map<String, dynamic>.from(data);
+        normalized['connectedCustomers'] = _normalizeConnectedCustomers(
+          data['connectedCustomers'],
+        );
+        normalized['connectedCustomersCount'] = _resolveConnectedCustomersCount(
+          data,
+        );
+
+        activeBookingData.value = normalized;
 
         // Keep service type in sync so map marker icon (car/bike) matches resumed booking.
         statusController.setServiceTypeFrom(data['rideType']);
-        JoinedBookingData().setData(Map<String, dynamic>.from(data));
+        JoinedBookingData().setData(Map<String, dynamic>.from(normalized));
+        unawaited(_seedSharedRideFromActiveBooking(normalized));
 
-        if (_lastDismissedBookingId == bookingId) {
+        if (_lastDismissedBookingId == keyId) {
           showActiveBookingCard.value = false;
         } else {
           showActiveBookingCard.value = true;
@@ -1401,9 +1791,10 @@ class DriverMainController extends GetxController
   }
 
   void dismissActiveBookingCard() {
-    final id = activeBookingData.value?['bookingId']?.toString();
-    if (id != null && id.trim().isNotEmpty) {
-      _lastDismissedBookingId = id;
+    final data = activeBookingData.value;
+    if (data != null) {
+      final keyId = _resolveActiveBookingKeyId(data);
+      if (keyId.trim().isNotEmpty) _lastDismissedBookingId = keyId;
     }
     showActiveBookingCard.value = false;
   }
@@ -1455,7 +1846,6 @@ class DriverMainController extends GetxController
 
     final bookingId = (data['bookingId'] ?? '').toString().trim();
     if (bookingId.isEmpty) return;
-    if (_lastResumedBookingId == bookingId) return;
 
     final status = (data['status'] ?? '').toString();
     final cancelled = _isBookingCancelled(data, status);
@@ -1463,15 +1853,14 @@ class DriverMainController extends GetxController
     if (cancelled || completed) return;
 
     final live = data['driverLiveTracking'];
-    final isShared =
-        _asBool(data['sharedBooking']) ||
-        _asBool(data['isShared']) ||
-        _asBool(data['shared']) ||
-        (live is Map && _asBool(live['sharedBooking']));
+    final isShared = _isSharedActiveBooking(data);
 
     final sharedBookingId = (data['sharedBookingId'] ?? '').toString().trim();
     final parentRoomId =
         (isShared && sharedBookingId.isNotEmpty) ? sharedBookingId : bookingId;
+    final keyId = parentRoomId;
+
+    if (_lastResumedBookingId == keyId) return;
 
     final pickup = _pickupFromActiveBooking(data);
     if (pickup == null) return;
@@ -1509,13 +1898,14 @@ class DriverMainController extends GetxController
         }
       } catch (_) {}
 
-      currentBookingId = parentRoomId;
+      currentBookingId = bookingId;
       if (isShared) {
         _joinSharedRoomsFromActiveBooking(
           driverId: did,
           bookingId: bookingId,
           parentRoomId: parentRoomId,
           liveTracking: live,
+          connectedCustomers: data['connectedCustomers'],
         );
       } else {
         socketService.registerDriver(did, bookingId: bookingId);
@@ -1523,19 +1913,20 @@ class DriverMainController extends GetxController
       }
     }
 
-    _lastResumedBookingId = bookingId;
+    _lastResumedBookingId = keyId;
     showActiveBookingCard.value = false;
 
     await Future<void>.delayed(const Duration(milliseconds: 120));
     if (_disposed || isClosed) return;
 
     if (isShared) {
+      await _seedSharedRideFromActiveBooking(data);
       if (rideStarted) {
         Get.off(
           () => ShareRideStartScreen(
             pickupLocation: pickup,
             driverLocation: driverLoc,
-            bookingId: parentRoomId,
+            bookingId: bookingId,
           ),
         );
         return;
@@ -1545,7 +1936,7 @@ class DriverMainController extends GetxController
         () => PickingCustomerSharedScreen(
           pickupLocation: pickup,
           driverLocation: driverLoc,
-          bookingId: parentRoomId,
+          bookingId: bookingId,
           pickupLocationAddress: pickupAddress,
           dropLocationAddress: dropAddress,
         ),
@@ -1663,6 +2054,9 @@ class DriverMainController extends GetxController
       await bg.stopDriverTrackingService();
     } catch (_) {}
     await Future.delayed(const Duration(milliseconds: 350));
+
+    // Some screens temporarily replace socket listeners; restore core listeners.
+    _bindSocketListeners();
 
     // Ensure socket is connected & registered after background/resume cycles.
     socketService.connect();
@@ -1899,7 +2293,59 @@ class DriverMainController extends GetxController
         update(['map']);
       });
 
+    _demandPulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..addListener(() {
+      if (_disposed || isClosed) return;
+      final center = _demandPulseCenter;
+      final color = _demandPulseColor;
+      if (center == null || color == null) return;
+
+      final now = DateTime.now();
+      if (now.difference(_lastDemandPulsePaintAt) <
+          const Duration(milliseconds: 50)) {
+        return;
+      }
+      _lastDemandPulsePaintAt = now;
+
+      demandCircles = _demandPulseRings(
+        center: center,
+        color: color,
+        t: _demandPulseCtrl.value,
+      );
+      update(['map']);
+    });
+
+    _demandBounceCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    )..addListener(() {
+      if (_disposed || isClosed) return;
+      final center = _demandPulseCenter;
+      final color = _demandPulseColor;
+      if (center == null || color == null) return;
+      // Repaint rings while bounce is playing.
+      demandCircles = _demandPulseRings(
+        center: center,
+        color: color,
+        t: _demandPulseCtrl.value,
+      );
+      update(['map']);
+    });
+
     _prepare();
+  }
+
+  /// Restores core socket listeners (especially `booking-request`) after other
+  /// screens temporarily attach their own listeners.
+  void ensureCoreSocketListeners() {
+    if (_disposed || isClosed) return;
+    _bindSocketListeners();
+    final did = driverId?.trim() ?? '';
+    if (did.isNotEmpty) {
+      socketService.registerDriver(did, bookingId: currentBookingId);
+    }
   }
 
   Future<void> _prepare() async {
@@ -1915,6 +2361,9 @@ class DriverMainController extends GetxController
       if (_disposed || isClosed) return;
 
       await loadCustomCarIcon();
+      if (_disposed || isClosed) return;
+
+      await loadDemandPinIcon();
       if (_disposed || isClosed) return;
 
       ready.value = true;
@@ -1971,6 +2420,20 @@ class DriverMainController extends GetxController
     } catch (_) {}
     try {
       animCtrl.dispose();
+    } catch (_) {}
+
+    try {
+      if (_demandPulseCtrl.isAnimating) _demandPulseCtrl.stop();
+    } catch (_) {}
+    try {
+      _demandPulseCtrl.dispose();
+    } catch (_) {}
+
+    try {
+      if (_demandBounceCtrl.isAnimating) _demandBounceCtrl.stop();
+    } catch (_) {}
+    try {
+      _demandBounceCtrl.dispose();
     } catch (_) {}
 
     super.onClose();
