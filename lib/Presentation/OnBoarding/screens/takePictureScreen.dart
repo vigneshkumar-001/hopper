@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:get/get.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import '../../../Core/Constants/Colors.dart';
+import '../../../Core/Constants/log.dart';
 import '../../../Core/Constants/texts.dart';
 import '../../Authentication/widgets/textFields.dart';
 import '../controller/userprofile_controller.dart';
@@ -96,7 +97,7 @@ class _TakePictureState extends State<TakePicture> {
 
       setState(() => _isFaceDetected = faces.isNotEmpty);
     } catch (e) {
-      print("Face detection error: $e");
+      CommonLogger.log.w("Face detection error: $e");
     } finally {
       _isDetecting = false;
     }
@@ -416,7 +417,7 @@ class _TakePictureState extends State<TakePicture> {
 
       setState(() => _isFaceDetected = faces.isNotEmpty);
     } catch (e) {
-      print("Face detection error: $e");
+      CommonLogger.log.w("Face detection error: $e");
     } finally {
       _isDetecting = false;
     }

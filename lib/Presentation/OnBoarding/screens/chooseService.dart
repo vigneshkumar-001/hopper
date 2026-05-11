@@ -69,8 +69,6 @@ class _ChooseServiceState extends State<ChooseService> {
                       selectedIndex = value ? 0 : -1;
                       selectedService = value ? 'Car' : '';
                     });
-
-                    print('Selected service: $selectedService');
                   },
                   onTap: () {},
                   serviceType: 'Car',
@@ -86,8 +84,6 @@ class _ChooseServiceState extends State<ChooseService> {
                       selectedIndex = value ? 1 : -1;
                       selectedService = value ? 'Bike' : '';
                     });
-
-                    print('Selected service: $selectedService');
                   },
                   onTap: () {},
                   serviceType: 'Bike',

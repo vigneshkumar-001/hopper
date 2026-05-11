@@ -1,0 +1,6 @@
+# Copy this file to `android/key.properties` (DO NOT COMMIT) and fill in your real values.
+# See: https://docs.flutter.dev/deployment/android#signing-the-app
+storePassword=REPLACE_ME
+keyPassword=REPLACE_ME
+keyAlias=REPLACE_ME
+storeFile=../hopper-release.keystore

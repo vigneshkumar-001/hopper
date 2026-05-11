@@ -26,7 +26,6 @@ class TodayActivityData {
   });
 
   factory TodayActivityData.fromJson(Map<String, dynamic> json) {
-    print("📦 Parsing TodayActivityData: $json");
     return TodayActivityData(
       earnings: json['earnings'] ?? '0',
       online: json['online'] ?? '0',

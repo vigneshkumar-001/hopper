@@ -5,13 +5,22 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+import java.io.FileInputStream
 import java.util.Properties
-        import java.io.FileInputStream
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties") // reads android/key.properties
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
+val hasReleaseSigningConfig =
+    listOf("keyAlias", "keyPassword", "storeFile", "storePassword").all { key ->
+        !keystoreProperties.getProperty(key).isNullOrBlank()
+    }
+
+fun isReleaseTaskRequested(): Boolean {
+    return gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
 }
 
 android {
@@ -38,65 +47,35 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["keyPassword"] as String
-            storeFile = file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["storePassword"] as String
+        if (hasReleaseSigningConfig) {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
         }
     }
-
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release") // ✅ changed
+            if (hasReleaseSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            } else if (isReleaseTaskRequested()) {
+                throw GradleException(
+                    "Missing Android release signing config. Create android/key.properties " +
+                        "with keyAlias/keyPassword/storeFile/storePassword (do not commit it).",
+                )
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                file("proguard-rules.pro")
+                file("proguard-rules.pro"),
             )
         }
     }
 }
-
-//android {
-//    namespace = "com.hopper.hopper"
-//    compileSdk = flutter.compileSdkVersion
-//    ndkVersion = "27.0.12077973"
-//
-//    defaultConfig {
-//        applicationId = "com.hopper.hopper"
-//        minSdk = 24
-//        targetSdk = flutter.targetSdkVersion
-//        versionCode = flutter.versionCode
-//        versionName = flutter.versionName
-//    }
-//
-//    compileOptions {
-//        sourceCompatibility = JavaVersion.VERSION_11
-//        targetCompatibility = JavaVersion.VERSION_11
-//        isCoreLibraryDesugaringEnabled = true
-//    }
-//
-//    kotlinOptions {
-//        jvmTarget = JavaVersion.VERSION_11.toString()
-//    }
-//
-//    buildTypes {
-//        release {
-//            isMinifyEnabled = true
-//            isShrinkResources = true
-//            signingConfig = signingConfigs.getByName("debug")
-//            proguardFiles(
-//                getDefaultProguardFile("proguard-android-optimize.txt"),
-//                file("proguard-rules.pro")
-//            )
-//        }
-//    }
-//
-//
-//}
 
 flutter {
     source = "../.."
@@ -113,84 +92,7 @@ dependencies {
         exclude(group = "com.google.firebase", module = "firebase-iid")
     }
 
-    // ML Kit Text Recognition
-    implementation("com.google.mlkit:text-recognition:16.0.0")
+    // NOTE: Don't add ML Kit Text Recognition unless it's actually used.
+    // It bundles native OCR pipeline libraries that can trip Play's
+    // "16 KB memory page sizes" checks if an incompatible version is used.
 }
-
-
-
-
-//plugins {
-//    id("com.android.application")
-//    id("kotlin-android")
-//    id("com.google.gms.google-services")
-//    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
-//    id("dev.flutter.flutter-gradle-plugin")
-//}
-//
-//android {
-//    namespace = "com.hopper.hopper"
-//    compileSdk = flutter.compileSdkVersion
-////    ndkVersion = flutter.ndkVersion
-//    ndkVersion = "27.0.12077973"
-//
-//
-//    compileOptions {
-//        sourceCompatibility = JavaVersion.VERSION_11
-//        targetCompatibility = JavaVersion.VERSION_11
-//        isCoreLibraryDesugaringEnabled = true
-//    }
-//
-//
-//    kotlinOptions {
-//        jvmTarget = JavaVersion.VERSION_11.toString()
-//    }
-//
-//    defaultConfig {
-//        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-//        applicationId = "com.hopper.hopper"
-//        // You can update the following values to match your application needs.
-//        // For more information, see: https://flutter.dev/to/review-gradle-config.
-//        minSdk = 24
-//        targetSdk = flutter.targetSdkVersion
-//        versionCode = flutter.versionCode
-//        versionName = flutter.versionName
-//    }
-//
-//    buildTypes {
-//        release {
-//            isMinifyEnabled = true
-//            isShrinkResources = true
-//            // TODO: Add your own signing config for the release build.
-//            // Signing with the debug keys for now, so `flutter run --release` works.
-//            signingConfig = signingConfigs.getByName("debug")
-//            proguardFiles(
-//                getDefaultProguardFile("proguard-android-optimize.txt"),
-//                file("proguard-rules.pro") // Ensure this file exists
-//            )
-//        }
-//    }
-//    configurations.all {
-//        resolutionStrategy.eachDependency {
-//            if (requested.group == "com.google.firebase" && requested.name == "firebase-iid") {
-//                useTarget("com.google.firebase:firebase-iid:999.0.0") // effectively removes IID
-//            }
-//        }
-//    }
-//
-//}
-//
-//flutter {
-//    source = "../.."
-//}
-//dependencies {
-//    implementation("com.google.firebase:firebase-messaging") {
-//        exclude(group = "com.google.firebase", module = "firebase-iid")
-//    }
-//
-//    // Example: ML Kit
-//    implementation("com.google.mlkit:text-recognition:16.0.0") {
-//        exclude(group = "com.google.firebase", module = "firebase-iid")
-//    }
-//}
-//

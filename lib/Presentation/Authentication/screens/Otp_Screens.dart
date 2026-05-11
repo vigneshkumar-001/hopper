@@ -176,12 +176,9 @@ class _OtpScreensState extends State<OtpScreens> {
                               // },
                               // onCompleted: (value) async {},
                               onChanged: (value) {
-                                debugPrint(value);
-
                                 verifyCode = value;
                               },
                               beforeTextPaste: (text) {
-                                debugPrint("Allowing to paste $text");
                                 return true;
                               },
                             ),

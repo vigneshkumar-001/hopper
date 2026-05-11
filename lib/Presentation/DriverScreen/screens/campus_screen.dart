@@ -146,6 +146,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:hopper/utils/map/shared_map.dart';
 import 'package:hopper/utils/map/vehicle_marker_icon.dart';
@@ -331,7 +332,7 @@ class UberCloneMainScreenState extends State<UberCloneMainScreen> {
         CameraUpdate.newCameraPosition(_initialCameraPosition),
       );
     } catch (e) {
-      debugPrint(e.toString());
+      CommonLogger.log.w(e.toString());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

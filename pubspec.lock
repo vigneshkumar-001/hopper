@@ -740,10 +740,10 @@ packages:
     dependency: "direct main"
     description:
       name: google_mlkit_face_detection
-      sha256: f336737d5b8a86797fd4368f42a5c26aeaa9c6dcc5243f0a16b5f6f663cfb70a
+      sha256: "7b6ddcc69dbd6fbfa313fb2d974ad0f0c3a0d1657560f0da6be465baf1889687"
       url: "https://pub.dev"
     source: hosted
-    version: "0.13.1"
+    version: "0.13.2"
   google_place:
     dependency: "direct main"
     description:
@@ -1671,4 +1671,4 @@ packages:
     version: "6.5.0"
 sdks:
   dart: ">=3.9.0-0 <4.0.0"
-  flutter: ">=3.29.0"
+  flutter: ">=3.32.0"

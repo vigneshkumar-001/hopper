@@ -64,8 +64,7 @@ Future<void> _initFcmSafely() async {
       },
     );
 
-    // ✅ If you really want to log token, use your cached token safely:
-    CommonLogger.log.i("🔥 FCM Token (cached): ${firebaseService.fcmToken}");
+    CommonLogger.log.d("FCM initialized");
   } catch (e, st) {
     // ✅ Never crash app
     CommonLogger.log.e("❌ FCM init failed: $e");

@@ -28,7 +28,6 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    print('Iam Calling');
     //getUserDetail();
     loadAndNavigate();
     // Future.delayed(const Duration(seconds: 4), () {

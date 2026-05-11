@@ -261,7 +261,6 @@ class _CompletedScreensState extends State<CompletedScreens> {
                               return GestureDetector(
                                 onTap: () {
                                   if (status == 2) navigateToStep(index);
-                                  print('Hi Iam Tapped');
                                 },
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(

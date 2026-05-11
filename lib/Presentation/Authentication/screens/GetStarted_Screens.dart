@@ -140,15 +140,12 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
       if (googleUser == null) {
-        print("User canceled sign in");
+        CommonLogger.log.i("Google sign-in cancelled by user");
         return null;
       }
 
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
-
-      CommonLogger.log.i('AccessToken: ${googleAuth.accessToken}');
-      CommonLogger.log.i('IdToken: ${googleAuth.idToken}');
 
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
@@ -173,7 +170,7 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
 
       return userCredential;
     } catch (e) {
-      print('Exception during sign-in: $e');
+      CommonLogger.log.w('Exception during sign-in: $e');
       return null;
     }
   }

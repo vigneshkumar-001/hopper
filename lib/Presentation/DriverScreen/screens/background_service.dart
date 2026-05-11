@@ -14,7 +14,15 @@ import '../../../utils/sharedprefsHelper/sharedprefs_handler.dart';
 
 Future<void>? _configureOnce;
 
+bool isBackgroundTrackingEnabled() {
+  // Temporarily disabled in release builds to avoid Play Console video requirement.
+  // Re-enable in a future update once the policy video is ready.
+  return !kReleaseMode;
+}
+
 Future<void> initializeBackgroundService() async {
+  if (!isBackgroundTrackingEnabled()) return;
+
   // Idempotent: multiple callers can await this safely (prevents race where
   // `startService()` is called before `configure()` finishes on app launch).
   _configureOnce ??= () async {
@@ -61,6 +69,7 @@ Future<void> ensureDriverTrackingServiceRunning({
   String? driverId,
   String? bookingId,
 }) async {
+  if (!isBackgroundTrackingEnabled()) return;
   await initializeBackgroundService();
 
   // Avoid crashing Android 13+ if notifications are disabled for the app.
@@ -99,6 +108,7 @@ Future<void> ensureDriverTrackingServiceRunning({
 }
 
 Future<void> stopDriverTrackingService() async {
+  if (!isBackgroundTrackingEnabled()) return;
   await initializeBackgroundService();
   final service = FlutterBackgroundService();
   final running = await service.isRunning();

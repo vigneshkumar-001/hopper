@@ -11,6 +11,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
+import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
@@ -727,7 +728,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         if (!mounted || _isDisposing) return;
         setState(() {});
       } catch (e) {
-        debugPrint('joined-booking error: $e');
+        CommonLogger.log.w('joined-booking error: $e');
       }
     });
 

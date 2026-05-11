@@ -508,7 +508,6 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                   //   verifyCode = value;
                                   // },
                                   onChanged: (value) {
-                                    debugPrint(value);
                                     setState(() {
                                       verifyCode = value;
 
@@ -529,7 +528,6 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                   },
 
                                   beforeTextPaste: (text) {
-                                    debugPrint("Allowing to paste $text");
                                     return true;
                                   },
                                 ),
@@ -616,7 +614,6 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                             ),
                                       ),
                                       onChanged: (value) {
-                                        debugPrint(value);
                                         setState(() {
                                           verifyCode = value;
 
@@ -633,7 +630,6 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                         });
                                       },
                                       beforeTextPaste: (text) {
-                                        debugPrint("Allowing to paste $text");
                                         return true;
                                       },
                                     ),

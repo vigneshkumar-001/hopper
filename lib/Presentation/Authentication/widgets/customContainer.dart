@@ -25,7 +25,6 @@ class CustomContainer {
   }) {
     return GestureDetector(
       onTap: () {
-        print('iam seelcted $isSelected');
         onSelectionChanged(!isSelected);
       },
       child: Container(

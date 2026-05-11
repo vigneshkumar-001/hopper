@@ -13,7 +13,6 @@ class Request {
   ) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('token');
-    String? userId = prefs.getString('userId');
 
     Dio dio = Dio(
       BaseOptions(
@@ -30,27 +29,28 @@ class Request {
           Response<dynamic> response,
           ResponseInterceptorHandler handler,
         ) {
-          CommonLogger.log.i(
-            "sendPostRequest \n API: $url \n RESPONSE: ${response.toString()}",
-          );
+          CommonLogger.log.d("HTTP ${response.statusCode} $url");
           return handler.next(response);
         },
         onError: (DioException error, ErrorInterceptorHandler handler) async {
-          if (error.response?.statusCode == '402') {
+          final code = error.response?.statusCode;
+          if (code == 402) {
             // app update new version
             return handler.reject(error);
-          } else if (error.response?.statusCode == '406' ||
-              error.response?.statusCode == '401') {
+          } else if (code == 406 || code == 401) {
             // Unauthorized user navigate to login page
 
             return handler.reject(error);
-          } else if (error.response?.statusCode == '429') {
+          } else if (code == 429) {
             //Too many Attempts
             return handler.reject(error);
-          } else if (error.response?.statusCode == '409') {
+          } else if (code == 409) {
             //Too many Attempts
             return handler.reject(error);
           }
+          CommonLogger.log.w(
+            "HTTP ${error.response?.statusCode} $url (dio error: ${error.type})",
+          );
           return handler.next(error);
         },
       ),
@@ -75,11 +75,7 @@ class Request {
             },
           );
 
-      CommonLogger.log.i(
-        "RESPONSE \n API: $url \n body : $body \n token : $token \n RESPONSE: ${response.toString()}",
-      );
-      CommonLogger.log.i("$token");
-      CommonLogger.log.i("$body");
+      CommonLogger.log.d("HTTP ${response.statusCode} $url");
       return response;
     } catch (e) {
       CommonLogger.log.e('API: $url \n ERROR: $e ');
@@ -96,7 +92,6 @@ class Request {
   ) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? token = prefs.getString('token');
-    String? userId = prefs.getString('userId');
 
     Dio dio = Dio();
     dio.interceptors.add(
@@ -108,27 +103,28 @@ class Request {
           Response<dynamic> response,
           ResponseInterceptorHandler handler,
         ) {
-          CommonLogger.log.i(
-            "sendPostRequest \n API: $url \n RESPONSE: ${response.toString()}",
-          );
+          CommonLogger.log.d("HTTP ${response.statusCode} $url");
           return handler.next(response);
         },
         onError: (DioException error, ErrorInterceptorHandler handler) async {
-          if (error.response?.statusCode == '402') {
+          final code = error.response?.statusCode;
+          if (code == 402) {
             // app update new version
             return handler.reject(error);
-          } else if (error.response?.statusCode == '406' ||
-              error.response?.statusCode == '401') {
+          } else if (code == 406 || code == 401) {
             // Unauthorized user navigate to login page
 
             return handler.reject(error);
-          } else if (error.response?.statusCode == '429') {
+          } else if (code == 429) {
             //Too many Attempts
             return handler.reject(error);
-          } else if (error.response?.statusCode == '409') {
+          } else if (code == 409) {
             //Too many Attempts
             return handler.reject(error);
           }
+          CommonLogger.log.w(
+            "HTTP ${error.response?.statusCode} $url (dio error: ${error.type})",
+          );
           return handler.next(error);
         },
       ),
@@ -150,11 +146,7 @@ class Request {
         ),
       );
 
-      CommonLogger.log.i(
-        "RESPONSE \n API: $url \n RESPONSE: ${response.toString()}",
-      );
-      CommonLogger.log.i("$token");
-      CommonLogger.log.i("$body");
+      CommonLogger.log.d("HTTP ${response.statusCode} $url");
 
       return response;
     } catch (e) {
@@ -186,9 +178,7 @@ class Request {
           Response<dynamic> response,
           ResponseInterceptorHandler handler,
         ) {
-          CommonLogger.log.i(
-            "GET Request \n API: $url \n Token : $token \n RESPONSE: ${response.toString()}",
-          );
+          CommonLogger.log.d("HTTP ${response.statusCode} $url");
           return handler.next(response);
         },
         onError: (DioException error, ErrorInterceptorHandler handler) async {
@@ -225,9 +215,7 @@ class Request {
         ),
       );
 
-      CommonLogger.log.i(
-        "GET RESPONSE \n API: $url \n RESPONSE: ${response.toString()}",
-      );
+      CommonLogger.log.d("HTTP ${response.statusCode} $url");
       return response;
     } catch (e) {
       CommonLogger.log.e('GET API: $url \n ERROR: $e');

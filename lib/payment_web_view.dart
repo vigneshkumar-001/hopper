@@ -22,7 +22,6 @@ class _PaymentWebViewState extends State<PaymentWebView> {
           ..setNavigationDelegate(
             NavigationDelegate(
               onNavigationRequest: (request) {
-                print("Navigating to: ${request.url}");
                 final uri = Uri.parse(request.url);
 
                 if (uri.host == "hoppr-face-two-dbe557472d7f.herokuapp.com" &&

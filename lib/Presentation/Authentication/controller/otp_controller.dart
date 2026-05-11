@@ -119,7 +119,7 @@ class OtpController extends GetxController {
           }
           */ /*      if (type == 'basicInfo') {
             isVerified.value = response.status == 200;
-            print("✅ isVerified: ${isVerified.value}");
+            // Intentionally do not log verification state (avoid leaking auth flow details).
 
             Navigator.pop(context);
           } else {
@@ -139,7 +139,7 @@ class OtpController extends GetxController {
           accessToken = response.data.token;
           driverId = response.data.driverId;
 
-          CommonLogger.log.i('Response = $accessToken');
+          CommonLogger.log.d('Auth token stored');
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('token', response.data.token);
           await prefs.setString('driverId', response.data.driverId);
@@ -185,16 +185,12 @@ class OtpController extends GetxController {
           // 681889f5a36e808c5056d290
           if (type == 'basicInfo') {
             isEmailVerified.value = response.status == 200;
-            print("✅ isVerified: ${isVerified.value}");
-
             Navigator.pop(context);
-
-            print("✅ isVerified: ${isVerified.value}");
           }
           isLoading.value = false;
           accessToken = response.data.token;
 
-          CommonLogger.log.i('Response = $accessToken');
+          CommonLogger.log.d('Auth token stored');
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('token', response.data.token);
           // await prefs.setString('userId', response.userId);

@@ -11,7 +11,7 @@ import 'package:hopper/Presentation/Authentication/controller/otp_controller.dar
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  CommonLogger.log.i('🔕 [BG] Message received: ${message.messageId}');
+  CommonLogger.log.d('FCM [BG] message received: ${message.messageId}');
 }
 
 class FirebaseService {
@@ -108,7 +108,7 @@ class FirebaseService {
         CommonLogger.log.w('❌ FCM token could not be fetched now (will retry later)');
       }
     } else {
-      CommonLogger.log.i('ℹ️ Existing FCM token: $_fcmToken');
+      CommonLogger.log.d('FCM token loaded from cache');
       try {
         await controller.sendFcmToken(fcmToken: _fcmToken!);
       } catch (e) {
@@ -118,7 +118,7 @@ class FirebaseService {
 
     // ✅ refresh listener
     FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
-      CommonLogger.log.i('🔁 Token refreshed: $newToken');
+      CommonLogger.log.d('FCM token refreshed');
       _fcmToken = newToken;
       await prefs.setString('fcmToken', newToken);
       try {

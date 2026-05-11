@@ -534,7 +534,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       if (await canLaunchUrl(url)) {
                         await launchUrl(url);
                       } else {
-                        debugPrint('Could not launch dialer');
+                        CommonLogger.log.w('Could not launch dialer');
                       }
                     },
                     child: Image.asset(AppImages.call, height: 20, width: 20),
