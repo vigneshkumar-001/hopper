@@ -15,9 +15,12 @@ import '../../../utils/sharedprefsHelper/sharedprefs_handler.dart';
 Future<void>? _configureOnce;
 
 bool isBackgroundTrackingEnabled() {
-  // Temporarily disabled in release builds to avoid Play Console video requirement.
-  // Re-enable in a future update once the policy video is ready.
-  return !kReleaseMode;
+  // Enabled for production: this app needs to send driver location even when the
+  // app is backgrounded / screen-locked (Android foreground service).
+  //
+  // NOTE: Ensure Play Console declarations (background location / FGS types) are
+  // completed when publishing builds that include these permissions.
+  return true;
 }
 
 Future<void> initializeBackgroundService() async {
@@ -208,22 +211,16 @@ void onStart(ServiceInstance service) async {
 
   socket.onConnect((_) {
     safeRegisterAndFlush();
-    if (kDebugMode) {
-      CommonLogger.log.i("✅ [BG_SOCKET] Connected ($socketUrl)");
-    }
+    CommonLogger.log.i("[BG_SOCKET] Connected ($socketUrl)");
   });
 
   socket.onReconnect((_) {
     safeRegisterAndFlush();
-    if (kDebugMode) {
-      CommonLogger.log.i("🔁 [BG_SOCKET] Reconnected ($socketUrl)");
-    }
+    CommonLogger.log.i("[BG_SOCKET] Reconnected ($socketUrl)");
   });
 
   socket.onDisconnect((_) {
-    if (kDebugMode) {
-      CommonLogger.log.e("⛔ [BG_SOCKET] Disconnected ($socketUrl)");
-    }
+    CommonLogger.log.e("[BG_SOCKET] Disconnected ($socketUrl)");
 
     // If the server explicitly disconnects, socket.io may not auto-reconnect.
     // Try a debounced manual reconnect; re-register happens on connect.
@@ -235,9 +232,7 @@ void onStart(ServiceInstance service) async {
   });
 
   socket.onConnectError((err) {
-    if (kDebugMode) {
-      CommonLogger.log.e("⚠️ [BG_SOCKET] Connect error: $err ($socketUrl)");
-    }
+    CommonLogger.log.e("[BG_SOCKET] Connect error: $err ($socketUrl)");
   });
 
   Timer? heartbeatTimer;
@@ -322,9 +317,7 @@ void onStart(ServiceInstance service) async {
     } else {
       socket.emit('updateLocation', locationData);
     }
-    if (kDebugMode) {
-      CommonLogger.log.i('📍 [BG_SOCKET_EMIT] updateLocation $locationData');
-    }
+    CommonLogger.log.i('[BG_SOCKET_EMIT] updateLocation $locationData');
   });
 
   // If the stream doesn't emit (driver stationary / OEM throttling), poll and emit
@@ -380,11 +373,9 @@ void onStart(ServiceInstance service) async {
       } else {
         socket.emit(isMoving ? 'updateLocation' : 'driver-heartbeat', locationData);
       }
-      if (kDebugMode) {
-        CommonLogger.log.i(
-          '[BG_SOCKET_EMIT] ${isMoving ? 'updateLocation' : 'driver-heartbeat'} (poll) $locationData',
-        );
-      }
+      CommonLogger.log.i(
+        '[BG_SOCKET_EMIT] ${isMoving ? 'updateLocation' : 'driver-heartbeat'} (poll) $locationData',
+      );
     } catch (_) {}
   });
 

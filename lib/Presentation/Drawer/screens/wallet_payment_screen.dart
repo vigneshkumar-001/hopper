@@ -230,7 +230,7 @@ class _WalletPaymentScreensState extends State<WalletPaymentScreens> {
       String? token = prefs.getString('token');
       final response = await http.post(
         Uri.parse(
-          'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api/users/flutterwave/wallet/initialize',
+          'https://bk.myhoppr.com/api/users/flutterwave/wallet/initialize',
         ),
         headers: {
           "Content-Type": "application/json",
@@ -461,7 +461,7 @@ class _WalletPaymentScreensState extends State<WalletPaymentScreens> {
       String? token = prefs.getString('token');
       final response = await http.post(
         Uri.parse(
-          'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api/users/paystack/wallet/initialize',
+          'https://bk.myhoppr.com/api/users/paystack/wallet/initialize',
         ),
         headers: {
           "Content-Type": "application/json",

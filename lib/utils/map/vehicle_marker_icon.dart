@@ -70,13 +70,15 @@ class HopprVehicleMarkerIcon {
 
     // Map markers need a bit more pixels than UI icons for crispness.
     // Keep width compact but allow extra height to preserve the car/bike shape.
-    const markerScaleFactor = 1.35;
+    // Current assets render large on the home map; keep closer to Uber/Ola/Rapido
+    // marker footprint.
+    const markerScaleFactor = 1.0;
 
     final bool isBike =
         type == HopprVehicleType.bike || type == HopprVehicleType.packageBike;
 
-    final width = (isBike ? 26.0 : 24.0) * scale * markerScaleFactor;
-    final height = (isBike ? 44.0 : 48.0) * scale * markerScaleFactor;
+    final width = (isBike ? 20.0 : 18.0) * scale * markerScaleFactor;
+    final height = (isBike ? 34.0 : 38.0) * scale * markerScaleFactor;
 
     return ImageConfiguration(size: Size(width, height), devicePixelRatio: dpr);
   }

@@ -12,7 +12,8 @@ class ApiConstents {
   static String sharedRideSocket = const String.fromEnvironment(
     'HOPPR_SHARED_SOCKET_URL',
     // Socket.io expects the origin/root URL (not `/api`).
-    defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com',
+    defaultValue: 'https://bck.myhoppr.com',
+    // defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com',
     // defaultValue: 'https://q29l3cr9-6000.inc1.devtunnels.ms',
   );
   static String googleMapApiKey = const String.fromEnvironment(

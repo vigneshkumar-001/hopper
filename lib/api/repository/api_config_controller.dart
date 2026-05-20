@@ -8,23 +8,26 @@ class ApiConfigController extends GetxController {
   // Shared ON -> shared backend, Shared OFF -> single backend
   static const String sharedBase = String.fromEnvironment(
     'HOPPR_SHARED_BASE_URL',
-    defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com/api',
+    defaultValue: 'https://bck.myhoppr.com/api',
+    // defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com/api',
     // defaultValue: 'https://q29l3cr9-6000.inc1.devtunnels.ms/api',
   );
   static const String singleBase = String.fromEnvironment(
     'HOPPR_SINGLE_BASE_URL',
-    defaultValue: 'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api',
+    defaultValue: 'https://bk.myhoppr.com/api',
+    // defaultValue: 'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api',
   );
 
   static const String sharedSocket = String.fromEnvironment(
     'HOPPR_SHARED_SOCKET_URL',
-
-    defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com',
+    defaultValue: 'https://bck.myhoppr.com',
+    // defaultValue: 'https://hoppr-share-ride-85bbca49cbeb.herokuapp.com',
     // defaultValue: 'https://q29l3cr9-6000.inc1.devtunnels.ms',
   );
   static const String singleSocket = String.fromEnvironment(
     'HOPPR_SINGLE_SOCKET_URL',
-    defaultValue: 'https://hoppr-face-two-dbe557472d7f.herokuapp.com',
+    defaultValue: 'https://bk.myhoppr.com',
+    // defaultValue: 'https://hoppr-face-two-dbe557472d7f.herokuapp.com',
   );
 
   final RxBool isSharedEnabled = false.obs;
