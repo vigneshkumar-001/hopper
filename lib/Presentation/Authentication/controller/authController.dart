@@ -10,7 +10,6 @@ import 'package:hopper/Presentation/Authentication/screens/Landing_Screens.dart'
 import 'package:hopper/Presentation/Authentication/screens/Otp_Screens.dart';
 import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
-import 'package:hopper/api/repository/failure.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/session/logout_cleanup.dart';
@@ -169,8 +168,6 @@ class AuthController extends GetxController {
       await Get.find<DriverAnalyticsController>().reset(clearPersisted: false);
     }
     accessToken = '';
-
-    CustomSnackBar.showSuccess("Logged out successfully");
 
     if (!context.mounted) return;
     Navigator.pushAndRemoveUntil(

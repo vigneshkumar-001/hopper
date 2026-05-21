@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../../Core/Constants/log.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -23,13 +24,31 @@ class Request {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) {
+          if (kDebugMode) {
+            final safeHeaders = Map<String, dynamic>.from(options.headers);
+            if (safeHeaders.containsKey('Authorization')) {
+              safeHeaders['Authorization'] = '<redacted>';
+            }
+            CommonLogger.log.d(
+              "HTTP REQUEST ${options.method} ${options.uri}\n"
+              "Headers: $safeHeaders\n"
+              "Body: ${options.data}",
+            );
+          }
           return handler.next(options);
         },
         onResponse: (
           Response<dynamic> response,
           ResponseInterceptorHandler handler,
         ) {
-          CommonLogger.log.d("HTTP ${response.statusCode} $url");
+          if (kDebugMode) {
+            CommonLogger.log.d(
+              "HTTP RESPONSE ${response.statusCode} ${response.realUri}\n"
+              "Data: ${response.data}",
+            );
+          } else {
+            CommonLogger.log.d("HTTP ${response.statusCode} $url");
+          }
           return handler.next(response);
         },
         onError: (DioException error, ErrorInterceptorHandler handler) async {
@@ -97,13 +116,31 @@ class Request {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) {
+          if (kDebugMode) {
+            final safeHeaders = Map<String, dynamic>.from(options.headers);
+            if (safeHeaders.containsKey('Authorization')) {
+              safeHeaders['Authorization'] = '<redacted>';
+            }
+            CommonLogger.log.d(
+              "HTTP REQUEST ${options.method} ${options.uri}\n"
+              "Headers: $safeHeaders\n"
+              "Body: ${options.data}",
+            );
+          }
           return handler.next(options);
         },
         onResponse: (
           Response<dynamic> response,
           ResponseInterceptorHandler handler,
         ) {
-          CommonLogger.log.d("HTTP ${response.statusCode} $url");
+          if (kDebugMode) {
+            CommonLogger.log.d(
+              "HTTP RESPONSE ${response.statusCode} ${response.realUri}\n"
+              "Data: ${response.data}",
+            );
+          } else {
+            CommonLogger.log.d("HTTP ${response.statusCode} $url");
+          }
           return handler.next(response);
         },
         onError: (DioException error, ErrorInterceptorHandler handler) async {
@@ -172,13 +209,31 @@ class Request {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) {
+          if (kDebugMode) {
+            final safeHeaders = Map<String, dynamic>.from(options.headers);
+            if (safeHeaders.containsKey('Authorization')) {
+              safeHeaders['Authorization'] = '<redacted>';
+            }
+            CommonLogger.log.d(
+              "HTTP REQUEST ${options.method} ${options.uri}\n"
+              "Headers: $safeHeaders\n"
+              "Query: ${options.queryParameters}",
+            );
+          }
           return handler.next(options);
         },
         onResponse: (
           Response<dynamic> response,
           ResponseInterceptorHandler handler,
         ) {
-          CommonLogger.log.d("HTTP ${response.statusCode} $url");
+          if (kDebugMode) {
+            CommonLogger.log.d(
+              "HTTP RESPONSE ${response.statusCode} ${response.realUri}\n"
+              "Data: ${response.data}",
+            );
+          } else {
+            CommonLogger.log.d("HTTP ${response.statusCode} $url");
+          }
           return handler.next(response);
         },
         onError: (DioException error, ErrorInterceptorHandler handler) async {

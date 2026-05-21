@@ -190,8 +190,14 @@ class _VehicleDetailsState extends State<VehicleDetails> {
                                 await stateController.getModel(
                                   selectedBrand,
                                 ); // Fetch models
+                                if (!context.mounted) return;
 
-                                Get.back();
+                                // Close loader dialog without triggering GetX snackbar cleanup.
+                                if (Navigator.of(context, rootNavigator: true)
+                                    .canPop()) {
+                                  Navigator.of(context, rootNavigator: true)
+                                      .pop();
+                                }
 
                                 if (stateController.models.isEmpty) {
                                   CustomSnackBar.showInfo(
@@ -243,7 +249,13 @@ class _VehicleDetailsState extends State<VehicleDetails> {
                                   selectedBrand,
                                   selectedModel,
                                 );
-                                Get.back();
+                                if (!context.mounted) return;
+                                // Close loader dialog without triggering GetX snackbar cleanup.
+                                if (Navigator.of(context, rootNavigator: true)
+                                    .canPop()) {
+                                  Navigator.of(context, rootNavigator: true)
+                                      .pop();
+                                }
                                 CustomBottomSheet.showOptionsBottomSheet(
                                   title: 'Select year',
                                   options: stateController.year,

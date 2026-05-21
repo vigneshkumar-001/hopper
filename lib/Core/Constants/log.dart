@@ -19,7 +19,9 @@ class _CommonLogFilter extends LogFilter {
   @override
   bool shouldLog(LogEvent event) {
     if (kReleaseMode) {
-      return event.level.index >= Level.warning.index;
+      // Release build: log only errors (no info/warn/debug) to avoid leaking
+      // URLs/payloads/responses and to keep logs minimal.
+      return event.level.index >= Level.error.index;
     }
     return true;
   }
