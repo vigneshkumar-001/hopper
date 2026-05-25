@@ -102,6 +102,11 @@ class _DriverMainScreenState extends State<DriverMainScreen>
               if (!c.ready.value) {
                 return const Center(child: HopprCircularLoader(radius: 14));
               }
+              // Wait for serviceType before showing home UI so we don't flash the
+              // wrong (Car vs Package/Bike) experience.
+              if (!c.statusController.hasServiceType) {
+                return const Center(child: HopprCircularLoader(radius: 14));
+              }
 
               return Column(
                 children: [

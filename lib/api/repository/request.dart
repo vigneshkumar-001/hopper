@@ -6,6 +6,11 @@ import '../../Core/Constants/log.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Request {
+  static String _tokenFromHeaders(Map<String, dynamic> headers) {
+    final v = headers['Authorization']?.toString() ?? '';
+    return v.trim();
+  }
+
   static Future<dynamic> sendRequest(
     String url,
     Map<String, dynamic> body,
@@ -25,13 +30,11 @@ class Request {
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) {
           if (kDebugMode) {
-            final safeHeaders = Map<String, dynamic>.from(options.headers);
-            if (safeHeaders.containsKey('Authorization')) {
-              safeHeaders['Authorization'] = '<redacted>';
-            }
+            final t = _tokenFromHeaders(options.headers);
             CommonLogger.log.d(
               "HTTP REQUEST ${options.method} ${options.uri}\n"
-              "Headers: $safeHeaders\n"
+              "URL: ${options.uri}\n"
+              "Token: $t\n"
               "Body: ${options.data}",
             );
           }
@@ -42,9 +45,12 @@ class Request {
           ResponseInterceptorHandler handler,
         ) {
           if (kDebugMode) {
+            final t = _tokenFromHeaders(response.requestOptions.headers);
             CommonLogger.log.d(
               "HTTP RESPONSE ${response.statusCode} ${response.realUri}\n"
-              "Data: ${response.data}",
+              "URL: ${response.realUri}\n"
+              "Token: $t\n"
+              "Response: ${response.data}",
             );
           } else {
             CommonLogger.log.d("HTTP ${response.statusCode} $url");
@@ -117,13 +123,11 @@ class Request {
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) {
           if (kDebugMode) {
-            final safeHeaders = Map<String, dynamic>.from(options.headers);
-            if (safeHeaders.containsKey('Authorization')) {
-              safeHeaders['Authorization'] = '<redacted>';
-            }
+            final t = _tokenFromHeaders(options.headers);
             CommonLogger.log.d(
               "HTTP REQUEST ${options.method} ${options.uri}\n"
-              "Headers: $safeHeaders\n"
+              "URL: ${options.uri}\n"
+              "Token: $t\n"
               "Body: ${options.data}",
             );
           }
@@ -134,9 +138,12 @@ class Request {
           ResponseInterceptorHandler handler,
         ) {
           if (kDebugMode) {
+            final t = _tokenFromHeaders(response.requestOptions.headers);
             CommonLogger.log.d(
               "HTTP RESPONSE ${response.statusCode} ${response.realUri}\n"
-              "Data: ${response.data}",
+              "URL: ${response.realUri}\n"
+              "Token: $t\n"
+              "Response: ${response.data}",
             );
           } else {
             CommonLogger.log.d("HTTP ${response.statusCode} $url");
@@ -210,13 +217,11 @@ class Request {
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) {
           if (kDebugMode) {
-            final safeHeaders = Map<String, dynamic>.from(options.headers);
-            if (safeHeaders.containsKey('Authorization')) {
-              safeHeaders['Authorization'] = '<redacted>';
-            }
+            final t = _tokenFromHeaders(options.headers);
             CommonLogger.log.d(
               "HTTP REQUEST ${options.method} ${options.uri}\n"
-              "Headers: $safeHeaders\n"
+              "URL: ${options.uri}\n"
+              "Token: $t\n"
               "Query: ${options.queryParameters}",
             );
           }
@@ -227,9 +232,12 @@ class Request {
           ResponseInterceptorHandler handler,
         ) {
           if (kDebugMode) {
+            final t = _tokenFromHeaders(response.requestOptions.headers);
             CommonLogger.log.d(
               "HTTP RESPONSE ${response.statusCode} ${response.realUri}\n"
-              "Data: ${response.data}",
+              "URL: ${response.realUri}\n"
+              "Token: $t\n"
+              "Response: ${response.data}",
             );
           } else {
             CommonLogger.log.d("HTTP ${response.statusCode} $url");

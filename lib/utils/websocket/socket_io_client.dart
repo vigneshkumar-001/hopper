@@ -28,6 +28,9 @@ class SocketService {
   final Map<String, DateTime> _lastHighFreqEmitAtByKey = <String, DateTime>{};
   final Map<String, String> _lastHighFreqEmitSigByKey = <String, String>{};
 
+  // Debug-only: log every socket emit (very chatty).
+  // Always enabled in debug builds as requested.
+
   static const int _MAX_ACTIVE_BOOKING_ROOMS = 50;
 
   List<String> _normalizeRooms(Iterable<String> rooms) {
@@ -532,7 +535,7 @@ class SocketService {
               .toSet()
               .toList();
 
-      if (rooms.isNotEmpty) {
+    if (rooms.isNotEmpty) {
         final base = Map<String, dynamic>.from(data);
         final booking = (base['bookingId'] ?? '').toString().trim();
 
@@ -561,6 +564,11 @@ class SocketService {
         }
 
         _maybeLogEmit(event: event, payload: base, roomsCount: rooms.length);
+        if (kDebugMode) {
+          CommonLogger.log.i(
+            '[SOCKET_EMIT_ALL] url=$_socketUrl event=$event rooms=${rooms.length} payload=$base',
+          );
+        }
         return;
       }
     }
@@ -577,6 +585,15 @@ class SocketService {
 
     if (data is Map) {
       _maybeLogEmit(event: event, payload: Map<String, dynamic>.from(data));
+      if (kDebugMode) {
+        CommonLogger.log.i(
+          '[SOCKET_EMIT_ALL] url=$_socketUrl event=$event payload=${Map<String, dynamic>.from(data)}',
+        );
+      }
+    } else {
+      if (kDebugMode) {
+        CommonLogger.log.i('[SOCKET_EMIT_ALL] url=$_socketUrl event=$event data=$data');
+      }
     }
   }
 

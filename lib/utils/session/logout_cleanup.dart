@@ -1,10 +1,14 @@
 import 'package:get/get.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/pickup_customer_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/ride_starts_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/background_service.dart'
     as bg;
 import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/booking_request_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/picking_customer_shared_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
 import 'package:hopper/utils/sharedprefsHelper/booking_local_data.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
@@ -52,6 +56,28 @@ Future<void> performLogoutCleanup() async {
       s.driverLocation.value = null;
       s.canArriveAtActivePickup.value = false;
       s.canCompleteActiveDrop.value = false;
+    }
+  } catch (_) {}
+
+  // Delete any active ride controllers that might keep timers/socket emits alive.
+  try {
+    if (Get.isRegistered<RideStatsController>()) {
+      Get.delete<RideStatsController>(force: true);
+    }
+  } catch (_) {}
+  try {
+    if (Get.isRegistered<PickingCustomerController>()) {
+      Get.delete<PickingCustomerController>(force: true);
+    }
+  } catch (_) {}
+  try {
+    if (Get.isRegistered<PickingCustomerSharedController>()) {
+      Get.delete<PickingCustomerSharedController>(force: true);
+    }
+  } catch (_) {}
+  try {
+    if (Get.isRegistered<SharedController>()) {
+      Get.delete<SharedController>(force: true);
     }
   } catch (_) {}
 

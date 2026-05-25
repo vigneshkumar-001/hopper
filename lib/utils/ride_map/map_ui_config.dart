@@ -9,7 +9,7 @@ class MapUiConfig {
   // Bitmaps are generated at `size * devicePixelRatio` and cached.
   // Tuned smaller for production (Ola/Uber-like).
   static const double carMarkerSize = 32.0;
-  static const double bikeMarkerSize = 30.0;
+  static const double bikeMarkerSize = 22.0;
   static const double pickupMarkerSize = 32.0;
   static const double dropMarkerSize = 32.0;
 
