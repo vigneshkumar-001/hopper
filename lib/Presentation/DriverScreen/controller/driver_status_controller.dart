@@ -11,6 +11,7 @@ import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/Presentation/Drawer/controller/notification_controller.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/DriverScreen/models/booking_accept_model.dart';
 import 'package:hopper/Presentation/DriverScreen/models/get_todays_activity_models.dart';
@@ -49,6 +50,8 @@ class DriverStatusController extends GetxController {
 
   // Last time we received a `driver-location` socket update (for UI "Updated at").
   final Rxn<DateTime> lastDriverLocationAt = Rxn<DateTime>();
+
+  static const String _kServiceTypePrefKey = 'driver_service_type';
 
   void setLastDriverLocationAtFrom(dynamic raw) {
     if (raw == null) return;
@@ -95,12 +98,16 @@ class DriverStatusController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    // Seed serviceType early so UI doesn't briefly show the wrong vehicle icon
+    // before the first server `getDriverStatus` response arrives.
+    unawaited(_loadPersistedServiceType());
     todayActivity();
     weeklyChallenges();
     todayPackageActivity();
   }
 
   String get normalizedServiceType => serviceType.value.trim();
+  bool get hasServiceType => normalizedServiceType.isNotEmpty;
   bool get isCar => normalizedServiceType.toLowerCase() == 'car';
   bool get isBike => normalizedServiceType.toLowerCase() == 'bike';
 
@@ -120,6 +127,28 @@ class DriverStatusController extends GetxController {
     // Force notify even if value is the same (helps after logout/login where
     // widgets/controllers can be rebuilt but serviceType remains unchanged).
     serviceType.refresh();
+    unawaited(_persistServiceType(next));
+  }
+
+  Future<void> _loadPersistedServiceType() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getString(_kServiceTypePrefKey) ?? '';
+      if (v.trim().isNotEmpty && serviceType.value.trim().isEmpty) {
+        setServiceTypeFrom(v);
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Future<void> _persistServiceType(String next) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kServiceTypePrefKey, next);
+    } catch (_) {
+      // ignore
+    }
   }
 
   /// Clears user-scoped state so UI doesn't show stale Car/Bike after logout.
@@ -133,6 +162,11 @@ class DriverStatusController extends GetxController {
 
     serviceType.value = '';
     serviceType.refresh();
+    unawaited(
+      SharedPreferences.getInstance().then(
+        (p) => p.remove(_kServiceTypePrefKey),
+      ),
+    );
   }
 
   void toggleStatus() {
@@ -749,6 +783,7 @@ class DriverStatusController extends GetxController {
           // Ensure any listening UIs (marker/header) update even if the server
           // returns the same serviceType value as before.
           serviceType.refresh();
+          unawaited(_persistServiceType(serviceType.value));
 
           // ✅ Server is source of truth for shared booking; switch base+socket.
           final shared = response.data.sharedBooking;

@@ -12,7 +12,36 @@
           "package_name": "com.hopper.hopper"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "900790291893-ogle74m7rp1vl0b1isq9bgs890k0tn7v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hopper.hopper",
+            "certificate_hash": "32ccdd257b53982dd2c0e029a02c3432c4e8c9b9"
+          }
+        },
+        {
+          "client_id": "900790291893-q863blinmtkd2p8ea5vghpdm4an7sti9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hopper.hopper",
+            "certificate_hash": "4d646606cbfeb618cf4e158e8c8a0ecef6db0cf0"
+          }
+        },
+        {
+          "client_id": "900790291893-sq38hjhmvps6vooap8j86g4b3l5baaic.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hopper.hopper",
+            "certificate_hash": "e0758b06ec798c805576555f4e92e67766ebfe8c"
+          }
+        },
+        {
+          "client_id": "900790291893-mkfacs7pgr7976u3tcmgjr2jcjj8120c.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDXo06xbSM5A3PAShD_3Rgkr9GUX4dtetg"
@@ -20,7 +49,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "900790291893-mkfacs7pgr7976u3tcmgjr2jcjj8120c.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "900790291893-59ji57lpjfuvskgiqrg2nqh7b42iekkd.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.hopper.hopperdriver"
+              }
+            }
+          ]
         }
       }
     }

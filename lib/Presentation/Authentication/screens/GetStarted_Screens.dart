@@ -23,6 +23,7 @@ import '../../../Core/Utility/Buttons.dart';
 import '../../../Core/Utility/images.dart';
 import '../../OnBoarding/screens/takePictureScreen.dart';
 import '../controller/authController.dart';
+import 'package:hopper/utils/netWorkHandling/network_action_guard.dart';
 
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:get/get.dart';
@@ -124,7 +125,6 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
 
   List<String> scopes = <String>[
     'email',
-    'https://www.googleapis.com/auth/contacts.readonly',
   ];
 
   // GoogleSignIn _googleSignIn = GoogleSignIn(
@@ -138,7 +138,9 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
 
   Future<UserCredential?> signInWithGoogle() async {
     try {
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      // Keep scopes minimal for reliable sign-in UX.
+      final GoogleSignInAccount? googleUser =
+          await GoogleSignIn(scopes: scopes).signIn();
       if (googleUser == null) {
         CommonLogger.log.i("Google sign-in cancelled by user");
         return null;
@@ -171,6 +173,23 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
       return userCredential;
     } catch (e) {
       CommonLogger.log.w('Exception during sign-in: $e');
+      // Most common Android failure: ApiException: 10 (OAuth config mismatch).
+      final text = e.toString();
+      if (text.contains('ApiException: 10')) {
+        // User-friendly message (no crash even if Overlay is missing).
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              const SnackBar(
+                behavior: SnackBarBehavior.floating,
+                content: Text(
+                  'Google sign-in is not configured for this build. Please update Firebase SHA keys and try again.',
+                ),
+              ),
+            );
+        }
+      }
       return null;
     }
   }
@@ -392,6 +411,13 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                                     ? Colors.white
                                     : Colors.black,
                             onTap: () async {
+                              final ok = await NetworkActionGuard.ensureOnline(
+                                context: context,
+                                title: 'Internet required',
+                                message:
+                                    'Please connect to the internet to continue.',
+                              );
+                              if (!ok) return;
                               final code = controller.selectedCountryCode.value;
                               final value = controller.mobileNumber.text.trim();
 

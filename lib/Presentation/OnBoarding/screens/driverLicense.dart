@@ -18,6 +18,7 @@ import '../widgets/bottomNavigation.dart';
 import '../widgets/linearProgress.dart';
 import '../../../utils/imagePath/imagePath.dart';
 import 'package:get/get.dart';
+import 'package:hopper/utils/netWorkHandling/network_action_guard.dart';
 
 class DriverLicense extends StatefulWidget {
   final bool fromCompleteScreens;
@@ -30,6 +31,8 @@ class DriverLicense extends StatefulWidget {
 class _DriverLicenseState extends State<DriverLicense> {
   String frontImage = '';
   String backImage = '';
+  bool _frontImageError = false;
+  bool _backImageError = false;
   final DriverLicenseController controller = Get.put(DriverLicenseController());
   final TextEditingController driverLicense = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
@@ -144,14 +147,18 @@ class _DriverLicenseState extends State<DriverLicense> {
                                     if (path.isNotEmpty) {
                                       setState(() {
                                         frontImage = path;
+                                        _frontImageError = false;
                                       });
                                     }
                                   },
                                   child: DottedBorder(
                                     options: RoundedRectDottedBorderOptions(
-                                      color: const Color(
-                                        0xff666666,
-                                      ).withOpacity(0.3),
+                                      color:
+                                          _frontImageError
+                                              ? AppColors.errorRed
+                                              : const Color(
+                                                0xff666666,
+                                              ).withOpacity(0.3),
                                       radius: const Radius.circular(10),
                                       dashPattern: const [7, 4],
                                       strokeWidth: 1.5,
@@ -267,14 +274,18 @@ class _DriverLicenseState extends State<DriverLicense> {
                                     if (path.isNotEmpty) {
                                       setState(() {
                                         backImage = path;
+                                        _backImageError = false;
                                       });
                                     }
                                   },
                                   child: DottedBorder(
                                     options: RoundedRectDottedBorderOptions(
-                                      color: const Color(
-                                        0xff666666,
-                                      ).withOpacity(0.3),
+                                      color:
+                                          _backImageError
+                                              ? AppColors.errorRed
+                                              : const Color(
+                                                0xff666666,
+                                              ).withOpacity(0.3),
                                       radius: const Radius.circular(10),
                                       dashPattern: const [7, 4],
                                       strokeWidth: 1.5,
@@ -363,12 +374,42 @@ class _DriverLicenseState extends State<DriverLicense> {
                     Buttons.button(
                       buttonColor: AppColors.commonBlack,
                       onTap: () async {
+                        final ok = await NetworkActionGuard.ensureOnline(
+                          context: context,
+                          title: 'Internet required',
+                          message:
+                              'Please connect to the internet to continue onboarding.',
+                        );
+                        if (!ok) return;
                         if (_isButtonDisabled) return;
 
                         setState(() {
                           _isButtonDisabled = true;
                         });
-                        if (_formKey.currentState!.validate()) {
+                        final valid = _formKey.currentState!.validate();
+
+                        final hasFront =
+                            frontImage.isNotEmpty ||
+                            controller.frontImageUrl.value.isNotEmpty;
+                        final hasBack =
+                            backImage.isNotEmpty ||
+                            controller.backImageUrl.value.isNotEmpty;
+
+                        if (!hasFront || !hasBack) {
+                          setState(() {
+                            _frontImageError = !hasFront;
+                            _backImageError = !hasBack;
+                          });
+                          CustomSnackBar.showError(
+                            !hasFront && !hasBack
+                                ? 'Please upload front and back of ID card'
+                                : !hasFront
+                                ? 'Please upload front of ID card'
+                                : 'Please upload back of ID card',
+                          );
+                        }
+
+                        if (valid && hasFront && hasBack) {
                           await controller.driverLicense(
                             fromCompleteScreen: widget.fromCompleteScreens,
                             context,

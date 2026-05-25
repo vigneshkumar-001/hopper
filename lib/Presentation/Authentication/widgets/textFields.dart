@@ -37,10 +37,10 @@ class CustomTextfield {
 
           autovalidateMode: AutovalidateMode.onUserInteraction,
           onChanged: (value) {
-            // Call the passed onChanged if exists
-            // if (onChanged != null) onChanged(value);
-            // // Then trigger form validation if formKey is provided
-            // formKey?.currentState?.validate();
+            // Call the passed onChanged if exists.
+            if (onChanged != null) onChanged(value);
+            // Trigger form validation if a formKey is provided.
+            formKey?.currentState?.validate();
           },
           inputFormatters: inputFormatters,
           keyboardType: type,

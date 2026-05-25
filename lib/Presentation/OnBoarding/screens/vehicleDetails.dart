@@ -23,6 +23,7 @@ import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
 import 'package:hopper/utils/imagePath/imagePath.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:get/get.dart';
+import 'package:hopper/utils/netWorkHandling/network_action_guard.dart';
 
 class VehicleDetails extends StatefulWidget {
   final bool fromCompleteScreens;
@@ -35,6 +36,8 @@ class VehicleDetails extends StatefulWidget {
 class _VehicleDetailsState extends State<VehicleDetails> {
   String frontImage = '';
   String backImage = '';
+  bool _frontImageError = false;
+  bool _backImageError = false;
   String serviceType = '';
   final VehicleDetailsController controller = Get.put(
     VehicleDetailsController(),
@@ -351,14 +354,18 @@ class _VehicleDetailsState extends State<VehicleDetails> {
                                     if (path.isNotEmpty) {
                                       setState(() {
                                         frontImage = path;
+                                        _frontImageError = false;
                                       });
                                     }
                                   },
                                   child: DottedBorder(
                                     options: RoundedRectDottedBorderOptions(
-                                      color: const Color(
-                                        0xff666666,
-                                      ).withOpacity(0.3),
+                                      color:
+                                          _frontImageError
+                                              ? AppColors.errorRed
+                                              : const Color(
+                                                0xff666666,
+                                              ).withOpacity(0.3),
                                       radius: const Radius.circular(10),
                                       dashPattern: const [7, 4],
                                       strokeWidth: 1.5,
@@ -467,14 +474,18 @@ class _VehicleDetailsState extends State<VehicleDetails> {
                                     if (path.isNotEmpty) {
                                       setState(() {
                                         backImage = path;
+                                        _backImageError = false;
                                       });
                                     }
                                   },
                                   child: DottedBorder(
                                     options: RoundedRectDottedBorderOptions(
-                                      color: const Color(
-                                        0xff666666,
-                                      ).withOpacity(0.3),
+                                      color:
+                                          _backImageError
+                                              ? AppColors.errorRed
+                                              : const Color(
+                                                0xff666666,
+                                              ).withOpacity(0.3),
                                       radius: const Radius.circular(10),
                                       dashPattern: const [7, 4],
                                       strokeWidth: 1.5,
@@ -596,7 +607,37 @@ class _VehicleDetailsState extends State<VehicleDetails> {
                       Buttons.button(
                         buttonColor: AppColors.commonBlack,
                         onTap: () async {
-                          if (_formKey.currentState!.validate()) {
+                          final ok = await NetworkActionGuard.ensureOnline(
+                            context: context,
+                            title: 'Internet required',
+                            message:
+                                'Please connect to the internet to continue onboarding.',
+                          );
+                          if (!ok) return;
+                          final valid = _formKey.currentState!.validate();
+
+                          final hasFront =
+                              frontImage.isNotEmpty ||
+                              controller.frontImageUrl.value.isNotEmpty;
+                          final hasBack =
+                              backImage.isNotEmpty ||
+                              controller.backImageUrl.value.isNotEmpty;
+
+                          if (!hasFront || !hasBack) {
+                            setState(() {
+                              _frontImageError = !hasFront;
+                              _backImageError = !hasBack;
+                            });
+                            CustomSnackBar.showError(
+                              !hasFront && !hasBack
+                                  ? 'Please upload front and back photos'
+                                  : !hasFront
+                                  ? 'Please upload front photo'
+                                  : 'Please upload back photo',
+                            );
+                          }
+
+                          if (valid && hasFront && hasBack) {
                             await controller.vehicleDetails(
                               frontImageFile:
                                   frontImage.isNotEmpty

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:get/get.dart';
@@ -48,6 +49,36 @@ class _TakePictureState extends State<TakePicture> {
     _initializeCamera();
   }
 
+  void _showMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger != null) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: isError ? Colors.red : Colors.black87,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      return;
+    }
+
+    // Fallback (should be rare). Avoid crashing when no Overlay exists.
+    try {
+      Get.snackbar(
+        isError ? "Error" : "Info",
+        message,
+        snackPosition: SnackPosition.TOP,
+        backgroundColor: isError ? Colors.red : Colors.black87,
+        colorText: Colors.white,
+      );
+    } catch (_) {
+      // ignore
+    }
+  }
+
   Future<void> _retakePicture() async {
     _capturedImage = null;
     _isFaceDetected = false;
@@ -56,26 +87,30 @@ class _TakePictureState extends State<TakePicture> {
   }
 
   Future<void> _initializeCamera() async {
-    final status = await Permission.camera.request();
-    if (!status.isGranted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Camera permission denied')));
-      return;
+    try {
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        _showMessage('Camera permission denied', isError: true);
+        return;
+      }
+
+      final cameras = await availableCameras();
+      final frontCamera = cameras.firstWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+
+      _cameraController = CameraController(frontCamera, ResolutionPreset.medium);
+
+      await _cameraController!.initialize();
+      if (!mounted) return;
+      setState(() => _isCameraInitialized = true);
+
+      _cameraController!.startImageStream(_processCameraImage);
+    } catch (e) {
+      CommonLogger.log.w("Camera init error: $e");
+      _showMessage('Unable to open camera. Please try again.', isError: true);
     }
-
-    final cameras = await availableCameras();
-    final frontCamera = cameras.firstWhere(
-      (camera) => camera.lensDirection == CameraLensDirection.front,
-      orElse: () => cameras.first,
-    );
-
-    _cameraController = CameraController(frontCamera, ResolutionPreset.medium);
-
-    await _cameraController!.initialize();
-    setState(() => _isCameraInitialized = true);
-
-    _cameraController!.startImageStream(_processCameraImage);
   }
 
   void _processCameraImage(CameraImage image) async {
@@ -107,53 +142,54 @@ class _TakePictureState extends State<TakePicture> {
     if (_cameraController == null || !_cameraController!.value.isInitialized)
       return;
 
-    final XFile picture = await _cameraController!.takePicture();
-    final inputImage = InputImage.fromFilePath(picture.path);
-    final faces = await _faceDetector.processImage(inputImage);
+    try {
+      final XFile picture = await _cameraController!.takePicture();
+      final inputImage = InputImage.fromFilePath(picture.path);
+      final faces = await _faceDetector.processImage(inputImage);
 
-    if (faces.isEmpty) {
-      File(picture.path).delete();
-      Get.snackbar(
-        "Info",
-        "No face detected. Please try again.",
-        snackPosition: SnackPosition.TOP,
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
-      return;
-    }
+      if (faces.isEmpty) {
+        File(picture.path).delete();
+        HapticFeedback.lightImpact();
+        _showMessage("No face detected. Please try again.", isError: true);
+        return;
+      }
 
-    final face = faces.first;
-    final boundingBox = face.boundingBox;
-    final previewSize = _cameraController!.value.previewSize!;
-    final imageWidth = previewSize.height;
-    final imageHeight = previewSize.width;
+      final face = faces.first;
+      final boundingBox = face.boundingBox;
+      final previewSize = _cameraController!.value.previewSize!;
+      final imageWidth = previewSize.height;
+      final imageHeight = previewSize.width;
 
-    bool isFaceWellCentered =
-        boundingBox.left > imageWidth * 0.1 &&
-        boundingBox.right < imageWidth * 0.9 &&
-        boundingBox.top > imageHeight * 0.2 &&
-        boundingBox.bottom < imageHeight * 0.8;
+      bool isFaceWellCentered =
+          boundingBox.left > imageWidth * 0.1 &&
+          boundingBox.right < imageWidth * 0.9 &&
+          boundingBox.top > imageHeight * 0.2 &&
+          boundingBox.bottom < imageHeight * 0.8;
 
-    bool isFaceBigEnough =
-        boundingBox.height > imageHeight * 0.4 &&
-        boundingBox.width > imageWidth * 0.4;
+      bool isFaceBigEnough =
+          boundingBox.height > imageHeight * 0.4 &&
+          boundingBox.width > imageWidth * 0.4;
 
-    if (isFaceWellCentered && isFaceBigEnough) {
-      setState(() {
-        _capturedImage = File(picture.path);
-        _isFaceDetected = true;
-      });
-      _cameraController!.dispose();
-    } else {
-      File(picture.path).delete();
-      Get.snackbar(
-        "Info",
-        "Ensure your full face is visible and properly centered.",
-        snackPosition: SnackPosition.TOP,
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
+      if (isFaceWellCentered && isFaceBigEnough) {
+        HapticFeedback.mediumImpact(); // "vibrate" feedback on successful capture
+        if (!mounted) return;
+        setState(() {
+          _capturedImage = File(picture.path);
+          _isFaceDetected = true;
+        });
+        _cameraController!.dispose();
+      } else {
+        File(picture.path).delete();
+        HapticFeedback.lightImpact();
+        _showMessage(
+          "Ensure your full face is visible and properly centered.",
+          isError: true,
+        );
+      }
+    } catch (e) {
+      CommonLogger.log.w("Take picture error: $e");
+      HapticFeedback.lightImpact();
+      _showMessage("Unable to capture selfie. Please try again.", isError: true);
     }
   }
 

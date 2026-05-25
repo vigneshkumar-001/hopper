@@ -12,6 +12,7 @@ import 'ninScreens.dart';
 
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
 import 'package:get/get.dart';
+import 'package:hopper/utils/netWorkHandling/network_action_guard.dart';
 
 class ProfilePicAccess extends StatefulWidget {
   const ProfilePicAccess({super.key});
@@ -103,7 +104,14 @@ class _ProfilePicAccessState extends State<ProfilePicAccess> {
               Spacer(),
               Buttons.button(
                 buttonColor: AppColors.commonBlack,
-                onTap: () {
+                onTap: () async {
+                  final ok = await NetworkActionGuard.ensureOnline(
+                    context: context,
+                    title: 'Internet required',
+                    message:
+                        'Please connect to the internet to continue onboarding.',
+                  );
+                  if (!ok) return;
                   CustomSnackBar.showInfo('Please take Selfie');
                   // Navigator.push(
                   //   context,

@@ -9,6 +9,7 @@ import 'package:hopper/Core/Constants/texts.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/ModelBottomSheet.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/basicInfo_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/chooseService.dart';
@@ -21,6 +22,7 @@ import 'package:hopper/Presentation/OnBoarding/widgets/bottomNavigation.dart';
 import 'package:hopper/Presentation/OnBoarding/widgets/linearProgress.dart';
 import 'package:get/get.dart';
 import 'package:country_picker/country_picker.dart';
+import 'package:hopper/utils/netWorkHandling/network_action_guard.dart';
 
 import '../../Authentication/controller/authController.dart';
 
@@ -63,6 +65,27 @@ class _BasicInfoState extends State<BasicInfo> {
     userController.getUserDetails();
     controller.fetchAndSetUserData();
     authController.resetPhoneInputToDefault(clearMobileNumber: false);
+    controller.emailController.addListener(_onEmailChanged);
+  }
+
+  void _onEmailChanged() {
+    final current = controller.emailController.text.trim();
+    final verified = otpController.verifiedEmail.value.trim();
+    if (!otpController.isEmailVerified.value) return;
+
+    // If the email changed (or we somehow don't know which email was verified),
+    // revert to "Verify" state.
+    final bool mismatch = verified.isEmpty || current != verified;
+    if (mismatch || current.isEmpty) {
+      otpController.isEmailVerified.value = false;
+      otpController.verifiedEmail.value = '';
+    }
+  }
+
+  @override
+  void dispose() {
+    controller.emailController.removeListener(_onEmailChanged);
+    super.dispose();
   }
 
   void _handleBack() {
@@ -199,6 +222,10 @@ class _BasicInfoState extends State<BasicInfo> {
                             controller: controller.emailController,
                             tittle: 'Your email',
                             hintText: 'Enter your email id',
+                            onChanged: (v) {
+                              controller.emailInput.value = v.trim();
+                              _onEmailChanged();
+                            },
                             validator: (value) {
                               if (value == null || value.isEmpty) {
                                 return 'Please enter your email Id';
@@ -225,8 +252,12 @@ class _BasicInfoState extends State<BasicInfo> {
 
                                 final bool isLoading =
                                     authController.isLoading.value;
+                                final currentEmail =
+                                    controller.emailInput.value.trim();
                                 final bool isEmailVerified =
-                                    otpController.isEmailVerified.value;
+                                    otpController.isEmailVerified.value &&
+                                    otpController.verifiedEmail.value.trim() ==
+                                        currentEmail;
 
                                 return Container(
                                   margin: const EdgeInsets.symmetric(
@@ -238,24 +269,46 @@ class _BasicInfoState extends State<BasicInfo> {
                                   ),
                                   child: TextButton(
                                     onPressed:
-                                        otpController.isVerified.value
+                                        isLoading
                                             ? null
                                             : () async {
-                                              await authController
-                                                  .emailLoginOtp(
-                                                    context,
-                                                    controller
-                                                        .emailController
-                                                        .text,
-                                                    type: 'basicInfo',
-                                                  );
+                                              final email =
+                                                  controller.emailController.text.trim();
+                                              final alreadyVerified =
+                                                  otpController.isEmailVerified.value &&
+                                                  otpController.verifiedEmail.value.trim() ==
+                                                      email;
+                                              if (alreadyVerified) return;
+
+                                              if (!authController.isValidEmail(email)) {
+                                                CustomSnackBar.showError(
+                                                  email.isEmpty
+                                                      ? 'Please enter your email address'
+                                                      : 'Please enter a valid email address',
+                                                );
+                                                return;
+                                              }
+
+                                              await authController.emailLoginOtp(
+                                                context,
+                                                email,
+                                                type: 'basicInfo',
+                                              );
                                             },
                                     child:
                                         isLoading
-                                            ? const HopprCircularLoader(
-                                              radius: 10,
-                                              size: 20,
-                                              color: Colors.white,
+                                            ? const SizedBox(
+                                              width: 22,
+                                              height: 22,
+                                              child: Center(
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2.5,
+                                                  valueColor:
+                                                      AlwaysStoppedAnimation<Color>(
+                                                        Colors.white,
+                                                      ),
+                                                ),
+                                              ),
                                             )
                                             : isEmailVerified
                                             ? const Icon(
@@ -478,6 +531,13 @@ class _BasicInfoState extends State<BasicInfo> {
                       ),
                     ),
             onTap: () async {
+              final ok = await NetworkActionGuard.ensureOnline(
+                context: context,
+                title: 'Internet required',
+                message:
+                    'Please connect to the internet to continue onboarding.',
+              );
+              if (!ok) return;
               if (isFromGoogleSignIn == true) {
                 final countryCode =
                     authController.countryCodeController.text ?? '';

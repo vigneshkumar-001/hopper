@@ -39,6 +39,14 @@ class AuthController extends GetxController {
     super.onInit();
   }
 
+  bool isValidEmail(String input) {
+    final email = input.trim();
+    if (email.isEmpty) return false;
+    // Simple, strict-enough validation for user input (no spaces, has @ and domain).
+    final emailRegex = RegExp(r'^[\w\.\-\+]+@([\w\-]+\.)+[\w\-]{2,}$');
+    return emailRegex.hasMatch(email);
+  }
+
   void resetPhoneInputToDefault({bool clearMobileNumber = true}) {
     selectedCountryCode.value = kDefaultCountryCode;
     countryCodeController.text = kDefaultCountryCode;
@@ -182,9 +190,19 @@ class AuthController extends GetxController {
     String email, {
     String? type,
   }) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) {
+      CustomSnackBar.showError('Please enter your email address');
+      return '';
+    }
+    if (!isValidEmail(trimmed)) {
+      CustomSnackBar.showError('Please enter a valid email address');
+      return '';
+    }
+
     isLoading.value = true;
     try {
-      final results = await apiDataSource.emailLogin(email);
+      final results = await apiDataSource.emailLogin(trimmed);
       results.fold(
         (failure) {
           CustomSnackBar.showError(failure.message);
@@ -200,9 +218,9 @@ class AuthController extends GetxController {
               builder:
                   (context) => OtpScreens(
                     emailVerify: 'Email',
-                    mobileNumber: email,
+                    mobileNumber: trimmed,
                     type: 'basicInfo',
-                    email: email,
+                    email: trimmed,
                   ),
             ),
           );

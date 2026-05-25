@@ -12,6 +12,7 @@ class InteriorImageController extends GetxController {
   String accessToken = '';
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
+  final RxBool isSubmitting = false.obs;
   RxList<String?> _selectedImages = List<String?>.filled(6, null).obs;
   List<String?> get selectedImages => _selectedImages;
 
@@ -26,7 +27,7 @@ class InteriorImageController extends GetxController {
     required BuildContext context,
     bool fromCompleteScreen = false,
   }) async {
-    isLoading.value = true;
+    isSubmitting.value = true;
 
     List<String> uploadedUrls = [];
 
@@ -36,7 +37,7 @@ class InteriorImageController extends GetxController {
       if (pathOrUrl == null || pathOrUrl.isEmpty) {
         // Missing image error
         CustomSnackBar.showError("Please upload all required images.");
-        isLoading.value = false;
+        isSubmitting.value = false;
         return;
       }
 
@@ -57,7 +58,7 @@ class InteriorImageController extends GetxController {
         }, (success) => success.message);
 
         if (url == null) {
-          isLoading.value = false;
+          isSubmitting.value = false;
           return; // Stop on failure
         }
         uploadedUrls.add(url);
@@ -86,7 +87,7 @@ class InteriorImageController extends GetxController {
       },
     );
 
-    isLoading.value = false;
+    isSubmitting.value = false;
   }
 
   Future<void> fetchAndSetUserData() async {

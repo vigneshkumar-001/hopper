@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/utils/ride_map/map_ui_config.dart';
 
 enum HopprVehicleType { car, bike, packageBike, unknown }
 
@@ -46,39 +47,17 @@ class HopprVehicleMarkerIcon {
     return views.first.devicePixelRatio;
   }
 
-  static double _logicalShortestSide() {
-    final views = WidgetsBinding.instance.platformDispatcher.views;
-    if (views.isEmpty) return 390.0;
-    final view = views.first;
-    final dpr = view.devicePixelRatio == 0 ? 2.0 : view.devicePixelRatio;
-    final shortestPx = math.min(
-      view.physicalSize.width,
-      view.physicalSize.height,
-    );
-    return shortestPx / dpr;
-  }
-
-  static double _uiScale() {
-    // Keep consistent across phones, slightly larger on tablets.
-    final logicalShortest = _logicalShortestSide();
-    return (logicalShortest / 390.0).clamp(0.95, 1.15);
-  }
-
   static ImageConfiguration _imageConfigForVehicleType(HopprVehicleType type) {
     final dpr = _devicePixelRatio();
-    final scale = _uiScale();
-
-    // Map markers need a bit more pixels than UI icons for crispness.
-    // Keep width compact but allow extra height to preserve the car/bike shape.
-    // Current assets render large on the home map; keep closer to Uber/Ola/Rapido
-    // marker footprint.
-    const markerScaleFactor = 1.0;
 
     final bool isBike =
         type == HopprVehicleType.bike || type == HopprVehicleType.packageBike;
 
-    final width = (isBike ? 20.0 : 18.0) * scale * markerScaleFactor;
-    final height = (isBike ? 34.0 : 38.0) * scale * markerScaleFactor;
+    // IMPORTANT: Fixed logical size everywhere (no device-size scaling) so bike/car
+    // marker footprint stays consistent across all screens.
+    final logical = isBike ? MapUiConfig.bikeMarkerSize : MapUiConfig.carMarkerSize;
+    final width = logical;
+    final height = logical;
 
     return ImageConfiguration(size: Size(width, height), devicePixelRatio: dpr);
   }

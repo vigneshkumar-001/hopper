@@ -10,8 +10,6 @@ import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
-import 'package:hopper/utils/map/shared_map.dart';
-import 'package:hopper/utils/map/ride_route_overlays.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/map/driver_message_suggestions.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
@@ -19,13 +17,13 @@ import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
+import 'package:hopper/utils/ride_map/ride_map_view.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../controller/ride_starts_controller.dart';
 import 'cash_collected_screen.dart';
 
 class RideStatsScreen extends StatelessWidget {
-  final GlobalKey<SharedMapState> _mapKey = GlobalKey<SharedMapState>();
   final String bookingId;
   final String? pickupAddress;
   final String? dropAddress;
@@ -36,17 +34,6 @@ class RideStatsScreen extends StatelessWidget {
     this.pickupAddress,
     this.dropAddress,
   });
-
-  static Widget _roundIconBox(String asset) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.commonBlack.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(30),
-      ),
-      padding: const EdgeInsets.all(10),
-      child: Image.asset(asset, height: 25, width: 25),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -96,57 +83,24 @@ class RideStatsScreen extends StatelessWidget {
                   final toRaw = c.bookingToLocation.value;
                   final to = c.adjustedDropLocation.value ?? toRaw;
 
-                  final markers = <Marker>{
-                    if (c.movingMarker.value != null)
-                      c.movingMarker.value!
-                    else if (c.driverLocation.value != null)
-                      Marker(
-                        markerId: const MarkerId('driver'),
-                        position: c.driverLocation.value!,
-                        icon: c.carIcon.value ?? BitmapDescriptor.defaultMarker,
-                        anchor: const Offset(0.5, 0.5),
-                        flat: true,
-                        rotation: c.currentBearing.value,
-                      ),
-                    // Keep a hidden destination marker so fit-to-bounds works,
-                    // but the UI stays clean (we render a custom indicator via circles).
-                    if (to != null)
-                      Marker(
-                        markerId: const MarkerId('dest_bounds'),
-                        position: to,
-                        visible: false,
-                        infoWindow: InfoWindow.noText,
-                      ),
-                    ...c.maneuverMarkers,
-                  };
-
                   final initialPos = from ?? to ?? const LatLng(0, 0);
+                  if (to != null) {
+                    c.rideMap.setPickupDrop(drop: to);
+                    c.rideMap.setNavigationDestination(to, driverFriendlyStop: true);
+                  }
+                  c.rideMap.setBottomSheetHeight(c.driverCompletedRide.value ? 350.0 : 270.0);
 
-                  return SharedMap(
-                    key: _mapKey,
+                  return RideMapView(
+                    controller: c.rideMap,
                     initialPosition: initialPos,
-                    pickupPosition: to,
-                    pickupIndicatorStyle: PickupIndicatorStyle.pulse,
-                    pickupIndicatorColor: const Color(0xFF00A85E),
-                    pickupTargetColor: AppColors.commonBlack,
                     myLocationEnabled: false,
                     fitToBounds: true,
                     trafficEnabled: false,
                     compassEnabled: false,
+                    onUserCameraMoveStarted: c.onUserMapMoveStarted,
                     onMapCreated: (controller) {
                       c.attachMap(controller);
                     },
-                    onCameraMoveStarted: c.onUserMapMoveStarted,
-                    markers: markers,
-                    polylines:
-                        to == null
-                            ? const <Polyline>{}
-                            : RideRouteOverlays.buildRoutePolylines(
-                              routePoints: c.polylinePoints,
-                              origin: from ?? to,
-                              destination: to,
-                              idPrefix: 'route_ride',
-                            ),
                   );
                 }),
               ),
@@ -210,28 +164,10 @@ class RideStatsScreen extends StatelessWidget {
                         () => MapFocusToggleButton(
                           isDriverFocused: c.isDriverFocused.value,
                           onFocusDriver: () {
-                            final ms = _mapKey.currentState;
-                            if (ms == null) {
-                              c.focusDriverMarker(zoom: 17.2);
-                              return;
-                            }
-                            ms.pauseAutoFollow(const Duration(seconds: 4));
-                            ms.focusDriver(
-                              zoom: 17.2,
-                              tilt: 0,
-                              bearingEnabled: true,
-                            );
+                            c.focusDriverMarker(zoom: 17.2);
                           },
                           onFitBounds: () {
-                            final ms = _mapKey.currentState;
-                            if (ms == null) return;
-                            ms.pauseAutoFollow(const Duration(seconds: 4));
-                            final pts = c.polylinePoints.toList();
-                            if (pts.length >= 2) {
-                              ms.fitPolylineBounds(pts);
-                            } else {
-                              ms.fitRouteBounds();
-                            }
+                            c.focusRouteOverview();
                           },
                           onDriverFocusedChanged: c.setDriverFocused,
                         ),
@@ -252,84 +188,186 @@ class RideStatsScreen extends StatelessWidget {
                   minChildSize: completed ? 0.25 : 0.40,
                   maxChildSize: completed ? 0.30 : 0.75,
                   builder: (context, scrollController) {
-                    return Container(
-                      color: Colors.white,
+                    return DecoratedBox(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(22),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x22000000),
+                            blurRadius: 18,
+                            offset: Offset(0, -6),
+                          ),
+                        ],
+                      ),
                       child: ListView(
                         controller: scrollController,
                         physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.only(bottom: 18),
                         children: [
+                          const SizedBox(height: 10),
                           Center(
                             child: Container(
-                              width: 60,
+                              width: 44,
                               height: 5,
                               decoration: BoxDecoration(
-                                color: Colors.grey[400],
+                                color: const Color(0xFFE5E7EB),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 14),
 
                           if (!completed) ...[
-                            Container(
-                              color: AppColors.rideInProgress.withOpacity(0.1),
-                              padding: const EdgeInsets.all(15),
-                              child: Center(
-                                child: CustomTextfield.textWithStyles600(
-                                  fontSize: 14,
-                                  color: AppColors.rideInProgress,
-                                  'Ride in Progress',
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.rideInProgress
+                                        .withOpacity(0.10),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: AppColors.rideInProgress
+                                          .withOpacity(0.20),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        height: 8,
+                                        width: 8,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.rideInProgress,
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Ride in Progress',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.rideInProgress,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 14),
 
-                            // Call + Chat (same UX as pickup screen)
-                            Obx(() {
-                              final phone = c.customerPhone.value.trim();
-                              return ListTile(
-                                leading: GestureDetector(
-                                  onTap: () async {
-                                    if (phone.isEmpty) return;
-                                    final url = Uri.parse('tel:$phone');
-                                    if (await canLaunchUrl(url)) {
-                                      await launchUrl(url);
-                                    }
-                                  },
-                                  child: _roundIconBox(AppImages.call),
-                                ),
-                                trailing: GestureDetector(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder:
-                                            (_) => ChatScreen(
-                                              bookingId: bookingId,
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    height: 44,
+                                    width: 44,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF3F4F6),
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: Obx(() {
+                                      final url = c.profilePic.value.trim();
+                                      if (url.isEmpty) {
+                                        return const Icon(
+                                          Icons.person_rounded,
+                                          color: Color(0xFF6B7280),
+                                        );
+                                      }
+                                      return CachedNetworkImage(
+                                        imageUrl: url,
+                                        fit: BoxFit.cover,
+                                        errorWidget: (_, __, ___) =>
+                                            const Icon(
+                                              Icons.person_rounded,
+                                              color: Color(0xFF6B7280),
                                             ),
-                                      ),
+                                      );
+                                    }),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Obx(
+                                          () => Text(
+                                            c.custName.value.trim().isEmpty
+                                                ? 'Rider'
+                                                : c.custName.value.trim(),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w800,
+                                              color: Color(0xFF111827),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Dropping off passenger',
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.textColorGrey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Obx(() {
+                                    final phone = c.customerPhone.value.trim();
+                                    return _ActionIconButton(
+                                      icon: Icons.call_rounded,
+                                      color: const Color(0xFF00A85E),
+                                      onTap: () async {
+                                        if (phone.isEmpty) return;
+                                        final url = Uri.parse('tel:$phone');
+                                        if (await canLaunchUrl(url)) {
+                                          await launchUrl(url);
+                                        }
+                                      },
                                     );
-                                  },
-                                  child: _roundIconBox(AppImages.msg),
-                                ),
-                                title: Center(
-                                  child: CustomTextfield.textWithStyles600(
-                                    c.custName.value.trim().isEmpty
-                                        ? 'Rider'
-                                        : c.custName.value.trim(),
-                                    fontSize: 18,
+                                  }),
+                                  const SizedBox(width: 10),
+                                  _ActionIconButton(
+                                    icon: Icons.chat_bubble_rounded,
+                                    color: const Color(0xFF111827),
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder:
+                                              (_) => ChatScreen(
+                                                bookingId: bookingId,
+                                              ),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                ),
-                                subtitle: Center(
-                                  child: CustomTextfield.textWithStylesSmall(
-                                    'Tap to call or chat',
-                                    fontSize: 13,
-                                    colors: AppColors.textColorGrey,
-                                  ),
-                                ),
-                              );
-                            }),
-                            const SizedBox(height: 6),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
 
                             Obx(() {
                               final eta =
@@ -398,48 +436,38 @@ class RideStatsScreen extends StatelessWidget {
                             }),
                             const SizedBox(height: 10),
 
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Obx(
-                                  () => CustomTextfield.textWithStyles600(
-                                    c.formatDuration(
-                                      driverStatusController
-                                          .dropDurationInMin
-                                          .value,
-                                    ),
-                                    fontSize: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Icon(
-                                  Icons.circle,
-                                  color: AppColors.drkGreen,
-                                  size: 10,
-                                ),
-                                const SizedBox(width: 10),
-                                Obx(
-                                  () => CustomTextfield.textWithStyles600(
-                                    c.formatDistance(
-                                      driverStatusController
-                                          .dropDistanceInMeters
-                                          .value,
-                                    ),
-                                    fontSize: 20,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Center(
-                              child: CustomTextfield.textWithStylesSmall(
-                                'Dropping off ${c.custName.value}',
-                              ),
-                            ),
-
+                            const SizedBox(height: 10),
                             Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child: Obx(() {
+                                final eta = c.formatDuration(
+                                  driverStatusController.dropDurationInMin.value,
+                                );
+                                final dist = c.formatDistance(
+                                  driverStatusController
+                                      .dropDistanceInMeters
+                                      .value,
+                                );
+                                return Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      '$eta • $dist',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF111827),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }),
+                            ),
+                            const SizedBox(height: 14),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
                               child: _rideDetails(
                                 context: context,
                                 c: c,
@@ -773,6 +801,36 @@ class RideStatsScreen extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ActionIconButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ActionIconButton({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        height: 44,
+        width: 44,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0x1A111827)),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
     );
   }
 }

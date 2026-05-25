@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import '../../../Core/Constants/texts.dart';
@@ -13,6 +14,7 @@ import '../../Authentication/widgets/textFields.dart';
 import '../widgets/bottomNavigation.dart';
 import '../widgets/linearProgress.dart';
 import 'package:get/get.dart';
+import 'package:hopper/utils/netWorkHandling/network_action_guard.dart';
 
 class DriverAddress extends StatefulWidget {
   final bool fromCompleteScreens;
@@ -155,6 +157,9 @@ class _DriverAddressState extends State<DriverAddress> {
                       return null;
                     },
                     type: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                    ],
 
                     controller: controller.postController,
                     tittle: 'Post Code',
@@ -180,6 +185,13 @@ class _DriverAddressState extends State<DriverAddress> {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
           onTap: () async {
+            final ok = await NetworkActionGuard.ensureOnline(
+              context: context,
+              title: 'Internet required',
+              message:
+                  'Please connect to the internet to continue onboarding.',
+            );
+            if (!ok) return;
             if (_formKey.currentState!.validate()) {
               await controller.driverDetails(
                 context,

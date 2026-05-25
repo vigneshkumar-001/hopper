@@ -20,6 +20,8 @@ import '../../../utils/imagePath/imagePath.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:get/get.dart';
+import 'package:hopper/utils/netWorkHandling/network_action_guard.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 class UploadExteriorPhotos extends StatefulWidget {
   final bool fromCompleteScreens;
@@ -33,7 +35,6 @@ class _UploadExteriorPhotosState extends State<UploadExteriorPhotos> {
   final ExteriorImageController controller = Get.put(ExteriorImageController());
   final ChooseServiceController getUserDetails = Get.find();
   String serviceType = '';
-  bool isButtonDisabled = false;
   // final List<String> photoLabels = [
   //   "exterior-photos-i",
   //   "exterior-photos-ii",
@@ -159,9 +160,6 @@ class _UploadExteriorPhotosState extends State<UploadExteriorPhotos> {
                                           if (path.isNotEmpty) {
                                             controller.selectedImages[index] =
                                                 path;
-                                            setState(() {
-                                              isButtonDisabled = false;
-                                            });
                                           }
                                         }
                                       },
@@ -222,10 +220,6 @@ class _UploadExteriorPhotosState extends State<UploadExteriorPhotos> {
                                         onTap: () {
                                           controller.selectedImages[index] =
                                               null;
-                                          setState(() {
-                                            isButtonDisabled =
-                                                false; // re-enable button
-                                          });
                                         },
                                         child: Container(
                                           decoration: const BoxDecoration(
@@ -279,50 +273,52 @@ class _UploadExteriorPhotosState extends State<UploadExteriorPhotos> {
       //   },
       //   title: 'Save & Next',
       // ),
-      bottomNavigationBar:
-          controller.isLoading.value
-              ? null
-              : CustomBottomNavigation.bottomNavigation(
-                buttonColor:
-                    isButtonDisabled
-                        ? Colors.grey
-                        : controller.selectedImages.every(
-                          (img) => img != null && img.isNotEmpty,
-                        )
-                        ? AppColors.commonBlack
-                        : AppColors.containerColor,
-                onTap:
-                    isButtonDisabled
-                        ? null
-                        : () async {
-                          final selectedImages = controller.selectedImages;
-                          final allSelected = selectedImages.every(
-                            (img) => img != null && img.isNotEmpty,
-                          );
+      bottomNavigationBar: Obx(() {
+        final selectedImages = controller.selectedImages;
+        final allSelected = selectedImages.every(
+          (img) => img != null && img.isNotEmpty,
+        );
+        final submitting = controller.isSubmitting.value;
+        final enabled = allSelected && !submitting;
 
-                          if (!allSelected) {
-                            CustomSnackBar.showError(
-                              "Please upload all required images.",
-                            );
-                            return;
-                          }
+        return CustomBottomNavigation.bottomNavigation(
+          buttonColor:
+              enabled ? AppColors.commonBlack : AppColors.containerColor,
+          onTap:
+              enabled
+                  ? () async {
+                    final ok = await NetworkActionGuard.ensureOnline(
+                      context: context,
+                      title: 'Internet required',
+                      message:
+                          'Please connect to the internet to continue onboarding.',
+                    );
+                    if (!ok) return;
 
-                          setState(() {
-                            isButtonDisabled = true;
-                          });
-
-                          await controller.exteriorImageUpload(
-                            serviceType: serviceType,
-                            selectedImages: selectedImages,
-                            context: context,
-                            fromCompleteScreen: widget.fromCompleteScreens,
-                          );
-
-                          // You can re-enable it if needed:
-                          // setState(() => isButtonDisabled = false);
-                        },
-                title: Text('Save & Next'),
-              ),
+                    await controller.exteriorImageUpload(
+                      serviceType: serviceType,
+                      selectedImages: selectedImages,
+                      context: context,
+                      fromCompleteScreen: widget.fromCompleteScreens,
+                    );
+                  }
+                  : () {
+                    if (!allSelected) {
+                      CustomSnackBar.showError(
+                        "Please upload all required images.",
+                      );
+                    }
+                  },
+          title:
+              submitting
+                  ? const HopprCircularLoader(
+                    radius: 10,
+                    size: 22,
+                    color: Colors.white,
+                  )
+                  : const Text('Save & Next'),
+        );
+      }),
     );
   }
 }

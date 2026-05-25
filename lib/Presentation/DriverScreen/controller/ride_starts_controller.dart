@@ -19,10 +19,11 @@ import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/maneuver_markers.dart';
-import 'package:hopper/utils/map/vehicle_marker_icon.dart';
 import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
+import 'package:hopper/utils/ride_map/marker_icon_cache.dart';
+import 'package:hopper/utils/ride_map/ride_map_controller.dart';
 
 class RideStatsController extends GetxController
     with GetSingleTickerProviderStateMixin {
@@ -48,6 +49,9 @@ class RideStatsController extends GetxController
 
   /// ---- map state ----
   GoogleMapController? mapController;
+  final RideMapController rideMap = RideMapController(
+    mode: RideMapMode.dropNavigation,
+  );
 
   final Rxn<LatLng> bookingFromLocation = Rxn<LatLng>();
   final Rxn<LatLng> bookingToLocation = Rxn<LatLng>();
@@ -109,11 +113,8 @@ class RideStatsController extends GetxController
   static const double _MAX_ACCURACY_M = 20.0;
   static const double _MIN_MOVE_METERS = 3.0;
   static const double _MIN_SPEED_MS = 1.0;
-  static const double _STATIONARY_DRIFT_M = 8.0;
   static const double _HEADING_TRUST_MS = 2.0;
   static const double _MIN_TURN_DEG = 10.0;
-  static const double _POLYLINE_TRIM_TOLERANCE_M = 30.0;
-  static const int _POLYLINE_TRIM_LOOKAHEAD_POINTS = 40;
   static const int _OFF_ROUTE_LOOKAHEAD_POINTS = 80;
 
   /// Show "Complete Ride" when within this radius of the drop location.
@@ -145,8 +146,8 @@ class RideStatsController extends GetxController
 
     _markerController.addListener(_onMarkerAnimTick);
 
-    _loadMarkerIcons();
-    _listenServiceTypeForIcon();
+    _applyVehicleType();
+    _listenServiceTypeForVehicle();
     _hydrateFromJoinedData();
     _wireSocketEvents();
     unawaited(_fetchActiveBookingSnapshotIfNeeded());
@@ -166,6 +167,7 @@ class RideStatsController extends GetxController
     } catch (_) {}
     mapController = null;
     _markerController.dispose();
+    rideMap.dispose();
 
     try {
       socketService.socket.off('driver-reached-destination');
@@ -180,21 +182,26 @@ class RideStatsController extends GetxController
 
   // ---------------- ICON ----------------
 
-  Future<void> _loadMarkerIcons() async {
-    try {
-      carIcon.value = await HopprVehicleMarkerIcon.loadForServiceType(
-        driverStatusController.serviceType.value,
-      );
-    } catch (_) {
-      carIcon.value = BitmapDescriptor.defaultMarker;
+  RideVehicleType _vehicleTypeFromServiceType(String raw) {
+    final v = raw.trim().toLowerCase();
+    if (v.contains('package') || v.contains('parcel')) {
+      return RideVehicleType.packageBike;
     }
+    if (v.contains('bike')) return RideVehicleType.bike;
+    return RideVehicleType.car;
   }
 
-  void _listenServiceTypeForIcon() {
+  void _applyVehicleType() {
+    rideMap.setVehicleType(
+      _vehicleTypeFromServiceType(driverStatusController.serviceType.value),
+    );
+  }
+
+  void _listenServiceTypeForVehicle() {
     _serviceTypeWorker?.dispose();
     _serviceTypeWorker = ever<String>(
       driverStatusController.serviceType,
-      (_) async => _loadMarkerIcons(),
+      (_) => _applyVehicleType(),
     );
   }
 
@@ -381,6 +388,11 @@ class RideStatsController extends GetxController
       driverLocation.value = current;
       _lastDriverPosition ??= current;
       _setMarkerImmediate(current, currentBearing.value);
+      rideMap.updateVehicleLocation(
+        current,
+        speedMetersPerSecond: pos.speed.isFinite ? pos.speed : null,
+        headingDeg: pos.heading.isFinite ? pos.heading : null,
+      );
       _setDirectFallbackRoute(current);
       await refreshRouteFrom(current);
     } catch (_) {}
@@ -396,6 +408,9 @@ class RideStatsController extends GetxController
     }
     polylinePoints.assignAll(<LatLng>[from, to]);
     maneuverMarkers.clear();
+    rideMap.setPickupDrop(drop: to);
+    rideMap.setRoutePoints(<LatLng>[from, to]);
+    rideMap.setNavigationDestination(to, driverFriendlyStop: true);
   }
 
   void _restoreCachedRoute() {
@@ -433,6 +448,11 @@ class RideStatsController extends GetxController
     distanceText.value = nextDistance;
     maneuver.value = nextManeuver;
     polylinePoints.assignAll(pts);
+
+    final dest = adjustedDropLocation.value ?? bookingToLocation.value ?? pts.last;
+    rideMap.setPickupDrop(drop: dest);
+    rideMap.setRoutePoints(pts);
+    rideMap.setNavigationDestination(dest, driverFriendlyStop: true);
     final mp = result['maneuverPoints'];
     final maneuverPoints =
         mp is List
@@ -485,6 +505,7 @@ class RideStatsController extends GetxController
       );
       if (isClosed || gen != _maneuverGen) return;
       maneuverMarkers.assignAll(m);
+      rideMap.setOverlays(markers: m.toSet());
     } catch (_) {}
   }
 
@@ -689,6 +710,11 @@ class RideStatsController extends GetxController
         _lastDriverPosition = current;
         driverLocation.value = current;
         _setMarkerImmediate(current, currentBearing.value);
+        rideMap.updateVehicleLocation(
+          current,
+          speedMetersPerSecond: speed.isFinite ? speed : null,
+          headingDeg: heading >= 0 ? heading : null,
+        );
         _setDirectFallbackRoute(current);
         await refreshRouteFrom(current);
         return;
@@ -704,6 +730,11 @@ class RideStatsController extends GetxController
       final significantMove = moved >= _MIN_MOVE_METERS;
       if (!significantMove) {
         _lastDriverPosition = current; // update reference without rotating
+        rideMap.updateVehicleLocation(
+          current,
+          speedMetersPerSecond: speed.isFinite ? speed : null,
+          headingDeg: heading >= 0 ? heading : null,
+        );
         return;
       }
 
@@ -712,6 +743,11 @@ class RideStatsController extends GetxController
         movedMeters: moved,
       )) {
         _lastDriverPosition = current;
+        rideMap.updateVehicleLocation(
+          current,
+          speedMetersPerSecond: speed.isFinite ? speed : null,
+          headingDeg: heading >= 0 ? heading : null,
+        );
         return;
       }
 
@@ -739,12 +775,15 @@ class RideStatsController extends GetxController
         speedMs: speed,
       );
 
-      await animateMarkerTo(current, overrideBearing: targetBearing);
+      currentBearing.value = targetBearing;
+      rideMap.updateVehicleLocation(
+        current,
+        speedMetersPerSecond: speed.isFinite ? speed : null,
+        headingDeg: heading >= 0 ? heading : null,
+      );
 
       _lastDriverPosition = current;
       driverLocation.value = current;
-
-      _trimPolylineAlongProgress(current);
 
       final offRoute = _isOffRoute(current);
       await _throttledRefreshRoute(current, force: offRoute);
@@ -812,22 +851,6 @@ class RideStatsController extends GetxController
     }
   }
 
-  void _trimPolylineAlongProgress(LatLng current) {
-    if (polylinePoints.isEmpty) return;
-
-    final pts = polylinePoints.toList();
-    final idx = _closestPointIndex(
-      current,
-      pts,
-      limit: _POLYLINE_TRIM_LOOKAHEAD_POINTS,
-    );
-    if (idx <= 0) return;
-    final bestDistance = _distanceToPoint(current, pts[idx]);
-    if (bestDistance > _POLYLINE_TRIM_TOLERANCE_M) return;
-
-    final keepFrom = (idx - 1).clamp(0, pts.length - 1);
-    polylinePoints.assignAll(pts.sublist(keepFrom));
-  }
 
   bool _isOffRoute(LatLng current) {
     const toleranceM = 25.0;
@@ -838,21 +861,6 @@ class RideStatsController extends GetxController
       if (d < toleranceM) return false;
     }
     return true;
-  }
-
-  int _closestPointIndex(LatLng pos, List<LatLng> pts, {int? limit}) {
-    double best = double.infinity;
-    int idx = 0;
-    final searchLimit =
-        limit == null ? pts.length : math.min(pts.length, limit);
-    for (int i = 0; i < searchLimit; i++) {
-      final d = _distanceToPoint(pos, pts[i]);
-      if (d < best) {
-        best = d;
-        idx = i;
-      }
-    }
-    return idx;
   }
 
   double _distanceToPoint(LatLng from, LatLng to) {
@@ -994,25 +1002,6 @@ class RideStatsController extends GetxController
     return MapMotionProfile.normalizeAngle(bearing);
   }
 
-  double _shortestAngle(double from, double to) {
-    double diff = (to - from) % 360;
-    if (diff > 180) diff -= 360;
-    return from + diff;
-  }
-
-  double _normalizeAngle(double a) {
-    a %= 360;
-    if (a < 0) a += 360;
-    return a;
-  }
-
-  double _angleDeltaDeg(double a, double b) {
-    double d = (b - a) % 360;
-    if (d > 180) d -= 360;
-    if (d < -180) d += 360;
-    return d.abs();
-  }
-
   void _updateSmartAutoZoom(double speedMs) {
     final targetZoom = MapMotionProfile.targetZoomFromSpeed(
       speedMs,
@@ -1027,6 +1016,7 @@ class RideStatsController extends GetxController
   Future<void> setDriverFocused(bool focused) async {
     isDriverFocused.value = focused;
     autoFollowEnabled.value = focused;
+    rideMap.setAutoFollowEnabled(focused);
     _autoFollowTimer?.cancel();
     if (!focused) {
       await fitBoundsToRoute(force: true);
@@ -1037,6 +1027,7 @@ class RideStatsController extends GetxController
     mapController = controller;
     _isMapActive = true;
     _didInitialRouteFit = false;
+    rideMap.setAutoFollowEnabled(isDriverFocused.value);
     await Future<void>.delayed(const Duration(milliseconds: 250));
     await fitBoundsToRoute(force: true);
   }
@@ -1084,11 +1075,13 @@ class RideStatsController extends GetxController
   void onUserMapMoveStarted() {
     isDriverFocused.value = false;
     autoFollowEnabled.value = false;
+    rideMap.setAutoFollowEnabled(false);
     _autoFollowTimer?.cancel();
     _autoFollowTimer = Timer(const Duration(seconds: 10), () {
       if (isClosed) return;
       isDriverFocused.value = true;
       autoFollowEnabled.value = true;
+      rideMap.setAutoFollowEnabled(true);
     });
   }
 
@@ -1137,6 +1130,7 @@ class RideStatsController extends GetxController
 
     isDriverFocused.value = true;
     autoFollowEnabled.value = true;
+    rideMap.setAutoFollowEnabled(true);
 
     final z = (zoom ?? _followZoom).clamp(_minFollowZoom, _maxFollowZoom);
     await _safeAnimateCamera(
@@ -1149,6 +1143,13 @@ class RideStatsController extends GetxController
         ),
       ),
     );
+  }
+
+  Future<void> focusRouteOverview() async {
+    isDriverFocused.value = false;
+    autoFollowEnabled.value = false;
+    rideMap.setAutoFollowEnabled(false);
+    await fitBoundsToRoute(force: true);
   }
 
   // ---------------- UI HELPERS ----------------

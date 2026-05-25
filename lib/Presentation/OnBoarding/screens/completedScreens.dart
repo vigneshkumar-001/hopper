@@ -353,6 +353,9 @@ class _CompletedScreensState extends State<CompletedScreens> {
   }
 
   void navigateToStep(int index) {
+    final user = controller.userProfile.value;
+    final isBike = user?.serviceType == 'Bike';
+
     switch (index) {
       case 0:
         Get.to(() => BasicInfo(fromCompleteScreens: true));
@@ -361,7 +364,7 @@ class _CompletedScreensState extends State<CompletedScreens> {
         Get.to(() => DriverAddress(fromCompleteScreens: true));
         break;
       case 2:
-        // Get.to(() => TakePicture(fromCompleteScreens: true));
+        Get.to(() => const TakePicture(fromCompleteScreens: true));
         break;
       case 3:
         Get.to(() => NinScreens(fromCompleteScreens: true));
@@ -376,10 +379,13 @@ class _CompletedScreensState extends State<CompletedScreens> {
         Get.to(() => VehicleDetails(fromCompleteScreens: true));
         break;
       case 7:
+        // Bike flow has only one photos step; Car flow has exterior + interior.
         Get.to(() => UploadExteriorPhotos(fromCompleteScreens: true));
         break;
       case 8:
-        Get.to(() => InteriorUploadPhotos(fromCompleteScreens: true));
+        if (!isBike) {
+          Get.to(() => InteriorUploadPhotos(fromCompleteScreens: true));
+        }
         break;
     }
   }

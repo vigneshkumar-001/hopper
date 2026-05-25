@@ -18,6 +18,8 @@ import '../../../utils/imagePath/imagePath.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:get/get.dart';
+import 'package:hopper/utils/netWorkHandling/network_action_guard.dart';
+import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 class InteriorUploadPhotos extends StatefulWidget {
   final bool fromCompleteScreens;
@@ -31,7 +33,6 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
   // final List<String?> _selectedImages = List.generate(6, (index) => null);
 
   final InteriorImageController controller = Get.put(InteriorImageController());
-  bool isButtonDisabled = false;
   final List<String> photoLabels = [
     "interior-photos-i",
     "interior-photos-ii",
@@ -118,10 +119,6 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                                           if (path.isNotEmpty) {
                                             controller.selectedImages[index] =
                                                 path;
-                                            setState(() {
-                                              isButtonDisabled =
-                                                  false; // re-enable if user changes images
-                                            });
                                           }
                                         }
                                       },
@@ -181,10 +178,6 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                                           if (imagePath != null) {
                                             controller.selectedImages[index] =
                                                 null;
-                                            setState(() {
-                                              isButtonDisabled =
-                                                  false; // re-enable if user changes images
-                                            });
                                           } else {
                                             await Navigator.push(
                                               context,
@@ -204,7 +197,7 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                                                 );
                                             if (path.isNotEmpty) {
                                               controller.selectedImages[index] =
-                                                  null;
+                                                  path;
                                             }
                                           }
                                         },
@@ -235,47 +228,51 @@ class _InteriorUploadPhotosState extends State<InteriorUploadPhotos> {
                   ),
         ),
       ),
-      bottomNavigationBar: controller.isLoading.value ? null :  CustomBottomNavigation.bottomNavigation(
-        buttonColor:
-            isButtonDisabled
-                ? Colors.grey
-                : controller.selectedImages.every(
-                  (img) => img != null && img!.isNotEmpty,
-                )
-                ? AppColors.commonBlack
-                : AppColors.containerColor,
-        onTap:
-            isButtonDisabled
-                ? null
-                : () async {
-                  final selectedImages = controller.selectedImages;
+      bottomNavigationBar: Obx(() {
+        final selectedImages = controller.selectedImages;
+        final allSelected = selectedImages.every(
+          (img) => img != null && img.isNotEmpty,
+        );
+        final submitting = controller.isSubmitting.value;
+        final enabled = allSelected && !submitting;
 
-                  // Ensure that the selected images are not null or empty
-                  if (selectedImages.any(
-                    (image) => image == null || image.isEmpty,
-                  )) {
-                    CustomSnackBar.showError(
-                      "Please upload all required images.",
+        return CustomBottomNavigation.bottomNavigation(
+          buttonColor:
+              enabled ? AppColors.commonBlack : AppColors.containerColor,
+          onTap:
+              enabled
+                  ? () async {
+                    final ok = await NetworkActionGuard.ensureOnline(
+                      context: context,
+                      title: 'Internet required',
+                      message:
+                          'Please connect to the internet to continue onboarding.',
                     );
-                    return;
-                  }
-                  setState(() {
-                    isButtonDisabled = true;
-                  });
-                  // Call the image upload method
-                  await controller.interiorImageUpload(
-                    selectedImages: selectedImages,
-                    context: context,
-                    fromCompleteScreen: widget.fromCompleteScreens,
-                  );
+                    if (!ok) return;
 
-                  // Navigator.push(
-                  //   context,
-                  //   MaterialPageRoute(builder: (context) => ConsentForms()),
-                  // );
-                },
-        title: Text('Save & Next'),
-      ),
+                    await controller.interiorImageUpload(
+                      selectedImages: selectedImages,
+                      context: context,
+                      fromCompleteScreen: widget.fromCompleteScreens,
+                    );
+                  }
+                  : () {
+                    if (!allSelected) {
+                      CustomSnackBar.showError(
+                        "Please upload all required images.",
+                      );
+                    }
+                  },
+          title:
+              submitting
+                  ? const HopprCircularLoader(
+                    radius: 10,
+                    size: 22,
+                    color: Colors.white,
+                  )
+                  : const Text('Save & Next'),
+        );
+      }),
     );
   }
 }

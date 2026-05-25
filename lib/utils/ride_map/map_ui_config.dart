@@ -7,10 +7,11 @@ import 'package:flutter/material.dart';
 class MapUiConfig {
   // Marker logical sizes (device-independent logical pixels).
   // Bitmaps are generated at `size * devicePixelRatio` and cached.
-  static const double carMarkerSize = 44.0;
-  static const double bikeMarkerSize = 44.0;
-  static const double pickupMarkerSize = 34.0;
-  static const double dropMarkerSize = 34.0;
+  // Tuned smaller for production (Ola/Uber-like).
+  static const double carMarkerSize = 32.0;
+  static const double bikeMarkerSize = 30.0;
+  static const double pickupMarkerSize = 32.0;
+  static const double dropMarkerSize = 32.0;
 
   // Route styling
   static const int polylineWidth = 6;
@@ -33,4 +34,3 @@ class MapUiConfig {
   static const double minCameraMoveMeters = 2.5;
   static const double minCameraBearingDeltaDeg = 3.0;
 }
-

@@ -407,6 +407,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                             child: Opacity(
                               opacity: isOnline ? 1.0 : 0.9,
                               child: DriverBottomSheet(
+                                mainController: c,
                                 statusController: c.statusController,
                                 bookingController: c.bookingController,
                                 remainingSecondsRx: c.remainingSeconds,
@@ -474,10 +475,10 @@ class _GlassHeader extends StatelessWidget {
               final isOnline = statusController.isOnline.value;
               final isLoading = statusController.isToggleLoading.value;
               // IMPORTANT: read serviceType inside Obx so the icon updates immediately.
-              final serviceType = statusController.serviceType.value;
-              final isCar = serviceType.trim().toLowerCase() == 'car';
-              final vehicleAsset =
-                  isCar ? AppImages.offlineCar : AppImages.bike;
+              final serviceType = statusController.serviceType.value.trim();
+              final hasServiceType = serviceType.isNotEmpty;
+              final isCar = serviceType.toLowerCase() == 'car';
+              final vehicleAsset = isCar ? AppImages.offlineCar : AppImages.bike;
 
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
@@ -513,12 +514,19 @@ class _GlassHeader extends StatelessWidget {
                           color: Colors.white,
                           shape: BoxShape.circle,
                         ),
-                        child: Image.asset(
-                          vehicleAsset,
-                          width: 18,
-                          height: 18,
-                          color: AppColors.nBlue,
-                        ),
+                        child:
+                            hasServiceType
+                                ? Image.asset(
+                                  vehicleAsset,
+                                  width: 18,
+                                  height: 18,
+                                  color: AppColors.nBlue,
+                                )
+                                : HopprCircularLoader(
+                                  radius: 7,
+                                  size: 16,
+                                  color: AppColors.nBlue,
+                                ),
                       ),
                     ] else ...[
                       Container(
@@ -527,12 +535,19 @@ class _GlassHeader extends StatelessWidget {
                           color: Colors.white,
                           shape: BoxShape.circle,
                         ),
-                        child: Image.asset(
-                          vehicleAsset,
-                          width: 18,
-                          height: 18,
-                          color: Colors.black,
-                        ),
+                        child:
+                            hasServiceType
+                                ? Image.asset(
+                                  vehicleAsset,
+                                  width: 18,
+                                  height: 18,
+                                  color: Colors.black,
+                                )
+                                : HopprCircularLoader(
+                                  radius: 7,
+                                  size: 16,
+                                  color: Colors.black,
+                                ),
                       ),
                       const SizedBox(width: 10),
                       const Text(
@@ -556,6 +571,7 @@ class _GlassHeader extends StatelessWidget {
 class DriverBottomSheet extends StatefulWidget {
   const DriverBottomSheet({
     super.key,
+    required this.mainController,
     required this.statusController,
     required this.bookingController,
     required this.remainingSecondsRx,
@@ -565,6 +581,7 @@ class DriverBottomSheet extends StatefulWidget {
     required this.formatDistance,
   });
 
+  final DriverMainController mainController;
   final DriverStatusController statusController;
   final BookingRequestController bookingController;
 
@@ -1059,7 +1076,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
 
                     // Demand opportunities card (hidden when empty/not eligible)
                     Obx(() {
-                      final main = Get.find<DriverMainController>();
+                      final main = widget.mainController;
                       if (!main.showDemandCard) return const SizedBox.shrink();
 
                       final sel = main.selectedDemandId.value?.trim() ?? '';
@@ -1802,6 +1819,11 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                 vertical: 20,
                               ),
                               child: Obx(() {
+                                if (!widget.statusController.hasServiceType) {
+                                  return const Center(
+                                    child: HopprCircularLoader(radius: 14),
+                                  );
+                                }
                                 final isCar = widget.statusController.isCar;
                                 final weeklyData =
                                     widget
@@ -1947,23 +1969,38 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                           ),
 
                           const SizedBox(height: 18),
+                          Obx(() {
+                            if (!widget.statusController.hasServiceType) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 18),
+                                child: Center(
+                                  child: HopprCircularLoader(radius: 14),
+                                ),
+                              );
+                            }
 
-                          CustomTextfield.textWithStyles700(
-                            isCar
-                                ? "Today's Activity"
-                                : "Today's Package Activity",
-                            fontSize: 16,
-                          ),
-                          const SizedBox(height: 10),
-
-                          if (isCar)
-                            _TodayActivityCar(
-                              statusController: widget.statusController,
-                            )
-                          else
-                            _TodayActivityParcel(
-                              statusController: widget.statusController,
-                            ),
+                            final isCar = widget.statusController.isCar;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                CustomTextfield.textWithStyles700(
+                                  isCar
+                                      ? "Today's Activity"
+                                      : "Today's Package Activity",
+                                  fontSize: 16,
+                                ),
+                                const SizedBox(height: 10),
+                                if (isCar)
+                                  _TodayActivityCar(
+                                    statusController: widget.statusController,
+                                  )
+                                else
+                                  _TodayActivityParcel(
+                                    statusController: widget.statusController,
+                                  ),
+                              ],
+                            );
+                          }),
 
                           const SizedBox(height: 18),
                         ],
@@ -2374,144 +2411,116 @@ class _TodayActivityParcel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.commonBlack.withOpacity(0.1)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
-        child: Obx(() {
-          final data = statusController.parcelBookingData.value;
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final horizontalPad = w < 360 ? 14.0 : w < 420 ? 18.0 : 22.0;
+        final verticalPad = w < 360 ? 12.0 : 14.0;
+        final gap = w < 360 ? 10.0 : 16.0;
+        final iconPx = w < 360 ? 16.0 : 17.0;
+        final pillPad = w < 360 ? 9.0 : 10.0;
+
+        Widget metric({
+          required Color bg,
+          required Widget icon,
+          required Widget value,
+          required String label,
+        }) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                flex: 2,
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFE2FBE9),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Image.asset(
+              Container(
+                padding: EdgeInsets.all(pillPad),
+                decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+                child: icon,
+              ),
+              const SizedBox(height: 6),
+              FittedBox(fit: BoxFit.scaleDown, child: value),
+              const SizedBox(height: 5),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: CustomTextfield.textWithStylesSmall(
+                  label,
+                  colors: AppColors.grey,
+                  maxLine: 1,
+                ),
+              ),
+            ],
+          );
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.commonBlack.withOpacity(0.1)),
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPad,
+              vertical: verticalPad,
+            ),
+            child: Obx(() {
+              final data = statusController.parcelBookingData.value;
+              return Row(
+                children: [
+                  Expanded(
+                    child: metric(
+                      bg: const Color(0xFFE2FBE9),
+                      icon: Image.asset(
                         AppImages.bCurrency,
-                        height: 17,
+                        height: iconPx,
                         color: const Color(0xff009721),
                       ),
-                    ),
-                    const SizedBox(height: 5),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: CustomTextfield.textWithImage(
+                      value: CustomTextfield.textWithImage(
                         text: ((data?.earning ?? 0).toDouble()).toStringAsFixed(
                           2,
                         ),
                         colors: AppColors.commonBlack,
                         fontWeight: FontWeight.w700,
-                        fontSize: 15,
+                        fontSize: w < 360 ? 14 : 15,
                         imagePath: AppImages.bCurrency,
                       ),
+                      label: 'Earnings',
                     ),
-                    const SizedBox(height: 5),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: CustomTextfield.textWithStylesSmall(
-                        'Earnings',
-                        colors: AppColors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                flex: 1,
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                      decoration: const BoxDecoration(
-                        color: Color(0XFFDEEAFC),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Image.asset(AppImages.boxLine, height: 17),
-                    ),
-                    const SizedBox(height: 5),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: CustomTextfield.textWithImage(
+                  ),
+                  SizedBox(width: gap),
+                  Expanded(
+                    child: metric(
+                      bg: const Color(0XFFDEEAFC),
+                      icon: Image.asset(AppImages.boxLine, height: iconPx),
+                      value: CustomTextfield.textWithImage(
                         text: data?.completed.toString() ?? '0',
                         colors: AppColors.commonBlack,
                         fontWeight: FontWeight.w700,
-                        fontSize: 16,
+                        fontSize: w < 360 ? 15 : 16,
                       ),
+                      label: 'Deliveries',
                     ),
-                    const SizedBox(height: 5),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: CustomTextfield.textWithStylesSmall(
-                        'Deliveries',
-                        colors: AppColors.grey,
-                        maxLine: 1,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                flex: 1,
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.starColors,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Image.asset(
+                  ),
+                  SizedBox(width: gap),
+                  Expanded(
+                    child: metric(
+                      bg: AppColors.starColors,
+                      icon: Image.asset(
                         AppImages.star,
-                        height: 17,
+                        height: iconPx,
                         color: const Color(0XFFC18C30),
                       ),
-                    ),
-                    const SizedBox(height: 5),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: CustomTextfield.textWithImage(
+                      value: CustomTextfield.textWithImage(
                         text: data?.rating.toString() ?? '0',
                         colors: AppColors.commonBlack,
                         fontWeight: FontWeight.w700,
-                        fontSize: 16,
+                        fontSize: w < 360 ? 15 : 16,
                       ),
+                      label: 'Rating',
                     ),
-                    const SizedBox(height: 5),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: CustomTextfield.textWithStylesSmall(
-                        'Rating',
-                        colors: AppColors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        }),
-      ),
+                  ),
+                ],
+              );
+            }),
+          ),
+        );
+      },
     );
   }
 }

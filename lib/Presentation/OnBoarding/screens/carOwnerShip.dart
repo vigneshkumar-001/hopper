@@ -18,6 +18,7 @@ import '../../../utils/imagePath/imagePath.dart';
 import '../../Authentication/widgets/textFields.dart';
 import 'chooseService.dart';
 import 'package:get/get.dart';
+import 'package:hopper/utils/netWorkHandling/network_action_guard.dart';
 
 class CarOwnership extends StatefulWidget {
   final bool fromCompleteScreens;
@@ -121,7 +122,7 @@ class _CarOwnershipState extends State<CarOwnership> {
                     onTap: () {
                       CustomBottomSheet.showOptionsBottomSheet(
                         title: 'OwnerShip',
-                        options: ['Owned', 'Rented'],
+                        options: ['Owned', 'Rental'],
                         context: context,
                         controller: ownershipController,
                       );
@@ -131,7 +132,8 @@ class _CarOwnershipState extends State<CarOwnership> {
                   SizedBox(height: 24),
                   CustomTextfield.textField(
                     inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z]')),
+                      // Allow spaces for full names (e.g., "Santhosh Kumar").
+                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z ]')),
                     ],
                     formKey: _formKey,
                     controller: nameController,
@@ -182,6 +184,13 @@ class _CarOwnershipState extends State<CarOwnership> {
                   ),
 
           onTap: () async {
+            final ok = await NetworkActionGuard.ensureOnline(
+              context: context,
+              title: 'Internet required',
+              message:
+                  'Please connect to the internet to continue onboarding.',
+            );
+            if (!ok) return;
             // Get.to(() => ConsentForms());
             if (_formKey.currentState!.validate()) {
               await controller.carOwnerShip(

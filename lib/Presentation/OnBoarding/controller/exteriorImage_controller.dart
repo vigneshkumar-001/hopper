@@ -14,6 +14,7 @@ class ExteriorImageController extends GetxController {
   String accessToken = '';
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
+  final RxBool isSubmitting = false.obs;
   String vehicleType = '';
   RxList<String?> _selectedImages = List<String?>.filled(6, null).obs;
   List<String?> get selectedImages => _selectedImages;
@@ -84,7 +85,7 @@ class ExteriorImageController extends GetxController {
     required String serviceType,
     bool fromCompleteScreen = false,
   }) async {
-    isLoading.value = true;
+    isSubmitting.value = true;
 
     List<String> uploadedUrls = [];
 
@@ -94,7 +95,7 @@ class ExteriorImageController extends GetxController {
       if (pathOrUrl == null || pathOrUrl.isEmpty) {
         // Missing image error
         CustomSnackBar.showError("Please upload all required images.");
-        isLoading.value = false;
+        isSubmitting.value = false;
         return;
       }
 
@@ -115,7 +116,7 @@ class ExteriorImageController extends GetxController {
         }, (success) => success.message);
 
         if (url == null) {
-          isLoading.value = false;
+          isSubmitting.value = false;
           return; // Stop on failure
         }
         uploadedUrls.add(url);
@@ -160,7 +161,7 @@ class ExteriorImageController extends GetxController {
       },
     );
 
-    isLoading.value = false;
+    isSubmitting.value = false;
   }
   //
   // Future<void> fetchAndSetUserData() async {

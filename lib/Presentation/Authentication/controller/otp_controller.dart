@@ -17,6 +17,7 @@ class OtpController extends GetxController {
   RxBool isLoading = false.obs;
   final RxBool isVerified = false.obs;
   final RxBool isEmailVerified = false.obs;
+  final RxString verifiedEmail = ''.obs;
   final DriverStatusController controller = Get.put(DriverStatusController());
   // Constructor to accept phone number
   // OtpController({required String phoneNumber}) {
@@ -185,6 +186,9 @@ class OtpController extends GetxController {
           // 681889f5a36e808c5056d290
           if (type == 'basicInfo') {
             isEmailVerified.value = response.status == 200;
+            if (response.status == 200) {
+              verifiedEmail.value = (email ?? '').trim();
+            }
             Navigator.pop(context);
           }
           isLoading.value = false;
@@ -285,5 +289,6 @@ class OtpController extends GetxController {
 
     isVerified.value = false;
     isEmailVerified.value = false;
+    verifiedEmail.value = '';
   }
 }

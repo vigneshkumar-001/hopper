@@ -15,6 +15,7 @@ class BasicInfoController extends GetxController {
   TextEditingController dobController = TextEditingController();
   TextEditingController genderController = TextEditingController();
   TextEditingController emailController = TextEditingController();
+  final RxString emailInput = ''.obs;
   TextEditingController mobileNumber = TextEditingController();
   String accessToken = '';
   String serviceType = '';
@@ -88,6 +89,7 @@ class BasicInfoController extends GetxController {
       dobController.text = profile.dob ?? '';
       genderController.text = profile.gender ?? '';
       emailController.text = profile.email ?? '';
+      emailInput.value = emailController.text.trim();
       serviceType = profile.serviceType ?? '';
     }
     //else {

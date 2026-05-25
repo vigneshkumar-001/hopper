@@ -13,7 +13,7 @@ class CarOwnerShipController extends GetxController {
   String serviceType = '';
   String countryCode = '';
   RxBool isLoading = false.obs;
-  late Timer _timer;
+  Timer? _timer;
   TextEditingController carOwnershipController = TextEditingController();
   TextEditingController carOwnerNameController = TextEditingController();
   TextEditingController carPlateNumberController = TextEditingController();
@@ -27,12 +27,18 @@ class CarOwnerShipController extends GetxController {
     super.onInit();
 
     fetchAndSetUserData();
-    // Fetch repeatedly every 2 seconds
+    // If you ever re-enable periodic refresh, assign to `_timer` and cancel it in `onClose`.
   }
 
   @override
   void onClose() {
-    _timer.cancel();
+    _timer?.cancel();
+    carOwnershipController.dispose();
+    carOwnerNameController.dispose();
+    carPlateNumberController.dispose();
+    bikeOwnershipController.dispose();
+    bikeOwnerNameController.dispose();
+    bikePlateNumberController.dispose();
     super.onClose();
   }
 
