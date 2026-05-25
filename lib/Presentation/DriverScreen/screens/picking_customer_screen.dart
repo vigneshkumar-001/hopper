@@ -14,20 +14,18 @@ import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
-import 'package:hopper/utils/map/shared_map.dart';
-import 'package:hopper/utils/map/ride_route_overlays.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/map/driver_message_suggestions.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
+import 'package:hopper/utils/ride_map/ride_map_view.dart';
 
 import '../controller/driver_status_controller.dart';
 import '../controller/pickup_customer_controller.dart';
 
 class PickingCustomerScreen extends StatelessWidget {
-  final GlobalKey<SharedMapState> _mapKey = GlobalKey<SharedMapState>();
   final LatLng pickupLocation;
   final String? pickupLocationAddress;
   final String? dropLocationAddress;
@@ -65,33 +63,13 @@ class PickingCustomerScreen extends StatelessWidget {
         onWillPop: () async => false,
         child: Scaffold(
           body: Obx(() {
-            final ui = c.ui.value;
             final pickupTarget =
                 c.adjustedPickupLocation.value ?? pickupLocation;
-
-            final markers = <Marker>{
-              Marker(
-                markerId: const MarkerId('driver'),
-                position: ui.driverLocation,
-                icon: c.carIcon.value ?? BitmapDescriptor.defaultMarker,
-                rotation: ui.bearing,
-                anchor: const Offset(0.5, 0.5),
-                flat: true,
-              ),
-              Marker(
-                markerId: const MarkerId('pickup'),
-                position: pickupTarget,
-                visible: false,
-                infoWindow: InfoWindow.noText,
-              ),
-              ...c.maneuverMarkers,
-            };
-
-            final routePoints =
-                ui.polyline.length >= 2
-                    ? ui.polyline
-                    : <LatLng>[ui.driverLocation, pickupTarget];
             c.ensureRouteReady();
+            c.rideMap.setBottomSheetHeight(
+              c.arrivedAtPickup.value ? 330.0 : 180.0,
+            );
+            c.rideMap.setPickupDrop(pickup: pickupTarget);
             return Stack(
               children: [
                 DecoratedBox(
@@ -109,25 +87,17 @@ class PickingCustomerScreen extends StatelessWidget {
                     height: 650,
                     child: Stack(
                       children: [
-                        SharedMap(
-                          key: _mapKey,
-                          pickupPosition: pickupTarget,
-                          myLocationEnabled: false,
+                        RideMapView(
+                          controller: c.rideMap,
                           initialPosition: pickupTarget,
-                          pickupIndicatorStyle: PickupIndicatorStyle.pulse,
-                          pickupIndicatorColor: const Color(0xFF00A85E),
-                          pickupTargetColor: AppColors.commonBlack,
-                          markers: markers,
-                          followDriver: c.isDriverFocused.value,
-                          followBearingEnabled: false,
-                          followZoom: c.followZoom.value,
-                          followTilt: c.isDriverFocused.value ? 45 : 0,
-                          polylines: RideRouteOverlays.buildRoutePolylines(
-                            routePoints: ui.polyline,
-                            origin: ui.driverLocation,
-                            destination: pickupTarget,
-                            idPrefix: 'route_pickup',
-                          ),
+                          myLocationEnabled: false,
+                          fitToBounds: false,
+                          trafficEnabled: false,
+                          compassEnabled: false,
+                          onUserCameraMoveStarted: () {
+                            c.isDriverFocused.value = false;
+                            c.rideMap.setAutoFollowEnabled(false);
+                          },
                           onMapCreated: (gm) => c.onMapCreated(gm, context),
                         ),
                         Positioned(
@@ -204,23 +174,10 @@ class PickingCustomerScreen extends StatelessWidget {
                         () => MapFocusToggleButton(
                           isDriverFocused: c.isDriverFocused.value,
                           onFocusDriver: () {
-                            final ms = _mapKey.currentState;
-                            if (ms == null) {
-                              c.focusDriverMarker(zoom: 17.2);
-                              return;
-                            }
-                            ms.pauseAutoFollow(const Duration(seconds: 4));
-                            ms.focusDriver(
-                              zoom: 17.2,
-                              tilt: 0,
-                              bearingEnabled: true,
-                            );
+                            c.focusDriverMarker(zoom: 17.2);
                           },
                           onFitBounds: () {
-                            final ms = _mapKey.currentState;
-                            if (ms == null) return;
-                            ms.pauseAutoFollow(const Duration(seconds: 4));
-                            ms.fitPolylineBounds(routePoints);
+                            c.focusRouteOverview();
                           },
                           onDriverFocusedChanged:
                               (v) => c.isDriverFocused.value = v,

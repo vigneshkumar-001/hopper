@@ -1,0 +1,142 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:hopper/utils/map/shared_map.dart';
+
+import 'map_ui_config.dart';
+import 'ride_map_controller.dart';
+
+class RideMapView extends StatefulWidget {
+  const RideMapView({
+    super.key,
+    required this.controller,
+    required this.initialPosition,
+    this.mapStyle,
+    this.myLocationEnabled = false,
+    this.fitToBounds = false,
+    this.trafficEnabled = false,
+    this.compassEnabled = false,
+    this.extraMarkers = const <Marker>{},
+    this.extraPolylines = const <Polyline>{},
+    this.extraCircles = const <Circle>{},
+    this.onMapCreated,
+    this.onUserCameraMoveStarted,
+    this.onCameraMove,
+    this.onCameraIdle,
+    this.gestureRecognizers = const <Factory<OneSequenceGestureRecognizer>>{},
+  });
+
+  final RideMapController controller;
+  final LatLng initialPosition;
+  final String? mapStyle;
+
+  final bool myLocationEnabled;
+  final bool fitToBounds;
+  final bool trafficEnabled;
+  final bool compassEnabled;
+
+  final Set<Marker> extraMarkers;
+  final Set<Polyline> extraPolylines;
+  final Set<Circle> extraCircles;
+
+  final ValueChanged<GoogleMapController>? onMapCreated;
+  final VoidCallback? onUserCameraMoveStarted;
+  final ValueChanged<CameraPosition>? onCameraMove;
+  final VoidCallback? onCameraIdle;
+  final Set<Factory<OneSequenceGestureRecognizer>> gestureRecognizers;
+
+  @override
+  State<RideMapView> createState() => _RideMapViewState();
+}
+
+class _RideMapViewState extends State<RideMapView> {
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MapUiConfig.cameraPadding.bottom + widget.controller.bottomSheetHeight;
+    final padding = MapUiConfig.cameraPadding.copyWith(bottom: bottomPadding);
+
+    return ValueListenableBuilder<Set<Marker>>(
+      valueListenable: widget.controller.markers,
+      builder: (context, baseMarkers, _) {
+        return ValueListenableBuilder<Set<Polyline>>(
+          valueListenable: widget.controller.polylines,
+          builder: (context, basePolys, __) {
+            return ValueListenableBuilder<Set<Marker>>(
+              valueListenable: widget.controller.overlayMarkers,
+              builder: (context, overlayMarkers, ___) {
+                return ValueListenableBuilder<Set<Polyline>>(
+                  valueListenable: widget.controller.overlayPolylines,
+                  builder: (context, overlayPolys, ____) {
+                    return ValueListenableBuilder<Set<Circle>>(
+                      valueListenable: widget.controller.overlayCircles,
+                      builder: (context, overlayCircles, _____) {
+                        final markers = <Marker>{
+                          ...baseMarkers,
+                          ...overlayMarkers,
+                          ...widget.extraMarkers,
+                        };
+                        final polylines = <Polyline>{
+                          ...basePolys,
+                          ...overlayPolys,
+                          ...widget.extraPolylines,
+                        };
+
+                        // In navigation modes we use pickup indicator to highlight current target.
+                        final pickupPulseTarget =
+                            widget.controller.dropPosition ??
+                            widget.controller.pickupPosition;
+
+                        return SharedMap(
+                          initialPosition: widget.initialPosition,
+                          initialZoom:
+                              widget.controller.mode == RideMapMode.home
+                                  ? MapUiConfig.defaultZoom
+                                  : MapUiConfig.navigationZoom,
+                          mapStyle: widget.mapStyle,
+                          padding: padding,
+                          pickupPosition: pickupPulseTarget,
+                          pickupIndicatorStyle:
+                              pickupPulseTarget == null
+                                  ? PickupIndicatorStyle.none
+                                  : PickupIndicatorStyle.pulse,
+                          pickupIndicatorColor: const Color(0xFF00A85E),
+                          pickupTargetColor: Colors.black,
+                          myLocationEnabled: widget.myLocationEnabled,
+                          fitToBounds: widget.fitToBounds,
+                          trafficEnabled: widget.trafficEnabled,
+                          compassEnabled: widget.compassEnabled,
+                          markers: markers,
+                          polylines: polylines,
+                          circles: <Circle>{...overlayCircles, ...widget.extraCircles},
+                          followDriver: widget.controller.autoFollowEnabled,
+                          followBearingEnabled: MapUiConfig.cameraBearingEnabled,
+                          followZoom:
+                              widget.controller.mode == RideMapMode.home
+                                  ? MapUiConfig.defaultZoom
+                                  : MapUiConfig.navigationZoom,
+                          followTilt:
+                              widget.controller.mode == RideMapMode.home
+                                  ? 0.0
+                                  : MapUiConfig.cameraTilt,
+                          onCameraMoveStarted: widget.onUserCameraMoveStarted,
+                          onCameraMove: widget.onCameraMove,
+                          onCameraIdle: widget.onCameraIdle,
+                          onMapCreated: (gm) {
+                            widget.controller.attachMapController(gm);
+                            widget.onMapCreated?.call(gm);
+                          },
+                          gestureRecognizers: widget.gestureRecognizers,
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}

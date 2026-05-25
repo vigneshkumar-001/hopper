@@ -15,7 +15,7 @@ import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/date_time_converter.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
-import 'package:hopper/utils/map/shared_map.dart';
+import 'package:hopper/utils/ride_map/ride_map_view.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
@@ -126,44 +126,31 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                           id: 'map',
                           builder: (_) {
                             final markerSet = <Marker>{
-                              if (c.carMarker != null) c.carMarker!,
                               if (c.demandMarker != null) c.demandMarker!,
                             };
                             final circles = <Circle>{...c.demandCircles};
 
                             return RepaintBoundary(
-                              child: SharedMap(
+                              child: RideMapView(
                                 key: ValueKey<String>(
                                   'driver_map_${c.mapStyle ?? 'default'}',
                                 ),
+                                controller: c.rideMap,
                                 initialPosition:
                                     c.currentPosition.value ??
                                     const LatLng(9.914, 78.097),
-                                initialZoom: 15.4,
                                 fitToBounds: false,
-                                mapType: MapType.normal,
                                 mapStyle: c.mapStyle,
-                                compassEnabled: false,
                                 myLocationEnabled: false,
                                 trafficEnabled: false,
-                                padding: const EdgeInsets.only(bottom: 260),
-                                rotateGesturesEnabled: true,
-                                tiltGesturesEnabled: true,
-                                scrollGesturesEnabled: true,
-                                zoomGesturesEnabled: true,
-                                markers: markerSet,
-                                circles: circles,
+                                extraMarkers: markerSet,
+                                extraCircles: circles,
                                 onCameraMove: c.onMapCameraMove,
-                                onCameraMoveStarted: () {
-                                  // stop follow when user touches map
+                                onUserCameraMoveStarted: () {
                                   c.followDriver.value = false;
+                                  c.rideMap.setAutoFollowEnabled(false);
                                 },
                                 onCameraIdle: () {
-                                  // Defensive: ensure style stays applied across zoom/pan.
-                                  final style = c.mapStyle;
-                                  if (style != null) {
-                                    c.mapController?.setMapStyle(style);
-                                  }
                                   unawaited(c.updateDemandLabelOffset());
                                 },
                                 onMapCreated: (gm) async {

@@ -12,7 +12,6 @@ import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:hopper/Core/Constants/log.dart';
-import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
@@ -26,10 +25,11 @@ import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/app_map_style.dart';
-import 'package:hopper/utils/map/vehicle_marker_icon.dart';
 import 'package:hopper/utils/location/location_permission_guard.dart';
 import 'package:hopper/utils/map/polyline_snap.dart';
 import 'package:hopper/utils/map/maneuver_markers.dart';
+import 'package:hopper/utils/ride_map/marker_icon_cache.dart';
+import 'package:hopper/utils/ride_map/ride_map_controller.dart';
 
 /// UI snapshot (keeps widget build super clean)
 class PickingUiState {
@@ -102,8 +102,9 @@ class PickingCustomerController extends GetxController {
           : Get.put(DriverStatusController(), permanent: true);
 
   // ----- map -----
-  GoogleMapController? mapController;
-  final Rxn<BitmapDescriptor> carIcon = Rxn<BitmapDescriptor>();
+  final RideMapController rideMap = RideMapController(
+    mode: RideMapMode.pickupNavigation,
+  );
   Worker? _serviceTypeWorker;
   final Rxn<LatLng> adjustedPickupLocation = Rxn<LatLng>();
   final RxInt pickupAdjustMeters = 0.obs;
@@ -190,13 +191,16 @@ class PickingCustomerController extends GetxController {
     _applySystemUi();
     _initConnectivityWatchdog();
     _loadDriverId();
-    _loadCarIcon();
-    _listenServiceTypeForIcon();
+    _applyVehicleType();
+    _listenServiceTypeForVehicle();
     _initSocket();
     unawaited(_joinBookingRoom());
     _bootFromJoinedOrReverseGeocode();
     _startTracking();
     _fetchRoute(force: true);
+    rideMap.setPickupDrop(pickup: pickupLocation);
+    rideMap.setShowCompletedRoute(false);
+    rideMap.updateVehicleLocation(driverLocation);
 
     if (enableArrivedTesting) {
       driverReached.value = true;
@@ -219,7 +223,7 @@ class PickingCustomerController extends GetxController {
     } catch (_) {}
     _queuedTarget = null;
     _queuedBearing = null;
-    mapController = null;
+    rideMap.dispose();
     super.onClose();
   }
 
@@ -255,21 +259,26 @@ class PickingCustomerController extends GetxController {
     );
   }
 
-  Future<void> _loadCarIcon() async {
-    try {
-      carIcon.value = await HopprVehicleMarkerIcon.loadForServiceType(
-        driverStatusController.serviceType.value,
-      );
-    } catch (_) {
-      carIcon.value = BitmapDescriptor.defaultMarker;
+  RideVehicleType _vehicleTypeFromServiceType(String raw) {
+    final v = raw.trim().toLowerCase();
+    if (v.contains('package') || v.contains('parcel')) {
+      return RideVehicleType.packageBike;
     }
+    if (v.contains('bike')) return RideVehicleType.bike;
+    return RideVehicleType.car;
   }
 
-  void _listenServiceTypeForIcon() {
+  void _applyVehicleType() {
+    rideMap.setVehicleType(_vehicleTypeFromServiceType(
+      driverStatusController.serviceType.value,
+    ));
+  }
+
+  void _listenServiceTypeForVehicle() {
     _serviceTypeWorker?.dispose();
     _serviceTypeWorker = ever<String>(
       driverStatusController.serviceType,
-      (_) async => _loadCarIcon(),
+      (_) => _applyVehicleType(),
     );
   }
 
@@ -467,20 +476,15 @@ class PickingCustomerController extends GetxController {
 
   // ===================== MAP EVENTS =====================
 
-  Future<void> onMapCreated(
-    GoogleMapController gm,
-    BuildContext context,
-  ) async {
-    mapController = gm;
-
+  Future<void> onMapCreated(GoogleMapController gm, BuildContext context) async {
+    // Map controller is attached by RideMapView; keep style behavior here.
     try {
       final style = await AppMapStyle.loadUberLight();
-      await mapController?.setMapStyle(style);
+      await gm.setMapStyle(style);
     } catch (_) {}
 
-    // Fit driver + pickup
-    await Future.delayed(const Duration(milliseconds: 250));
-    fitBoundsToDriverAndPickup();
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    await rideMap.fitToBounds(padding: 90);
   }
 
   Future<void> goToCurrentLocation() async {
@@ -489,8 +493,12 @@ class PickingCustomerController extends GetxController {
     final pos = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
-    final latLng = LatLng(pos.latitude, pos.longitude);
-    mapController?.animateCamera(CameraUpdate.newLatLngZoom(latLng, 17));
+    rideMap.updateVehicleLocation(
+      LatLng(pos.latitude, pos.longitude),
+      speedMetersPerSecond: pos.speed.isFinite ? pos.speed : null,
+      headingDeg: pos.heading.isFinite ? pos.heading : null,
+    );
+    await rideMap.focusVehicle(zoom: 17.0, tilt: 0, bearingEnabled: false);
   }
 
   Future<bool> _ensureLocationPermission() async {
@@ -499,27 +507,7 @@ class PickingCustomerController extends GetxController {
   }
 
   Future<void> fitBoundsToDriverAndPickup() async {
-    if (mapController == null) return;
-
-    final d = ui.value.driverLocation;
-    final p = pickupLocation;
-
-    final bounds = _safeBounds(
-      math.min(d.latitude, p.latitude),
-      math.min(d.longitude, p.longitude),
-      math.max(d.latitude, p.latitude),
-      math.max(d.longitude, p.longitude),
-    );
-
-    try {
-      await mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(bounds, 90),
-      );
-      final z = await mapController!.getZoomLevel();
-      if (z > 14.9) {
-        mapController!.animateCamera(CameraUpdate.zoomTo(14.9));
-      }
-    } catch (_) {}
+    await rideMap.fitToBounds(padding: 90);
   }
 
   // ===================== ROUTE =====================
@@ -600,13 +588,17 @@ class PickingCustomerController extends GetxController {
         distanceText: (result['distance'] ?? '').toString(),
         maneuver: (result['maneuver'] ?? '').toString(),
       );
+
+      final dest = adjustedPickupLocation.value ?? pickupLocation;
+      rideMap.setPickupDrop(pickup: dest);
+      rideMap.setRoutePoints(pts);
+      rideMap.setNavigationDestination(dest, driverFriendlyStop: true);
       final mp = result['maneuverPoints'];
       final maneuverPoints =
           mp is List
               ? mp.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
               : const <Map<String, dynamic>>[];
 
-      final dest = adjustedPickupLocation.value ?? pickupLocation;
       unawaited(
         _rebuildManeuverMarkers(
           // Use raw polyline for maneuver marker placement/rotation.
@@ -666,6 +658,7 @@ class PickingCustomerController extends GetxController {
       );
       if (isClosed || gen != _maneuverGen) return;
       maneuverMarkers.assignAll(m);
+      rideMap.setOverlays(markers: m.toSet());
     } catch (_) {
       // ignore
     }
@@ -784,6 +777,11 @@ class PickingCustomerController extends GetxController {
       if (_lastPos == null) {
         _lastPos = current;
         ui.value = ui.value.copyWith(driverLocation: current);
+        rideMap.updateVehicleLocation(
+          raw,
+          speedMetersPerSecond: speed.isFinite ? speed : null,
+          headingDeg: heading >= 0 ? heading : null,
+        );
         await _fetchRoute(force: true);
         return;
       }
@@ -798,6 +796,11 @@ class PickingCustomerController extends GetxController {
       if (moved < _MIN_MOVE_METERS) {
         // tiny drift -> update location silently without rotation
         ui.value = ui.value.copyWith(driverLocation: current);
+        rideMap.updateVehicleLocation(
+          raw,
+          speedMetersPerSecond: speed.isFinite ? speed : null,
+          headingDeg: heading >= 0 ? heading : null,
+        );
         _lastPos = current;
         if (ui.value.polyline.length < 2) {
           await _fetchRoute(force: true);
@@ -813,6 +816,11 @@ class PickingCustomerController extends GetxController {
         ui.value = ui.value.copyWith(
           driverLocation: current,
           bearing: ui.value.bearing,
+        );
+        rideMap.updateVehicleLocation(
+          raw,
+          speedMetersPerSecond: speed.isFinite ? speed : null,
+          headingDeg: heading >= 0 ? heading : null,
         );
         _lastPos = current;
         _updateDriverReachedByDistance(current);
@@ -843,13 +851,15 @@ class PickingCustomerController extends GetxController {
         speedMs: speed,
       );
 
-      await _animateTo(current, targetBearing);
+      ui.value = ui.value.copyWith(driverLocation: current, bearing: targetBearing);
+      rideMap.updateVehicleLocation(
+        raw,
+        speedMetersPerSecond: speed.isFinite ? speed : null,
+        headingDeg: heading >= 0 ? heading : null,
+      );
 
       _lastPos = current;
       _updateDriverReachedByDistance(current);
-
-      // polyline maintenance
-      _trimPolyline(current);
 
       final offRoute = _isOffRoute(raw);
       isOffRouteAlert.value = offRoute;
@@ -973,58 +983,22 @@ class PickingCustomerController extends GetxController {
   }
 
   Future<void> focusRouteOverview() async {
-    if (mapController == null) return;
     isDriverFocused.value = false;
-    final pts = ui.value.polyline;
-    if (pts.length < 2) {
-      await fitBoundsToDriverAndPickup();
-      return;
-    }
-
-    double minLat = pts.first.latitude;
-    double maxLat = pts.first.latitude;
-    double minLng = pts.first.longitude;
-    double maxLng = pts.first.longitude;
-    for (final p in pts) {
-      if (p.latitude < minLat) minLat = p.latitude;
-      if (p.latitude > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLng) minLng = p.longitude;
-      if (p.longitude > maxLng) maxLng = p.longitude;
-    }
-    final bounds = _safeBounds(minLat, minLng, maxLat, maxLng);
-    try {
-      await mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(bounds, 80),
-      );
-    } catch (_) {
-      await fitBoundsToDriverAndPickup();
-    }
+    rideMap.setAutoFollowEnabled(false);
+    await rideMap.fitToBounds(padding: 80);
   }
 
   Future<void> focusDriverNow() async {
     isDriverFocused.value = true;
-    await goToCurrentLocation();
+    rideMap.setAutoFollowEnabled(true);
+    await rideMap.focusVehicle(zoom: 17.2, tilt: 0, bearingEnabled: true);
   }
 
   Future<void> focusDriverMarker({double? zoom}) async {
-    final mc = mapController;
-    if (mc == null) return;
-
     isDriverFocused.value = true;
-    final target = ui.value.driverLocation;
     final z = (zoom ?? followZoom.value).clamp(14.8, 18.0);
-    try {
-      await mc.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: target,
-            zoom: z,
-            tilt: 0,
-            bearing: ui.value.bearing,
-          ),
-        ),
-      );
-    } catch (_) {}
+    rideMap.setAutoFollowEnabled(true);
+    await rideMap.focusVehicle(zoom: z, tilt: 0, bearingEnabled: true);
   }
 
   Future<void> sendQuickMessage(String text, {int? delayMinutes}) async {

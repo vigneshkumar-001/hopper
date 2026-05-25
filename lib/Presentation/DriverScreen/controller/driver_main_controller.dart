@@ -27,6 +27,8 @@ import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/app_map_style.dart';
 import 'package:hopper/utils/map/vehicle_marker_icon.dart';
 import 'package:hopper/utils/location/location_permission_guard.dart';
+import 'package:hopper/utils/ride_map/marker_icon_cache.dart';
+import 'package:hopper/utils/ride_map/ride_map_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/background_service.dart'
     as bg;
 import 'package:permission_handler/permission_handler.dart';
@@ -65,6 +67,7 @@ class DriverMainController extends GetxController
   GoogleMapController? mapController;
   String? mapStyle;
   final Rxn<LatLng> currentPosition = Rxn<LatLng>();
+  final RideMapController rideMap = RideMapController(mode: RideMapMode.home);
 
   // Marker
   BitmapDescriptor? carIcon;
@@ -261,6 +264,8 @@ class DriverMainController extends GetxController
   //   }
   // }
   Future<void> loadCustomCarIcon() async {
+    // Keep RideMap vehicle type in sync (single source of marker sizing).
+    _applyRideMapVehicleType();
     final desiredKey = HopprVehicleMarkerIcon.currentConfigKeyForServiceType(
       statusController.serviceType.value,
     );
@@ -284,6 +289,7 @@ class DriverMainController extends GetxController
   }
 
   void _refreshVehicleIconIfNeeded() {
+    _applyRideMapVehicleType();
     final currentKey = HopprVehicleMarkerIcon.currentConfigKeyForServiceType(
       statusController.serviceType.value,
     );
@@ -291,11 +297,27 @@ class DriverMainController extends GetxController
     unawaited(loadCustomCarIcon());
   }
 
+  RideVehicleType _rideVehicleTypeFromServiceType(String raw) {
+    final v = raw.trim().toLowerCase();
+    if (v.contains('package') || v.contains('parcel')) {
+      return RideVehicleType.packageBike;
+    }
+    if (v.contains('bike')) return RideVehicleType.bike;
+    return RideVehicleType.car;
+  }
+
+  void _applyRideMapVehicleType() {
+    rideMap.setVehicleType(
+      _rideVehicleTypeFromServiceType(statusController.serviceType.value),
+    );
+  }
+
   // ---------------- marker update (animated) ----------------
   void updateCarMarker(LatLng newPos) {
     // âœ… stop any callbacks after close
     if (_disposed || isClosed) return;
     _refreshVehicleIconIfNeeded();
+    rideMap.updateVehicleLocation(newPos);
     final icon = carIcon ?? BitmapDescriptor.defaultMarker;
 
     if (lastPosition == null || carMarker == null) {
@@ -350,6 +372,7 @@ class DriverMainController extends GetxController
     currentPosition.value = latLng;
 
     updateCarMarker(latLng);
+    rideMap.updateVehicleLocation(latLng, speedMetersPerSecond: pos.speed.isFinite ? pos.speed : null, headingDeg: pos.heading.isFinite ? pos.heading : null);
 
     await mapController?.animateCamera(
       CameraUpdate.newCameraPosition(
@@ -2435,6 +2458,8 @@ class DriverMainController extends GetxController
     try {
       _demandBounceCtrl.dispose();
     } catch (_) {}
+
+    rideMap.dispose();
 
     super.onClose();
   }
