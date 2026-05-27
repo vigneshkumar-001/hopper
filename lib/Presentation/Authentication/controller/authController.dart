@@ -167,8 +167,12 @@ class AuthController extends GetxController {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
 
-    // Fire-and-forget API logout; do not block UI/redirect on response.
-    unawaited(apiDataSource.logout(token: token));
+    // Try to call logout API before clearing token; never block UI too long.
+    try {
+      await apiDataSource
+          .logout(token: token)
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {}
 
     await performLogoutCleanup();
     await prefs.clear();

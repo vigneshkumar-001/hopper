@@ -47,8 +47,10 @@ class VehicleAnimationService {
     required LatLng to,
     required double bearingTo,
     double? speedMetersPerSecond,
-    double minMs = 260,
-    double maxMs = 1100,
+    // Ola/Uber-like: never too snappy, never too laggy.
+    // These defaults can be overridden by callers if needed.
+    double minMs = 700,
+    double maxMs = 2500,
   }) {
     final current = pose.value;
     final from = current?.position ?? to;
@@ -74,7 +76,8 @@ class VehicleAnimationService {
     if (_from == null || _to == null) return;
     _elapsed += delta;
     final t = (_elapsed.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0);
-    final eased = _easeOutCubic(t);
+    // Ease in-out feels most like Uber/Ola turns; avoids "teleport then stop".
+    final eased = _easeInOutCubic(t);
 
     final from = _from!;
     final to = _to!;
@@ -96,7 +99,8 @@ class VehicleAnimationService {
     _ticker?.stop();
   }
 
-  static double _easeOutCubic(double t) => 1 - math.pow(1 - t, 3).toDouble();
+  static double _easeInOutCubic(double t) =>
+      t < 0.5 ? 4 * t * t * t : 1 - math.pow(-2 * t + 2, 3).toDouble() / 2;
 
   static double _lerp(double a, double b, double t) => a + (b - a) * t;
 

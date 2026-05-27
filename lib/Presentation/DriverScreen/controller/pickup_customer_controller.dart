@@ -30,6 +30,7 @@ import 'package:hopper/utils/map/polyline_snap.dart';
 import 'package:hopper/utils/map/maneuver_markers.dart';
 import 'package:hopper/utils/ride_map/marker_icon_cache.dart';
 import 'package:hopper/utils/ride_map/ride_map_controller.dart';
+import 'package:hopper/utils/ride_map/travel_mode_resolver.dart';
 
 /// UI snapshot (keeps widget build super clean)
 class PickingUiState {
@@ -106,6 +107,8 @@ class PickingCustomerController extends GetxController {
     mode: RideMapMode.pickupNavigation,
   );
   Worker? _serviceTypeWorker;
+  Worker? _pickupMarkerWorker;
+  Worker? _sheetHeightWorker;
   final Rxn<LatLng> adjustedPickupLocation = Rxn<LatLng>();
   final RxInt pickupAdjustMeters = 0.obs;
 
@@ -182,7 +185,10 @@ class PickingCustomerController extends GetxController {
         PickingUiState(
           driverLocation: driverLocation,
           bearing: 0,
-          polyline: <LatLng>[driverLocation, pickupLocation],
+          // Do NOT seed route/vehicle from `driverLocation` param. That value can
+          // be stale/incorrect when navigating between screens. We wait for the
+          // first live GPS fix before drawing route + placing vehicle marker.
+          polyline: const <LatLng>[],
           directionText: '',
           distanceText: '',
           maneuver: '',
@@ -197,10 +203,25 @@ class PickingCustomerController extends GetxController {
     unawaited(_joinBookingRoom());
     _bootFromJoinedOrReverseGeocode();
     _startTracking();
-    _fetchRoute(force: true);
     rideMap.setPickupDrop(pickup: pickupLocation);
     rideMap.setShowCompletedRoute(false);
-    rideMap.updateVehicleLocation(driverLocation);
+
+    // Keep map UI state in sync without doing side-effects inside `Obx` builds.
+    // - pickup marker follows adjusted pickup (if any)
+    // - map bottom padding follows bottom sheet expanded/collapsed height
+    _pickupMarkerWorker?.dispose();
+    _pickupMarkerWorker = ever<LatLng?>(
+      adjustedPickupLocation,
+      (p) => rideMap.setPickupDrop(pickup: p ?? pickupLocation),
+    );
+
+    _sheetHeightWorker?.dispose();
+    void applySheetHeight(bool arrived) {
+      rideMap.setBottomSheetHeight(arrived ? 330.0 : 180.0);
+    }
+
+    applySheetHeight(arrivedAtPickup.value);
+    _sheetHeightWorker = ever<bool>(arrivedAtPickup, applySheetHeight);
 
     if (enableArrivedTesting) {
       driverReached.value = true;
@@ -215,6 +236,8 @@ class PickingCustomerController extends GetxController {
     _stopNoShowTimer();
     _routeRetryTimer?.cancel();
     _serviceTypeWorker?.dispose();
+    _pickupMarkerWorker?.dispose();
+    _sheetHeightWorker?.dispose();
     try {
       socketService.socket.off('joined-booking');
       socketService.socket.off('driver-location');
@@ -497,6 +520,8 @@ class PickingCustomerController extends GetxController {
       LatLng(pos.latitude, pos.longitude),
       speedMetersPerSecond: pos.speed.isFinite ? pos.speed : null,
       headingDeg: pos.heading.isFinite ? pos.heading : null,
+      accuracyMeters: pos.accuracy.isFinite ? pos.accuracy : null,
+      timestamp: pos.timestamp,
     );
     await rideMap.focusVehicle(zoom: 17.0, tilt: 0, bearingEnabled: false);
   }
@@ -534,6 +559,10 @@ class PickingCustomerController extends GetxController {
       _lastRouteFetch = now;
 
       final origin = ui.value.driverLocation;
+      if (_lastPos == null) {
+        // Guard: never build route from pickup/drop param as origin.
+        return;
+      }
 
       final result = await getDriverFriendlyRouteInfo(
         origin: origin,
@@ -541,7 +570,7 @@ class PickingCustomerController extends GetxController {
         // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ keep consistent
         alternatives: false,
         traffic: true,
-        mode: "driving",
+        mode: TravelModeResolver.getTravelMode(rideMap.vehicleType),
         routeIndex: 0,
         maxAdjustMeters: 140,
       );
@@ -781,6 +810,8 @@ class PickingCustomerController extends GetxController {
           raw,
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
+          accuracyMeters: acc,
+          timestamp: pos.timestamp,
         );
         await _fetchRoute(force: true);
         return;
@@ -800,6 +831,8 @@ class PickingCustomerController extends GetxController {
           raw,
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
+          accuracyMeters: acc,
+          timestamp: pos.timestamp,
         );
         _lastPos = current;
         if (ui.value.polyline.length < 2) {
@@ -821,6 +854,8 @@ class PickingCustomerController extends GetxController {
           raw,
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
+          accuracyMeters: acc,
+          timestamp: pos.timestamp,
         );
         _lastPos = current;
         _updateDriverReachedByDistance(current);
@@ -856,6 +891,8 @@ class PickingCustomerController extends GetxController {
         raw,
         speedMetersPerSecond: speed.isFinite ? speed : null,
         headingDeg: heading >= 0 ? heading : null,
+        accuracyMeters: acc,
+        timestamp: pos.timestamp,
       );
 
       _lastPos = current;

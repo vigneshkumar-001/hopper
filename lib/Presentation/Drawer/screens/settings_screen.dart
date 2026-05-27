@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:hopper/Presentation/Authentication/controller/authController.dart';
 import 'package:hopper/Presentation/Authentication/screens/GetStarted_Screens.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/session/logout_cleanup.dart';
@@ -988,16 +989,12 @@ class _VehicleDetailsScreen extends StatelessWidget {
 }
 
 Future<void> _settingsLogout(BuildContext context) async {
-  final prefs = await SharedPreferences.getInstance();
-  await performLogoutCleanup();
-  await prefs.clear();
-  if (Get.isRegistered<DriverAnalyticsController>()) {
-    await Get.find<DriverAnalyticsController>().reset(clearPersisted: false);
-  }
-  if (!context.mounted) return;
-  Navigator.pushAndRemoveUntil(
-    context,
-    MaterialPageRoute(builder: (_) => const GetStartedScreens()),
-    (route) => false,
-  );
+  // Use the centralized logout flow so:
+  // - Logout API is called
+  // - Socket/background services are cleaned up
+  // - Navigation is consistent
+  final auth = Get.isRegistered<AuthController>()
+      ? Get.find<AuthController>()
+      : Get.put(AuthController());
+  await auth.logout(context);
 }

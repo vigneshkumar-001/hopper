@@ -115,6 +115,7 @@ flutter:
   assets:
    - assets/images/
    - assets/map_style/
+   - assets/map_styles/ride_light_map_style.json
   #   - images/a_dot_ham.jpeg
 
   # An image asset can refer to one or more resolution-specific "variants", see

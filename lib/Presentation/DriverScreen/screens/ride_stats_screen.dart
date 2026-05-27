@@ -84,10 +84,6 @@ class RideStatsScreen extends StatelessWidget {
                   final to = c.adjustedDropLocation.value ?? toRaw;
 
                   final initialPos = from ?? to ?? const LatLng(0, 0);
-                  if (to != null) {
-                    c.rideMap.setPickupDrop(drop: to);
-                    c.rideMap.setNavigationDestination(to, driverFriendlyStop: true);
-                  }
                   c.rideMap.setBottomSheetHeight(c.driverCompletedRide.value ? 350.0 : 270.0);
 
                   return RideMapView(

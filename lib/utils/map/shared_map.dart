@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/utils/map/app_map_style.dart';
+import 'package:hopper/utils/ride_map/map_ui_config.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 enum PickupIndicatorStyle { pulse, dots, none }
@@ -25,6 +26,7 @@ class SharedMap extends StatefulWidget {
   final bool keepScreenOn;
   final MapType mapType;
   final String? mapStyle;
+  final bool autoLoadMapStyle;
   final bool rotateGesturesEnabled;
   final bool tiltGesturesEnabled;
   final bool scrollGesturesEnabled;
@@ -72,6 +74,7 @@ class SharedMap extends StatefulWidget {
     this.keepScreenOn = true,
     this.mapType = MapType.normal,
     this.mapStyle,
+    this.autoLoadMapStyle = true,
     this.rotateGesturesEnabled = true,
     this.tiltGesturesEnabled = true,
     this.scrollGesturesEnabled = true,
@@ -118,8 +121,10 @@ class SharedMapState extends State<SharedMap> {
   LatLng? _lastFollowTarget;
   double _lastFollowBearing = 0;
   DateTime _lastFollowMoveAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastFollowForcedAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _followPausedUntil = DateTime.fromMillisecondsSinceEpoch(0);
   bool _isProgrammaticCameraMove = false;
+  int _lastRouteNearestIndex = -1;
 
   CameraPosition? _lastCameraPosition;
   Timer? _tapZoomResetTimer;
@@ -128,7 +133,7 @@ class SharedMapState extends State<SharedMap> {
   @override
   void initState() {
     super.initState();
-    if (widget.mapStyle == null) {
+    if (widget.autoLoadMapStyle && widget.mapStyle == null) {
       _loadMapStyle();
     }
     _setKeepAwake(true);
@@ -693,29 +698,35 @@ class SharedMapState extends State<SharedMap> {
     // avoid micro-updates
     if (_lastFollowTarget != null) {
       final d = _distanceMeters(_lastFollowTarget!, target);
-      if (d < 0.75 && (_angleDelta(_lastFollowBearing, bearing) < 2.0)) return;
+      final delta = _angleDelta(_lastFollowBearing, bearing);
+      final now = DateTime.now();
+      final shouldUpdate =
+          d > MapUiConfig.navCameraMinMoveMeters ||
+          delta > MapUiConfig.navCameraMinBearingDeltaDeg ||
+          now.difference(_lastFollowForcedAt) > MapUiConfig.navCameraMaxSilence;
+      if (!shouldUpdate) return;
     }
 
     _lastFollowTarget = target;
     _lastFollowBearing = bearing;
 
     _followDebounce?.cancel();
-    _followDebounce = Timer(const Duration(milliseconds: 120), () async {
+    _followDebounce = Timer(MapUiConfig.cameraDebounce, () async {
       if (!mounted || _mapController == null) return;
 
       try {
         final now = DateTime.now();
-        if (now.difference(_lastFollowMoveAt).inMilliseconds < 220) return;
+        if (now.difference(_lastFollowMoveAt) < MapUiConfig.cameraThrottleMin) return;
         _lastFollowMoveAt = now;
+        _lastFollowForcedAt = now;
 
-        final zoom = widget.followZoom.clamp(11.5, 17.8);
-        final leadMeters =
-            zoom >= 15.0
-                ? 70.0
-                : zoom >= 14.3
-                ? 110.0
-                : 150.0;
-        final followTarget = _offsetLatLng(target, bearing, leadMeters);
+        final zoom = widget.followZoom.clamp(11.5, MapUiConfig.navigationZoomMax);
+        final followTarget = _navigationCameraTarget(
+          vehicle: target,
+          bearing: bearing,
+          zoom: zoom,
+          padding: widget.padding,
+        );
 
         _markProgrammaticCameraMove();
         await _mapController!.animateCamera(
@@ -730,6 +741,106 @@ class SharedMapState extends State<SharedMap> {
         );
       } catch (_) {}
     });
+  }
+
+  LatLng _navigationCameraTarget({
+    required LatLng vehicle,
+    required double bearing,
+    required double zoom,
+    required EdgeInsets padding,
+  }) {
+    // Prefer look-ahead point on the active route polyline to make navigation
+    // feel stable and to keep more road ahead visible.
+    final route = _activeRoutePoints();
+    final lookAheadMeters = _lookAheadMetersForZoom(zoom);
+    final lookAhead =
+        route == null ? null : _lookAheadOnRoute(vehicle, route, lookAheadMeters);
+
+    // Blend vehicle + lookAhead so the car sits slightly below center.
+    final blended =
+        lookAhead == null ? null : _blendLatLng(vehicle, lookAhead, 0.65);
+
+    // If we can't resolve look-ahead (no route yet), fallback to a small offset
+    // in the bearing direction.
+    final base = blended ?? _offsetLatLng(vehicle, bearing, lookAheadMeters);
+
+    // Padding-aware small extra push forward when bottom sheet is big.
+    final bottomBias =
+        (padding.bottom / (MediaQuery.of(context).size.height)).clamp(0.0, 0.45);
+    final extra = 10.0 + (bottomBias * 30.0);
+    return _offsetLatLng(base, bearing, extra);
+  }
+
+  List<LatLng>? _activeRoutePoints() {
+    // RideMapController uses fixed polyline ids for active/complete strokes.
+    for (final p in widget.polylines) {
+      if (p.polylineId.value == 'route_active' && p.points.length >= 2) {
+        return p.points;
+      }
+    }
+    // Fallback: pick the longest polyline (best proxy for active route).
+    Polyline? best;
+    for (final p in widget.polylines) {
+      if (p.points.length < 2) continue;
+      if (best == null || p.points.length > best.points.length) best = p;
+    }
+    return best?.points;
+  }
+
+  double _lookAheadMetersForZoom(double zoom) {
+    // Keep it within 50–80m.
+    final t = ((zoom - 16.6) / 1.0).clamp(0.0, 1.0);
+    return (MapUiConfig.lookAheadMinMeters +
+            (MapUiConfig.lookAheadMaxMeters - MapUiConfig.lookAheadMinMeters) * t)
+        .clamp(MapUiConfig.lookAheadMinMeters, MapUiConfig.lookAheadMaxMeters);
+  }
+
+  LatLng? _lookAheadOnRoute(LatLng vehicle, List<LatLng> route, double meters) {
+    if (route.length < 2) return null;
+
+    // Find nearest index (windowed search for performance).
+    int bestIdx = 0;
+    double bestD = double.infinity;
+
+    final start =
+        _lastRouteNearestIndex >= 0 ? (_lastRouteNearestIndex - 30).clamp(0, route.length - 1) : 0;
+    final end =
+        _lastRouteNearestIndex >= 0 ? (_lastRouteNearestIndex + 90).clamp(0, route.length - 1) : (route.length - 1);
+
+    for (int i = start; i <= end; i++) {
+      final d = _distanceMeters(vehicle, route[i]);
+      if (d < bestD) {
+        bestD = d;
+        bestIdx = i;
+      }
+    }
+    _lastRouteNearestIndex = bestIdx;
+
+    // Walk forward along the route to reach the look-ahead distance.
+    double acc = 0.0;
+    for (int i = bestIdx; i < route.length - 1; i++) {
+      final a = route[i];
+      final b = route[i + 1];
+      final seg = _distanceMeters(a, b);
+      if (seg <= 0.01) continue;
+      if (acc + seg >= meters) {
+        final t = ((meters - acc) / seg).clamp(0.0, 1.0);
+        return LatLng(
+          a.latitude + (b.latitude - a.latitude) * t,
+          a.longitude + (b.longitude - a.longitude) * t,
+        );
+      }
+      acc += seg;
+    }
+    return route.last;
+  }
+
+  static LatLng _blendLatLng(LatLng a, LatLng b, double t) {
+    final tt = t.clamp(0.0, 1.0);
+    return LatLng(
+      a.latitude + (b.latitude - a.latitude) * tt,
+      a.longitude + (b.longitude - a.longitude) * tt,
+    );
   }
 
   void pauseAutoFollow(Duration duration) {
@@ -827,7 +938,7 @@ class SharedMapState extends State<SharedMap> {
         if (_isProgrammaticCameraMove) return;
         _resetTapStage();
         widget.onCameraMoveStarted?.call();
-        pauseAutoFollow(const Duration(seconds: 6));
+        pauseAutoFollow(const Duration(seconds: 8));
       },
       onCameraMove: _handleCameraMove,
       onCameraIdle: widget.onCameraIdle,

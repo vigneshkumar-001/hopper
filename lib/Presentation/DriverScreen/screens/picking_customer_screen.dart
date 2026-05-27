@@ -25,14 +25,14 @@ import 'package:hopper/utils/ride_map/ride_map_view.dart';
 import '../controller/driver_status_controller.dart';
 import '../controller/pickup_customer_controller.dart';
 
-class PickingCustomerScreen extends StatelessWidget {
+class PickingCustomerScreen extends StatefulWidget {
   final LatLng pickupLocation;
   final String? pickupLocationAddress;
   final String? dropLocationAddress;
   final LatLng driverLocation;
   final String bookingId;
 
-  PickingCustomerScreen({
+  const PickingCustomerScreen({
     super.key,
     required this.pickupLocation,
     required this.driverLocation,
@@ -42,34 +42,64 @@ class PickingCustomerScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final c = Get.put(
+  State<PickingCustomerScreen> createState() => _PickingCustomerScreenState();
+}
+
+class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
+  late final PickingCustomerController c;
+  late final ActionSliderController sliderController;
+
+  @override
+  void initState() {
+    super.initState();
+    sliderController = ActionSliderController();
+
+    // IMPORTANT: Don't create GetX controllers during `build()`.
+    // Creating it in `initState()` prevents "markNeedsBuild during build"
+    // errors when the controller updates Rx values in `onInit()`.
+    c = Get.put(
       PickingCustomerController(
-        pickupLocation: pickupLocation,
-        driverLocation: driverLocation,
-        bookingId: bookingId,
-        pickupLocationAddress: pickupLocationAddress,
-        dropLocationAddress: dropLocationAddress,
+        pickupLocation: widget.pickupLocation,
+        driverLocation: widget.driverLocation,
+        bookingId: widget.bookingId,
+        pickupLocationAddress: widget.pickupLocationAddress,
+        dropLocationAddress: widget.dropLocationAddress,
       ),
-      tag: bookingId,
+      tag: widget.bookingId,
     );
 
+    // Kick route fetch after the first frame so we never mutate Rx during build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      c.ensureRouteReady();
+    });
+  }
+
+  @override
+  void dispose() {
+    sliderController.dispose();
+    // Allow GetX to clean up controller when this screen is removed.
+    if (Get.isRegistered<PickingCustomerController>(tag: widget.bookingId)) {
+      Get.delete<PickingCustomerController>(tag: widget.bookingId, force: true);
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final DriverStatusController driverStatusController =
         Get.find<DriverStatusController>();
 
-    final sliderController = ActionSliderController();
     return NoInternetOverlay(
       child: WillPopScope(
         onWillPop: () async => false,
         child: Scaffold(
           body: Obx(() {
             final pickupTarget =
-                c.adjustedPickupLocation.value ?? pickupLocation;
-            c.ensureRouteReady();
-            c.rideMap.setBottomSheetHeight(
-              c.arrivedAtPickup.value ? 330.0 : 180.0,
-            );
-            c.rideMap.setPickupDrop(pickup: pickupTarget);
+                c.adjustedPickupLocation.value ?? widget.pickupLocation;
+
+            // NOTE: No side-effects in build. All map updates are driven by the
+            // controller (workers) to avoid build-phase exceptions.
             return Stack(
               children: [
                 DecoratedBox(
@@ -284,7 +314,7 @@ class PickingCustomerScreen extends StatelessWidget {
                                 _topActionRow(
                                   c: c,
                                   context: context,
-                                  bookingId: bookingId,
+                                  bookingId: widget.bookingId,
                                   driverStatusController:
                                       driverStatusController,
                                 ),
@@ -432,10 +462,10 @@ class PickingCustomerScreen extends StatelessWidget {
 
                                 _rideDetailsBlock(
                                   pickupAddress:
-                                      pickupLocationAddress ??
+                                      widget.pickupLocationAddress ??
                                       c.pickupAddressText.value,
                                   dropAddress:
-                                      dropLocationAddress ??
+                                      widget.dropLocationAddress ??
                                       c.dropAddressText.value,
                                 ),
 
@@ -471,7 +501,7 @@ class PickingCustomerScreen extends StatelessWidget {
                                             onConfirmCancel: (reason) async {
                                               await driverStatusController
                                                   .cancelBooking(
-                                                    bookingId: bookingId,
+                                                    bookingId: widget.bookingId,
                                                     context,
                                                     reason: reason,
                                                   );
@@ -500,7 +530,7 @@ class PickingCustomerScreen extends StatelessWidget {
                                             onConfirmCancel: (reason) async {
                                               await driverStatusController
                                                   .cancelBooking(
-                                                    bookingId: bookingId,
+                                                    bookingId: widget.bookingId,
                                                     context,
                                                     reason: reason,
                                                   );
@@ -534,7 +564,7 @@ class PickingCustomerScreen extends StatelessWidget {
                                         MaterialPageRoute(
                                           builder:
                                               (_) => ChatScreen(
-                                                bookingId: bookingId,
+                                                bookingId: widget.bookingId,
                                               ),
                                         ),
                                       );
@@ -689,7 +719,9 @@ class PickingCustomerScreen extends StatelessWidget {
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => ChatScreen(bookingId: bookingId)),
+            MaterialPageRoute(
+              builder: (_) => ChatScreen(bookingId: bookingId),
+            ),
           );
         },
         child: _roundIconBox(AppImages.msg),

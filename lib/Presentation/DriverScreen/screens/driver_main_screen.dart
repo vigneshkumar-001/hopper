@@ -99,13 +99,33 @@ class _DriverMainScreenState extends State<DriverMainScreen>
         child: Scaffold(
           body: SafeArea(
             child: Obx(() {
-              if (!c.ready.value) {
-                return const Center(child: HopprCircularLoader(radius: 14));
-              }
-              // Wait for serviceType before showing home UI so we don't flash the
-              // wrong (Car vs Package/Bike) experience.
-              if (!c.statusController.hasServiceType) {
-                return const Center(child: HopprCircularLoader(radius: 14));
+              // Always render the map immediately (even before location/serviceType),
+              // so the screen never looks blank. We only overlay a loader while
+              // data/location are warming up.
+              final showLoader = !c.ready.value || !c.statusController.hasServiceType;
+              if (showLoader) {
+                return Stack(
+                  children: [
+                    RideMapView(
+                      key: const ValueKey<String>('driver_map_bootstrap'),
+                      controller: c.rideMap,
+                      initialPosition:
+                          c.currentPosition.value ?? const LatLng(9.914, 78.097),
+                      fitToBounds: false,
+                      mapStyle: c.mapStyle,
+                      myLocationEnabled: false,
+                      trafficEnabled: false,
+                      compassEnabled: false,
+                      onMapCreated: (gm) => c.mapController = gm,
+                      gestureRecognizers: {
+                        Factory<OneSequenceGestureRecognizer>(
+                          () => EagerGestureRecognizer(),
+                        ),
+                      },
+                    ),
+                    const Center(child: HopprCircularLoader(radius: 14)),
+                  ],
+                );
               }
 
               return Column(
@@ -614,6 +634,24 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
   String? _expandedDemandId;
   bool _demandExpanded = false;
 
+  void _syncMapBottomPadding(double extent) {
+    // Ensure the driver marker/route never gets hidden behind this sheet.
+    // `RideMapView` reads `rideMap.bottomSheetHeight` and applies GoogleMap padding.
+    final mq = MediaQuery.of(context);
+    final availableH = mq.size.height - mq.padding.top - mq.padding.bottom;
+    final sheetH = (extent * availableH).clamp(0.0, availableH);
+    widget.mainController.rideMap.setBottomSheetHeight(sheetH);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncMapBottomPadding(_currentSize);
+    });
+  }
+
   void _toggleDemandExpanded(DemandOpportunity opp) {
     final id = opp.id.trim();
     setState(() {
@@ -1021,6 +1059,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
       return NotificationListener<DraggableScrollableNotification>(
         onNotification: (n) {
           _currentSize = n.extent;
+          _syncMapBottomPadding(n.extent);
           if (n.extent <= _snaps.last && n.extent >= _snaps.first) {
             _scheduleSnap();
           }

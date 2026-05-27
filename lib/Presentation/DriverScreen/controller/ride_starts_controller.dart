@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
@@ -100,6 +101,7 @@ class RideStatsController extends GetxController
   /// icon
   final Rxn<BitmapDescriptor> carIcon = Rxn<BitmapDescriptor>();
   Worker? _serviceTypeWorker;
+  Worker? _mapTargetWorker;
 
   /// streams + animation
   StreamSubscription<Position>? _positionStream;
@@ -148,6 +150,28 @@ class RideStatsController extends GetxController
 
     _applyVehicleType();
     _listenServiceTypeForVehicle();
+
+    // Keep RideMap destination markers/route state in sync WITHOUT mutating
+    // notifiers from inside a widget build (avoids "markNeedsBuild during build").
+    _mapTargetWorker?.dispose();
+    _mapTargetWorker = everAll(
+      <RxInterface>[
+        bookingToLocation,
+        adjustedDropLocation,
+      ],
+      (_) {
+        final dest = adjustedDropLocation.value ?? bookingToLocation.value;
+        if (dest == null) return;
+        // Defer to the next frame to avoid updating ValueListenables while
+        // RideStatsScreen's Obx is building.
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (isClosed) return;
+          rideMap.setPickupDrop(drop: dest);
+          rideMap.setNavigationDestination(dest, driverFriendlyStop: true);
+        });
+      },
+    );
+
     _hydrateFromJoinedData();
     _wireSocketEvents();
     unawaited(_fetchActiveBookingSnapshotIfNeeded());
@@ -161,6 +185,7 @@ class RideStatsController extends GetxController
     _autoFollowTimer?.cancel();
     _routeRetryTimer?.cancel();
     _serviceTypeWorker?.dispose();
+    _mapTargetWorker?.dispose();
     _isMapActive = false;
     try {
       mapController?.dispose();
@@ -338,7 +363,9 @@ class RideStatsController extends GetxController
         customerTo.value = await _reverseGeocode(drop.latitude, drop.longitude);
       }
 
-      final from = driverLocation.value ?? _lastDriverPosition ?? pickup;
+      // Never seed driver vehicle marker/route from pickup/drop locations.
+      // We wait for a real driver GPS fix (`driverLocation` / `_lastDriverPosition`).
+      final from = driverLocation.value ?? _lastDriverPosition;
       if (from != null && drop != null) {
         _setDirectFallbackRoute(from);
         unawaited(loadFullRoute());
@@ -392,6 +419,8 @@ class RideStatsController extends GetxController
         current,
         speedMetersPerSecond: pos.speed.isFinite ? pos.speed : null,
         headingDeg: pos.heading.isFinite ? pos.heading : null,
+        accuracyMeters: pos.accuracy.isFinite ? pos.accuracy : null,
+        timestamp: pos.timestamp,
       );
       _setDirectFallbackRoute(current);
       await refreshRouteFrom(current);
@@ -714,6 +743,8 @@ class RideStatsController extends GetxController
           current,
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
+          accuracyMeters: acc,
+          timestamp: position.timestamp,
         );
         _setDirectFallbackRoute(current);
         await refreshRouteFrom(current);
@@ -734,6 +765,8 @@ class RideStatsController extends GetxController
           current,
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
+          accuracyMeters: acc,
+          timestamp: position.timestamp,
         );
         return;
       }
@@ -747,6 +780,8 @@ class RideStatsController extends GetxController
           current,
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
+          accuracyMeters: acc,
+          timestamp: position.timestamp,
         );
         return;
       }
@@ -780,6 +815,8 @@ class RideStatsController extends GetxController
         current,
         speedMetersPerSecond: speed.isFinite ? speed : null,
         headingDeg: heading >= 0 ? heading : null,
+        accuracyMeters: acc,
+        timestamp: position.timestamp,
       );
 
       _lastDriverPosition = current;
@@ -800,10 +837,7 @@ class RideStatsController extends GetxController
   // ---------------- ROUTES ----------------
 
   Future<void> loadFullRoute() async {
-    final from =
-        driverLocation.value ??
-        _lastDriverPosition ??
-        bookingFromLocation.value;
+    final from = driverLocation.value ?? _lastDriverPosition;
     final to = bookingToLocation.value;
     if (from == null || to == null) return;
 
@@ -1077,7 +1111,8 @@ class RideStatsController extends GetxController
     autoFollowEnabled.value = false;
     rideMap.setAutoFollowEnabled(false);
     _autoFollowTimer?.cancel();
-    _autoFollowTimer = Timer(const Duration(seconds: 10), () {
+    // Pause auto-follow briefly after manual pan/zoom (Uber/Ola feel).
+    _autoFollowTimer = Timer(const Duration(seconds: 5), () {
       if (isClosed) return;
       isDriverFocused.value = true;
       autoFollowEnabled.value = true;
@@ -1188,10 +1223,7 @@ class RideStatsController extends GetxController
   }
 
   List<LatLng> _fallbackBoundsPoints() {
-    final from =
-        driverLocation.value ??
-        _lastDriverPosition ??
-        bookingFromLocation.value;
+    final from = driverLocation.value ?? _lastDriverPosition;
     final to = bookingToLocation.value;
     if (from == null || to == null) return const <LatLng>[];
     return <LatLng>[from, to];

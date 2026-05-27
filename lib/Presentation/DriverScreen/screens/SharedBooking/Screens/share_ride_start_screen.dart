@@ -31,8 +31,9 @@ import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:hopper/utils/map/maneuver_markers.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
-import 'package:hopper/utils/map/shared_map.dart';
-import 'package:hopper/utils/map/ride_route_overlays.dart';
+import 'package:hopper/utils/ride_map/marker_icon_cache.dart';
+import 'package:hopper/utils/ride_map/ride_map_controller.dart';
+import 'package:hopper/utils/ride_map/ride_map_view.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/vehicle_marker_icon.dart';
@@ -198,7 +199,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   final SharedRideController sharedRideController =
       Get.find<SharedRideController>();
 
-  final GlobalKey<SharedMapState> _mapKey = GlobalKey<SharedMapState>();
+  late final RideMapController _rideMap = RideMapController(mode: RideMapMode.sharedDrop);
 
   LatLng? _animatedDriverPos;
   double _animatedBearing = 0.0;
@@ -211,6 +212,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   String laneGuidance = '';
 
   BitmapDescriptor? carIcon;
+  BitmapDescriptor? _stopPinIcon;
   late SocketService socketService;
   Worker? _serviceTypeWorker;
 
@@ -339,19 +341,14 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                 ? initialTarget.pickupLatLng
                 : initialTarget.dropLatLng);
 
-    // Show an immediate fallback route so UI doesn't look blank while waiting for API.
-    polylinePoints = _buildFallbackRoute(
-      widget.driverLocation,
-      initialDestination,
-    );
+    // IMPORTANT: never seed the driver vehicle marker/route from `widget.driverLocation`.
+    // That value can be stale/incorrect (sometimes equals pickup/drop). We wait for the
+    // first live GPS fix via `DriverRouteController` before drawing route + vehicle.
+    polylinePoints = const <LatLng>[];
     _lastPolyline = polylinePoints;
-    unawaited(
-      _rebuildManeuverMarkers(
-        polylinePoints,
-        travelOrigin: widget.driverLocation,
-        avoid: <LatLng>[initialDestination],
-      ),
-    );
+    _rideMap.setPickupDrop(pickup: initialDestination);
+    _rideMap.setNavigationDestination(initialDestination, driverFriendlyStop: true);
+    unawaited(_loadStopPin());
 
     _routeController = DriverRouteController(
       destination: initialDestination,
@@ -361,6 +358,8 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         _markerAnimator.animateTo(update.driverLocation, update.bearing);
         sharedRideController.updateDriverLocation(update.driverLocation);
         _updateSmartAutoZoom(update.driverLocation);
+
+        _rideMap.updateVehicleLocation(update.driverLocation);
 
         final now = DateTime.now();
         if (_lastUiUpdate != null &&
@@ -399,6 +398,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
           if (polyChanged) {
             polylinePoints = poly;
             _lastPolyline = poly;
+            _rideMap.setRoutePoints(poly);
           }
           if (textChanged) {
             directionText = dText;
@@ -493,6 +493,9 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       _pulseController.dispose();
     } catch (_) {}
     try {
+      _rideMap.dispose();
+    } catch (_) {}
+    try {
       // IMPORTANT: use SocketService.off(...) so we only remove handlers that
       // this screen owns, without breaking DriverMainController listeners.
       socketService.off('driver-reached-destination');
@@ -578,34 +581,41 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     if (target == null || !mounted || _isDisposing) return;
 
     final dest = _destinationForTarget(target);
-    final origin =
-        _animatedDriverPos ??
-        sharedRideController.driverLocation.value ??
-        widget.driverLocation;
+    final origin = _animatedDriverPos ?? sharedRideController.driverLocation.value;
 
     sharedController.pickupDistanceInMeters.value = 0;
     sharedController.pickupDurationInMin.value = 0;
     sharedController.dropDistanceInMeters.value = 0;
     sharedController.dropDurationInMin.value = 0;
 
-    setState(() {
-      polylinePoints = _buildFallbackRoute(origin, dest);
-      _lastPolyline = polylinePoints;
-      _adjustedTargetPos = null;
-    });
-    unawaited(
-      _rebuildManeuverMarkers(
-        polylinePoints,
-        travelOrigin: origin,
-        avoid: <LatLng>[dest],
-      ),
-    );
+    if (origin == null) {
+      // No live driver GPS yet: do not seed fallback route from pickup/drop.
+      setState(() {
+        polylinePoints = const <LatLng>[];
+        _lastPolyline = polylinePoints;
+        _adjustedTargetPos = null;
+        _maneuverMarkers = const <Marker>{};
+      });
+    } else {
+      setState(() {
+        polylinePoints = _buildFallbackRoute(origin, dest);
+        _lastPolyline = polylinePoints;
+        _adjustedTargetPos = null;
+      });
+      unawaited(
+        _rebuildManeuverMarkers(
+          polylinePoints,
+          travelOrigin: origin,
+          avoid: <LatLng>[dest],
+        ),
+      );
+    }
 
     await _routeController.updateDestination(dest);
 
     if (!mounted || _isDisposing) return;
     if (focusMap) {
-      _mapKey.currentState?.focusPickup();
+      unawaited(_rideMap.focusVehicle(zoom: 17.0, tilt: 45, bearingEnabled: true));
     }
     setState(() {});
   }
@@ -890,10 +900,28 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       final icon = await HopprVehicleMarkerIcon.loadForServiceType(
         status.serviceType.value,
       );
+      // Sync common map marker sizing + travel-mode routing.
+      final v = status.serviceType.value.trim().toLowerCase();
+      final type =
+          v.contains('package') || v.contains('parcel')
+              ? RideVehicleType.packageBike
+              : v.contains('bike')
+              ? RideVehicleType.bike
+              : RideVehicleType.car;
+      _rideMap.setVehicleType(type);
       if (!mounted || _isDisposing) return;
       setState(() => carIcon = icon);
     } catch (_) {
       carIcon = BitmapDescriptor.defaultMarker;
+    }
+  }
+
+  Future<void> _loadStopPin() async {
+    try {
+      _stopPinIcon = await MarkerIconCache.loadPickupPin();
+      if (mounted && !_isDisposing) setState(() {});
+    } catch (_) {
+      _stopPinIcon = null;
     }
   }
 
@@ -1231,7 +1259,8 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
               ),
             ),
             TextButton(
-              onPressed: () => _mapKey.currentState?.focusPickup(),
+              onPressed:
+                  () => _rideMap.focusVehicle(zoom: 17.0, tilt: 45, bearingEnabled: true),
               style: TextButton.styleFrom(
                 foregroundColor: _C.amber,
                 padding: const EdgeInsets.symmetric(
@@ -2384,34 +2413,27 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                 : active.dropLatLng);
     final targetPos = _adjustedTargetPos ?? rawTargetPos;
 
-    final markers = <Marker>{
-      Marker(
-        markerId: const MarkerId('driver'),
-        position: driverPos,
-        icon: carIcon ?? BitmapDescriptor.defaultMarker,
-        rotation: _animatedBearing,
-        anchor: const Offset(0.5, 0.5),
-        flat: true,
-        zIndex: 999,
-        onTap: () async {
-          final ms = _mapKey.currentState;
-          if (ms == null) return;
-          await ms.focusDriver(
-            zoom: (_followZoom + 0.9).clamp(16.2, 17.8),
-            tilt: 45,
-            bearingEnabled: true,
-          );
-        },
-      ),
-      ..._maneuverMarkers,
-      if (active != null)
+    final extraMarkers = <Marker>{
+      if (_stopPinIcon != null)
         Marker(
-          markerId: const MarkerId('target_bounds'),
+          markerId: const MarkerId('stop'),
           position: targetPos,
-          visible: false,
+          icon: _stopPinIcon!,
+          anchor: const Offset(0.5, 1.0),
           infoWindow: InfoWindow.noText,
+          zIndexInt: 7,
         ),
+      ..._maneuverMarkers,
     };
+
+    if (_rideMap.pickupPosition == null ||
+        _rideMap.pickupPosition!.latitude != targetPos.latitude ||
+        _rideMap.pickupPosition!.longitude != targetPos.longitude) {
+      _rideMap.setPickupDrop(pickup: targetPos);
+      _rideMap.setNavigationDestination(targetPos, driverFriendlyStop: true);
+    }
+    _rideMap.setAutoFollowEnabled(_isDriverFocused);
+    _rideMap.setBottomSheetHeight(320);
 
     return NoInternetOverlay(
       child: WillPopScope(
@@ -2424,28 +2446,15 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
               SizedBox(
                 height: 560,
                 width: double.infinity,
-                child: SharedMap(
-                  key: _mapKey,
-                  followDriver: _isDriverFocused,
-                  followZoom: _followZoom,
-                  followTilt: 45,
+                child: RideMapView(
+                  controller: _rideMap,
                   initialPosition: targetPos,
-                  pickupPosition: targetPos,
-                  pickupIndicatorStyle: PickupIndicatorStyle.pulse,
-                  pickupIndicatorColor: const Color(0xFF00A85E),
-                  pickupTargetColor: AppColors.commonBlack,
-                  markers: markers,
-                  polylines: RideRouteOverlays.buildRoutePolylines(
-                    routePoints: polylinePoints,
-                    origin: driverPos,
-                    destination: targetPos,
-                    idPrefix: 'route_shared',
-                  ),
-                  // Avoid GoogleMap my-location layer blocking map render when
-                  // permission/service is off. Driver marker already represents
-                  // the current position.
                   myLocationEnabled: false,
                   fitToBounds: true,
+                  trafficEnabled: false,
+                  compassEnabled: false,
+                  extraMarkers: extraMarkers,
+                  onUserCameraMoveStarted: () => setState(() => _isDriverFocused = false),
                 ),
               ),
 
@@ -2491,24 +2500,15 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                         isDriverFocused: _isDriverFocused,
                         accentColor: _C.green,
                         onFocusDriver: () async {
-                          final ms = _mapKey.currentState;
-                          if (ms == null) return;
-                          await ms.focusDriver(
+                          await _rideMap.focusVehicle(
                             zoom: (_followZoom + 0.9).clamp(16.2, 17.8),
                             tilt: 45,
                             bearingEnabled: true,
                           );
                         },
                         onFitBounds: () {
-                          final ms = _mapKey.currentState;
-                          if (ms == null) return;
-                          ms.pauseAutoFollow(const Duration(seconds: 4));
                           final pts = polylinePoints;
-                          if (pts.length >= 2) {
-                            ms.fitPolylineBounds(pts);
-                          } else {
-                            ms.fitRouteBounds();
-                          }
+                          _rideMap.fitToBounds(padding: 95);
                         },
                         onDriverFocusedChanged: (v) {
                           if (!mounted || _isDisposing) return;

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -18,6 +19,90 @@ class MarkerIconCache {
   static final Map<String, Future<BitmapDescriptor>> _cache = {};
 
   static void clear() => _cache.clear();
+
+  static Future<ui.Rect?> _opaqueBounds(ui.Image image) async {
+    // Determine tight bounds for non-transparent pixels so icons with extra
+    // whitespace (common with PNG exports) render compactly like Ola/Uber.
+    // This runs once per cached icon and is safe for production.
+    // NOTE: We treat very low alpha as transparent to avoid noisy edges.
+    const int alphaThreshold = 12;
+    ByteData? bd;
+    try {
+      bd = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    } catch (_) {
+      bd = null;
+    }
+    if (bd == null) return null;
+    final bytes = bd.buffer.asUint8List();
+    final w = image.width;
+    final h = image.height;
+    int minX = w, minY = h, maxX = -1, maxY = -1;
+
+    // bytes are RGBA, so alpha is at index + 3
+    for (int y = 0; y < h; y++) {
+      final rowOffset = y * w * 4;
+      for (int x = 0; x < w; x++) {
+        final a = bytes[rowOffset + x * 4 + 3];
+        if (a > alphaThreshold) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    if (maxX < 0 || maxY < 0) return null;
+    // Expand by 1px to preserve edge antialiasing.
+    minX = (minX - 1).clamp(0, w - 1);
+    minY = (minY - 1).clamp(0, h - 1);
+    maxX = (maxX + 1).clamp(0, w - 1);
+    maxY = (maxY + 1).clamp(0, h - 1);
+    return ui.Rect.fromLTRB(
+      minX.toDouble(),
+      minY.toDouble(),
+      (maxX + 1).toDouble(),
+      (maxY + 1).toDouble(),
+    );
+  }
+
+  static Future<Uint8List?> _renderContainedCroppedPngBytes({
+    required ui.Image srcImage,
+    required int targetWidthPx,
+    required int targetHeightPx,
+  }) async {
+    final srcRect = (await _opaqueBounds(srcImage)) ??
+        ui.Rect.fromLTWH(
+          0,
+          0,
+          srcImage.width.toDouble(),
+          srcImage.height.toDouble(),
+        );
+
+    final cropW = srcRect.width;
+    final cropH = srcRect.height;
+    if (cropW <= 1 || cropH <= 1) return null;
+
+    // Contain within target square without stretching.
+    final scale = math.min(targetWidthPx / cropW, targetHeightPx / cropH);
+    final dstW = cropW * scale;
+    final dstH = cropH * scale;
+    final dx = (targetWidthPx - dstW) / 2.0;
+    final dy = (targetHeightPx - dstH) / 2.0;
+    final dstRect = ui.Rect.fromLTWH(dx, dy, dstW, dstH);
+
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(
+      recorder,
+      ui.Rect.fromLTWH(0, 0, targetWidthPx.toDouble(), targetHeightPx.toDouble()),
+    );
+    final paint = ui.Paint()..isAntiAlias = true..filterQuality = ui.FilterQuality.high;
+    canvas.drawImageRect(srcImage, srcRect, dstRect, paint);
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(targetWidthPx, targetHeightPx);
+    final png = await img.toByteData(format: ui.ImageByteFormat.png);
+    return png?.buffer.asUint8List();
+  }
 
   static String _assetForVehicle(RideVehicleType type) {
     switch (type) {
@@ -64,45 +149,20 @@ class MarkerIconCache {
       final heightPx = (logicalSize * dpr).round().clamp(1, 1024);
       final cfg = ImageConfiguration(devicePixelRatio: dpr);
 
-      ui.Image? decoded;
-      ui.Image? rendered;
       try {
+        // Prefer direct codec decode + crop transparent padding + contain render.
         final provider = AssetImage(asset);
-        final key = await provider.obtainKey(cfg);
-        final bd = await key.bundle.load(key.name);
-
+        final assetKey = await provider.obtainKey(cfg);
+        final bd = await assetKey.bundle.load(assetKey.name);
         final codec = await ui.instantiateImageCodec(bd.buffer.asUint8List());
         final frame = await codec.getNextFrame();
-        decoded = frame.image;
-
-        final recorder = ui.PictureRecorder();
-        final canvas = ui.Canvas(recorder);
-        final paint = ui.Paint()
-          ..isAntiAlias = true
-          ..filterQuality = ui.FilterQuality.high;
-
-        final src = ui.Rect.fromLTWH(
-          0,
-          0,
-          decoded.width.toDouble(),
-          decoded.height.toDouble(),
+        final bytes = await _renderContainedCroppedPngBytes(
+          srcImage: frame.image,
+          targetWidthPx: widthPx,
+          targetHeightPx: heightPx,
         );
-        final dst = ui.Rect.fromLTWH(0, 0, widthPx.toDouble(), heightPx.toDouble());
-
-        // Contain (preserve aspect ratio), center in target.
-        final scale = math.min(dst.width / src.width, dst.height / src.height);
-        final drawW = src.width * scale;
-        final drawH = src.height * scale;
-        final offsetX = (dst.width - drawW) / 2.0;
-        final offsetY = (dst.height - drawH) / 2.0;
-        final dstFit = ui.Rect.fromLTWH(offsetX, offsetY, drawW, drawH);
-        canvas.drawImageRect(decoded, src, dstFit, paint);
-
-        final picture = recorder.endRecording();
-        rendered = await picture.toImage(widthPx, heightPx);
-        final png = await rendered.toByteData(format: ui.ImageByteFormat.png);
-        if (png == null) return BitmapDescriptor.defaultMarker;
-        return BitmapDescriptor.bytes(png.buffer.asUint8List());
+        if (bytes == null) return BitmapDescriptor.defaultMarker;
+        return BitmapDescriptor.bytes(bytes);
       } catch (_) {
         // Fallback to plugin decoding if custom render fails.
         try {
@@ -115,15 +175,7 @@ class MarkerIconCache {
         } catch (_) {
           return BitmapDescriptor.defaultMarker;
         }
-      } finally {
-        try {
-          decoded?.dispose();
-        } catch (_) {}
-        try {
-          rendered?.dispose();
-        } catch (_) {}
       }
     });
   }
 }
-

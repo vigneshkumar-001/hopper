@@ -15,7 +15,7 @@ import 'package:hopper/Presentation/DriverScreen/controller/driver_status_contro
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/share_ride_start_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
-import 'package:hopper/utils/map/shared_map.dart';
+import 'package:hopper/utils/ride_map/ride_map_view.dart';
 import 'package:hopper/utils/map/ride_route_overlays.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
@@ -88,8 +88,6 @@ class PickingCustomerSharedScreen extends StatefulWidget {
 class _PickingCustomerSharedScreenState
     extends State<PickingCustomerSharedScreen>
     with TickerProviderStateMixin {
-  final GlobalKey<SharedMapState> _mapKey = GlobalKey<SharedMapState>();
-
   static const double _ARRIVED_PICKUP_RADIUS_M = 500.0;
 
   late final PickingCustomerSharedController c;
@@ -241,14 +239,7 @@ class _PickingCustomerSharedScreenState
 
   Future<void> _onSelectRider(SharedRiderItem rider) async {
     await c.selectRider(rider);
-    final ms = _mapKey.currentState;
-    if (ms != null) {
-      ms.pauseAutoFollow(const Duration(seconds: 2));
-      await ms.focusOnCustomerRoute(
-        c.routeUi.value.driverLocation,
-        rider.pickupLatLng,
-      );
-    }
+    await c.rideMap.fitToBounds(padding: 95);
   }
 
   Future<void> _sendQuickReply(SharedRiderItem rider, String text) async {
@@ -261,20 +252,7 @@ class _PickingCustomerSharedScreenState
   }
 
   Future<void> _recenterToActiveRoute() async {
-    final ms = _mapKey.currentState;
-    if (ms == null) return;
-    final active = sharedRideController.activeTarget.value;
-    if (active == null) {
-      await ms.fitRouteBounds();
-      return;
-    }
-    ms.pauseAutoFollow(const Duration(seconds: 2));
-    await ms.focusOnCustomerRoute(
-      c.routeUi.value.driverLocation,
-      active.stage == SharedRiderStage.onboardDrop
-          ? active.dropLatLng
-          : active.pickupLatLng,
-    );
+    await c.rideMap.fitToBounds(padding: 95);
   }
 
   static IconData _maneuverIcon(String maneuverRaw, String directionRaw) {
@@ -684,20 +662,14 @@ class _PickingCustomerSharedScreenState
       () => MapFocusToggleButton(
         isDriverFocused: c.isDriverFocused.value,
         onFocusDriver: () async {
-          final ms = _mapKey.currentState;
-          if (ms == null) return;
-          await ms.focusDriver(zoom: c.followZoom.value, tilt: 0);
+          await c.rideMap.focusVehicle(
+            zoom: c.followZoom.value,
+            tilt: 0,
+            bearingEnabled: true,
+          );
         },
         onFitBounds: () {
-          final ms = _mapKey.currentState;
-          if (ms == null) return;
-          ms.pauseAutoFollow(const Duration(seconds: 4));
-          final pts = c.routeUi.value.polyline;
-          if (pts.length >= 2) {
-            ms.fitPolylineBounds(pts);
-          } else {
-            ms.fitRouteBounds();
-          }
+          c.rideMap.fitToBounds(padding: 95);
         },
         onDriverFocusedChanged: (v) => c.isDriverFocused.value = v,
         accentColor: _C.green,
@@ -1508,21 +1480,7 @@ class _PickingCustomerSharedScreenState
                         : resolvedTarget.pickupLatLng);
             final currentTarget = c.adjustedStopLocation.value ?? rawTarget;
 
-            final markers = <Marker>{
-              Marker(
-                markerId: const MarkerId('driver'),
-                position: uiState.driverLocation,
-                icon: c.carIcon.value ?? BitmapDescriptor.defaultMarker,
-                rotation: uiState.bearing,
-                anchor: const Offset(0.5, 0.5),
-                flat: true,
-              ),
-              Marker(
-                markerId: const MarkerId('pickup_bounds'),
-                position: currentTarget,
-                visible: false,
-                infoWindow: InfoWindow.noText,
-              ),
+            final extraMarkers = <Marker>{
               if (c.stopPinIcon.value != null)
                 Marker(
                   markerId: const MarkerId('stop'),
@@ -1534,6 +1492,16 @@ class _PickingCustomerSharedScreenState
                 ),
               ...c.maneuverMarkers,
             };
+
+            // Keep common map engine destination in sync (no duplicate polyline/marker logic here).
+            if (c.rideMap.pickupPosition == null ||
+                c.rideMap.pickupPosition!.latitude != currentTarget.latitude ||
+                c.rideMap.pickupPosition!.longitude != currentTarget.longitude) {
+              c.rideMap.setPickupDrop(pickup: currentTarget);
+              c.rideMap.setNavigationDestination(currentTarget, driverFriendlyStop: true);
+            }
+            c.rideMap.setAutoFollowEnabled(c.isDriverFocused.value);
+            c.rideMap.setBottomSheetHeight(300);
 
             if (uiState.polyline.length < 2 &&
                 !_routeRefreshQueued &&
@@ -1554,28 +1522,15 @@ class _PickingCustomerSharedScreenState
                 SizedBox(
                   height: 560,
                   width: double.infinity,
-                  child: SharedMap(
-                    key: _mapKey,
+                  child: RideMapView(
+                    controller: c.rideMap,
                     initialPosition: uiState.driverLocation,
-                    pickupPosition: currentTarget,
-                    pickupIndicatorStyle: PickupIndicatorStyle.pulse,
-                    pickupIndicatorColor: const Color(0xFF00A85E),
-                    pickupTargetColor: AppColors.commonBlack,
-                    markers: markers,
-                    followDriver: c.isDriverFocused.value,
-                    followBearingEnabled: false,
-                    followZoom: c.followZoom.value,
-                    followTilt: 0,
-                    trafficEnabled: false,
-                    compassEnabled: false,
-                    polylines: RideRouteOverlays.buildRoutePolylines(
-                      routePoints: uiState.polyline,
-                      origin: uiState.driverLocation,
-                      destination: currentTarget,
-                      idPrefix: 'route_to_rider',
-                    ),
                     myLocationEnabled: false,
                     fitToBounds: false,
+                    trafficEnabled: false,
+                    compassEnabled: false,
+                    extraMarkers: extraMarkers,
+                    onUserCameraMoveStarted: () => c.isDriverFocused.value = false,
                   ),
                 ),
 

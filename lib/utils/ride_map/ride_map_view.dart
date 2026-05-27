@@ -51,10 +51,23 @@ class RideMapView extends StatefulWidget {
 }
 
 class _RideMapViewState extends State<RideMapView> {
+  static const LatLng _kDefaultCityFallback = LatLng(9.914, 78.097);
+
+  static bool _isProbablyInvalidLatLng(LatLng p) {
+    // Many flows previously passed (0,0) or stale placeholders; that shows a
+    // "blank blue/ocean" map. Treat it as invalid and fall back.
+    return p.latitude.abs() < 0.0001 && p.longitude.abs() < 0.0001;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = MapUiConfig.cameraPadding.bottom + widget.controller.bottomSheetHeight;
-    final padding = MapUiConfig.cameraPadding.copyWith(bottom: bottomPadding);
+    final mediaPadding = MediaQuery.paddingOf(context);
+    final padding = EdgeInsets.fromLTRB(
+      MapUiConfig.mapSidePadding,
+      mediaPadding.top + MapUiConfig.mapTopPadding,
+      MapUiConfig.mapSidePadding,
+      widget.controller.bottomSheetHeight + MapUiConfig.mapBottomExtraPadding,
+    );
 
     return ValueListenableBuilder<Set<Marker>>(
       valueListenable: widget.controller.markers,
@@ -87,13 +100,31 @@ class _RideMapViewState extends State<RideMapView> {
                             widget.controller.dropPosition ??
                             widget.controller.pickupPosition;
 
+                        final initial = widget.controller.lastVehiclePosition ??
+                            widget.controller.navigationDestination ??
+                            widget.controller.pickupPosition ??
+                            widget.controller.dropPosition ??
+                            widget.initialPosition;
+                        final initialPos =
+                            _isProbablyInvalidLatLng(initial) ? _kDefaultCityFallback : initial;
+
+                        final styleForMap =
+                            widget.controller.mode == RideMapMode.home
+                                ? widget.mapStyle
+                                : null;
+
                         return SharedMap(
-                          initialPosition: widget.initialPosition,
+                          initialPosition: initialPos,
                           initialZoom:
                               widget.controller.mode == RideMapMode.home
                                   ? MapUiConfig.defaultZoom
                                   : MapUiConfig.navigationZoom,
-                          mapStyle: widget.mapStyle,
+                          // Prefer RideMapController-applied style for all ride flows.
+                          // Passing a style string here can override controller.setMapStyle
+                          // in some plugin versions.
+                          mapStyle: styleForMap,
+                          autoLoadMapStyle:
+                              widget.controller.mode == RideMapMode.home,
                           padding: padding,
                           pickupPosition: pickupPulseTarget,
                           pickupIndicatorStyle:
@@ -114,7 +145,8 @@ class _RideMapViewState extends State<RideMapView> {
                           followZoom:
                               widget.controller.mode == RideMapMode.home
                                   ? MapUiConfig.defaultZoom
-                                  : MapUiConfig.navigationZoom,
+                                  : widget.controller.navigationFollowZoom
+                                      .clamp(16.5, 18.0),
                           followTilt:
                               widget.controller.mode == RideMapMode.home
                                   ? 0.0

@@ -26,17 +26,17 @@ class RoutePolylineService {
     bool driverFriendlyStop = false,
     String mode = 'driving',
   }) async {
-    try {
+    Future<RoutePolylineResult?> attempt(String attemptMode) async {
       final result = driverFriendlyStop
           ? await getDriverFriendlyRouteInfo(
               origin: origin,
               destination: destination,
-              mode: mode,
+              mode: attemptMode,
             )
           : await getRouteInfo(
               origin: origin,
               destination: destination,
-              mode: mode,
+              mode: attemptMode,
             );
 
       final poly = (result['polyline'] ?? '').toString();
@@ -56,7 +56,24 @@ class RoutePolylineService {
           adjustedDestination: adjustedDest,
         );
       }
-    } catch (_) {}
+      return null;
+    }
+
+    try {
+      final first = await attempt(mode);
+      if (first != null) return first;
+    } catch (_) {
+      // ignore (fallback below)
+    }
+
+    // If two-wheeler isn't supported for this API key/region, fall back to driving
+    // before drawing a straight line. This keeps behavior production-friendly.
+    if (mode == 'two_wheeler') {
+      try {
+        final driving = await attempt('driving');
+        if (driving != null) return driving;
+      } catch (_) {}
+    }
 
     return RoutePolylineResult(
       points: <LatLng>[origin, destination],
@@ -65,4 +82,3 @@ class RoutePolylineService {
     );
   }
 }
-

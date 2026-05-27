@@ -13,6 +13,8 @@ import '../../../api/repository/api_config_controller.dart';
 import '../../../utils/sharedprefsHelper/sharedprefs_handler.dart';
 
 Future<void>? _configureOnce;
+Future<void>? _startOnce;
+DateTime _lastStartRequestedAt = DateTime.fromMillisecondsSinceEpoch(0);
 
 bool isBackgroundTrackingEnabled() {
   // Enabled for production: this app needs to send driver location even when the
@@ -91,17 +93,41 @@ Future<void> ensureDriverTrackingServiceRunning({
   } catch (_) {}
 
   final service = FlutterBackgroundService();
-  final running = await service.isRunning();
-  if (!running) {
+  // Prevent multiple rapid start attempts (can spawn multiple Flutter engines
+  // on some OEMs and causes Geolocator "connected engine count" growth).
+  final now = DateTime.now();
+  if (now.difference(_lastStartRequestedAt) < const Duration(seconds: 2)) {
+    service.invoke('data', {
+      if (driverId != null) 'driverId': driverId,
+      if (bookingId != null) 'bookingId': bookingId,
+    });
+    return;
+  }
+  _lastStartRequestedAt = now;
+
+  _startOnce ??= () async {
+    final running = await service.isRunning();
+    if (running) return;
     try {
       if (kDebugMode) {
         CommonLogger.log.i('🟢 [BG_SERVICE] Starting driver tracking service');
       }
       await service.startService();
+      // Give the platform time to spin up the background engine.
+      await Future<void>.delayed(const Duration(milliseconds: 350));
     } catch (e) {
       CommonLogger.log.e('❌ [BG_SERVICE] startService failed: $e');
-      return;
+      rethrow;
+    } finally {
+      // Allow future start attempts if service was stopped later.
+      _startOnce = null;
     }
+  }();
+
+  try {
+    await _startOnce;
+  } catch (_) {
+    return;
   }
 
   service.invoke('data', {

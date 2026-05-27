@@ -69,11 +69,13 @@ class ApiDataSource extends BaseApiDataSource {
       );
 
       // Backend may accept GET/POST; using POST with empty body is safe.
-      await dio.post(
+      final res = await dio.post(
         url,
         data: const <String, dynamic>{},
         options: Options(validateStatus: (s) => s != null && s < 500),
       );
+      // Debug visibility: helps verify logout API was called.
+      CommonLogger.log.i('LOGOUT API ${res.statusCode} $url');
     } catch (_) {
       // fire-and-forget: ignore
     }

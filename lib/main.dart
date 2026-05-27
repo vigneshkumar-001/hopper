@@ -25,11 +25,24 @@ Future<void> main() async {
   // ✅ Configure (do not start) background tracking service
   await initializeBackgroundService();
 
-  // ✅ Firebase init must be before messaging handlers
-  await Firebase.initializeApp();
+  // ✅ Firebase init should never crash the app
+  var firebaseReady = false;
+  try {
+    await Firebase.initializeApp();
+    firebaseReady = true;
+  } catch (e, st) {
+    CommonLogger.log.e("❌ Firebase.initializeApp failed (app continues): $e");
+    CommonLogger.log.e("STACK: $st");
+  }
 
-  // ✅ Register BG handler early
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  // ✅ Register BG handler early (only if Firebase is ready)
+  if (firebaseReady) {
+    try {
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    } catch (e) {
+      CommonLogger.log.e("❌ FirebaseMessaging BG handler register failed: $e");
+    }
+  }
 
   // ✅ UI first (prevents black screen even if FCM fails)
   runApp(const MyApp());
@@ -50,6 +63,12 @@ Future<void> main() async {
 
 Future<void> _initFcmSafely() async {
   try {
+    // If Firebase core failed, skip FCM to avoid crashes.
+    if (Firebase.apps.isEmpty) {
+      CommonLogger.log.w('⚠️ Firebase not initialized – skipping FCM init');
+      return;
+    }
+
     final firebaseService = FirebaseService();
     await firebaseService.initializeFirebase();
     await firebaseService.fetchFCMTokenIfNeeded();

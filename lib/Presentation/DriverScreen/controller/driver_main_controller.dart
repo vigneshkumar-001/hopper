@@ -372,7 +372,13 @@ class DriverMainController extends GetxController
     currentPosition.value = latLng;
 
     updateCarMarker(latLng);
-    rideMap.updateVehicleLocation(latLng, speedMetersPerSecond: pos.speed.isFinite ? pos.speed : null, headingDeg: pos.heading.isFinite ? pos.heading : null);
+    rideMap.updateVehicleLocation(
+      latLng,
+      speedMetersPerSecond: pos.speed.isFinite ? pos.speed : null,
+      headingDeg: pos.heading.isFinite ? pos.heading : null,
+      accuracyMeters: pos.accuracy.isFinite ? pos.accuracy : null,
+      timestamp: pos.timestamp,
+    );
 
     await mapController?.animateCamera(
       CameraUpdate.newCameraPosition(

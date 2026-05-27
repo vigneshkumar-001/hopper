@@ -20,6 +20,9 @@ import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/maneuver_markers.dart';
 import 'package:hopper/utils/map/vehicle_marker_icon.dart';
+import 'package:hopper/utils/ride_map/marker_icon_cache.dart';
+import 'package:hopper/utils/ride_map/ride_map_controller.dart';
+import 'package:hopper/utils/ride_map/travel_mode_resolver.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 
@@ -106,6 +109,11 @@ class PickingCustomerSharedController extends GetxController {
   final Rxn<BitmapDescriptor> stopPinIcon = Rxn<BitmapDescriptor>();
   Worker? _serviceTypeWorker;
 
+  /// Common Uber/Ola-like ride map engine (shared pickup mode).
+  final RideMapController rideMap = RideMapController(mode: RideMapMode.sharedPickup);
+
+  RideVehicleType _rideVehicleType = RideVehicleType.car;
+
   // UI state
   late final Rx<SharedRouteUiState> routeUi;
 
@@ -186,7 +194,13 @@ class PickingCustomerSharedController extends GetxController {
     _listenServiceTypeForIcon();
     _initSocket();
     _startTracking();
-    _fetchRoute(force: true);
+    // Route + vehicle marker must start from live driver GPS only.
+    // `_startTracking()` fetches the first GPS fix and triggers route load.
+
+    rideMap.setVehicleType(_rideVehicleType);
+    rideMap.setPickupDrop(pickup: pickupLocation);
+    rideMap.setNavigationDestination(pickupLocation);
+    rideMap.setShowCompletedRoute(false);
   }
 
   @override
@@ -203,6 +217,7 @@ class PickingCustomerSharedController extends GetxController {
       socketService.socket.off('driver-cancelled');
       socketService.socket.off('customer-cancelled');
     } catch (_) {}
+    rideMap.dispose();
     super.onClose();
   }
 
@@ -242,10 +257,19 @@ class PickingCustomerSharedController extends GetxController {
       carIcon.value = await HopprVehicleMarkerIcon.loadForServiceType(
         driverStatusController.serviceType.value,
       );
+      _rideVehicleType = _vehicleTypeFromServiceType(driverStatusController.serviceType.value);
+      rideMap.setVehicleType(_rideVehicleType);
     } catch (e) {
       CommonLogger.log.e("car icon load failed: $e");
       carIcon.value = BitmapDescriptor.defaultMarker;
     }
+  }
+
+  RideVehicleType _vehicleTypeFromServiceType(String raw) {
+    final v = raw.trim().toLowerCase();
+    if (v.contains('package') || v.contains('parcel')) return RideVehicleType.packageBike;
+    if (v.contains('bike')) return RideVehicleType.bike;
+    return RideVehicleType.car;
   }
 
   void _listenServiceTypeForIcon() {
@@ -258,14 +282,7 @@ class PickingCustomerSharedController extends GetxController {
 
   Future<void> _loadStopPinIcon() async {
     try {
-      const double markerSize = 30.0;
-      const cfg = ImageConfiguration(size: Size(markerSize, markerSize));
-      stopPinIcon.value = await BitmapDescriptor.asset(
-        cfg,
-        AppImages.loc,
-        width: markerSize,
-        height: markerSize,
-      );
+      stopPinIcon.value = await MarkerIconCache.loadPickupPin();
     } catch (_) {
       stopPinIcon.value = null;
     }
@@ -593,7 +610,7 @@ class PickingCustomerSharedController extends GetxController {
         destination: destination,
         alternatives: false,
         traffic: true,
-        mode: "driving",
+        mode: TravelModeResolver.getTravelMode(_rideVehicleType),
         routeIndex: 0,
         maxAdjustMeters: 140,
       );
@@ -653,13 +670,17 @@ class PickingCustomerSharedController extends GetxController {
         maneuver: (result['maneuver'] ?? '').toString(),
         laneGuidance: (result['laneGuidance'] ?? '').toString(),
       );
+      final dest = adjustedStopLocation.value ?? destination;
+
+      // Map engine sync (common route/trim/reroute).
+      rideMap.setRoutePoints(pts);
+      rideMap.setNavigationDestination(dest, driverFriendlyStop: true);
       final mp = result['maneuverPoints'];
       final maneuverPoints =
           mp is List
               ? mp.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
               : const <Map<String, dynamic>>[];
 
-      final dest = adjustedStopLocation.value ?? destination;
       unawaited(
         _rebuildManeuverMarkers(
           // Use raw polyline for turn icons so left/right markers align perfectly.
@@ -850,6 +871,15 @@ class PickingCustomerSharedController extends GetxController {
       final speed = (pos.speed.isFinite) ? pos.speed : 0.0;
       final heading = (pos.heading.isFinite) ? pos.heading : -1.0;
       _updateSmartAutoZoom(speed);
+
+      // Common map engine updates (smooth marker + trim + reroute).
+      rideMap.updateVehicleLocation(
+        currentRaw,
+        speedMetersPerSecond: speed.isFinite ? speed : null,
+        headingDeg: heading >= 0 ? heading : null,
+        accuracyMeters: acc,
+        timestamp: pos.timestamp,
+      );
 
       if (_lastPos == null) {
         _lastPos = currentRaw;

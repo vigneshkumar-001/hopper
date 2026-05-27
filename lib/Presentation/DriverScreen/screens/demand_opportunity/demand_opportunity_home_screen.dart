@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/utils/map/shared_map.dart';
+import 'package:hopper/utils/map/app_map_style.dart';
 
 extension _ColorOpacity on Color {
   Color o(double opacity) => withValues(alpha: opacity.clamp(0.0, 1.0));
@@ -110,6 +111,7 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
   Timer? _searchDebounce;
 
   GoogleMapController? _mapController;
+  String? _mapStyle;
 
   DemandOpportunity? _selected;
 
@@ -161,6 +163,7 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
     _selected = _opportunities.first;
     _searchController.addListener(_onSearchChanged);
     unawaited(_prebuildMarkerIcons());
+    unawaited(_loadMapStyle());
   }
 
   @override
@@ -186,6 +189,20 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
       if (!mounted) return;
       setState(() {});
     });
+  }
+
+  Future<void> _loadMapStyle() async {
+    try {
+      // Use the same premium light style we use for ride navigation to avoid
+      // washed-out/grey maps on zoom.
+      _mapStyle = await AppMapStyle.loadUberLight();
+      if (!mounted) return;
+      setState(() {});
+      final c = _mapController;
+      if (c != null) {
+        await c.setMapStyle(_mapStyle);
+      }
+    } catch (_) {}
   }
 
   Future<void> _prebuildMarkerIcons() async {
@@ -457,15 +474,67 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
               fitToBounds: false,
               myLocationEnabled: false,
               compassEnabled: false,
+              mapStyle: _mapStyle,
               markers: _buildMarkers(),
               circles: _buildDemandZones(),
               onMapCreated: (c) {
                 _mapController = c;
+                if (_mapStyle != null) {
+                  unawaited(c.setMapStyle(_mapStyle));
+                }
               },
               onTap: (_) {
                 unawaited(_collapseSheet());
                 HapticFeedback.lightImpact();
               },
+            ),
+          ),
+
+          // Subtle readability gradients (premium feel, reduces map clutter under UI).
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            height: 220,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      (palette.isDark ? const Color(0xFF0B1220) : const Color(0xFFF8FAFC))
+                          .o(0.85),
+                      (palette.isDark ? const Color(0xFF0B1220) : const Color(0xFFF8FAFC))
+                          .o(0.40),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 220,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      (palette.isDark ? const Color(0xFF0B1220) : const Color(0xFFF8FAFC))
+                          .o(0.70),
+                      (palette.isDark ? const Color(0xFF0B1220) : const Color(0xFFF8FAFC))
+                          .o(0.25),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
 
@@ -484,6 +553,12 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
                       children: [
                         Row(
                           children: [
+                            _IconGlassButton(
+                              palette: palette,
+                              icon: Icons.arrow_back_rounded,
+                              onTap: () => Navigator.maybePop(context),
+                            ),
+                            const SizedBox(width: 10),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -935,6 +1010,46 @@ class _SegItem {
   const _SegItem(this.label, this.value);
   final String label;
   final DemandOpportunityCategory? value;
+}
+
+class _IconGlassButton extends StatelessWidget {
+  const _IconGlassButton({
+    required this.palette,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final _Palette palette;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Ink(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: palette.isDark ? Colors.white.o(0.08) : Colors.white.o(0.86),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: palette.cardBorder),
+            boxShadow: [
+              BoxShadow(
+                color: palette.shadowColor,
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Icon(icon, color: palette.iconColor, size: 20),
+        ),
+      ),
+    );
+  }
 }
 
 class _StatusPill extends StatelessWidget {

@@ -5,6 +5,8 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/screens/GetStarted_Screens.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:get/get.dart';
+import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LandingScreens extends StatefulWidget {
   const LandingScreens({super.key});
@@ -21,14 +23,20 @@ class _LandingScreensState extends State<LandingScreens> {
   // }
 
   Future<void> getUserDetail() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = (prefs.getString('token') ?? '').trim();
+    if (token.isEmpty) return;
+    // Don't trigger Rx updates during widget build.
     await controller.getUserDetails();
-    controller.getUserDetails();
   }
 
   @override
   void initState() {
     super.initState();
-    getUserDetail();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(getUserDetail());
+    });
   }
 
   @override
