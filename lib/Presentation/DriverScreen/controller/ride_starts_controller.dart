@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:geocoding/geocoding.dart';
@@ -73,6 +74,14 @@ class RideStatsController extends GetxController
   bool _didInitialRouteFit = false;
   bool _isMapActive = false;
 
+  // Reach-destination detection (GPS-first, socket fallback).
+  bool _reachedDropGps = false;
+  bool _reachedDropSocket = false;
+  DateTime? _lastGpsFixAt;
+  DateTime? _lastSocketFixAt;
+  static const Duration _gpsReachedTtl = Duration(seconds: 8);
+  static const Duration _socketReachedTtl = Duration(seconds: 12);
+
   /// polyline + nav banner
   final RxList<LatLng> polylinePoints = <LatLng>[].obs;
   final RxString directionText = ''.obs;
@@ -102,6 +111,7 @@ class RideStatsController extends GetxController
   final Rxn<BitmapDescriptor> carIcon = Rxn<BitmapDescriptor>();
   Worker? _serviceTypeWorker;
   Worker? _mapTargetWorker;
+  Worker? _sheetHeightWorker;
 
   /// streams + animation
   StreamSubscription<Position>? _positionStream;
@@ -177,6 +187,15 @@ class RideStatsController extends GetxController
     unawaited(_fetchActiveBookingSnapshotIfNeeded());
     unawaited(_primeDriverLocationAndRoute());
     _startLocationStream();
+
+    // Keep map padding hint in sync with the bottom sheet, without doing
+    // side-effects from the widget build method.
+    void applySheetHeight(bool completed) {
+      rideMap.setBottomSheetHeight(completed ? 350.0 : 270.0);
+    }
+    applySheetHeight(driverCompletedRide.value);
+    _sheetHeightWorker?.dispose();
+    _sheetHeightWorker = ever<bool>(driverCompletedRide, applySheetHeight);
   }
 
   @override
@@ -186,6 +205,7 @@ class RideStatsController extends GetxController
     _routeRetryTimer?.cancel();
     _serviceTypeWorker?.dispose();
     _mapTargetWorker?.dispose();
+    _sheetHeightWorker?.dispose();
     _isMapActive = false;
     try {
       mapController?.dispose();
@@ -274,12 +294,17 @@ class RideStatsController extends GetxController
             return joined;
           })();
 
-      driverStatusController.setServiceTypeFrom(
-        payload['rideType'] ??
-            payload['serviceType'] ??
-            joined['rideType'] ??
-            joined['serviceType'],
-      );
+      // Defer Rx updates until after first frame to avoid Obx build-phase crashes.
+      final serviceType =
+          payload['rideType'] ??
+          payload['serviceType'] ??
+          joined['rideType'] ??
+          joined['serviceType'];
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          driverStatusController.setServiceTypeFrom(serviceType);
+        } catch (_) {}
+      });
 
       final pickup =
           _extractNestedLatLng(payload, 'pickupLocation') ??
@@ -324,6 +349,26 @@ class RideStatsController extends GetxController
 
       if (pickup != null) bookingFromLocation.value = pickup;
       if (drop != null) bookingToLocation.value = drop;
+
+      // If snapshot already contains real driverLocation, show vehicle marker
+      // immediately (do not wait for a later driver-location tick).
+      final driverRaw = payload['driverLocation'] ?? joined['driverLocation'];
+      if (driverRaw is Map) {
+        final dm = Map<String, dynamic>.from(driverRaw as Map);
+        double? asDouble(dynamic v) {
+          if (v is num) return v.toDouble();
+          return double.tryParse(v?.toString() ?? '');
+        }
+
+        final dLat = asDouble(dm['latitude'] ?? dm['lat']);
+        final dLng = asDouble(dm['longitude'] ?? dm['lng']);
+        if (dLat != null && dLng != null) {
+          final pos = LatLng(dLat, dLng);
+          driverLocation.value = pos;
+          _lastDriverPosition ??= pos;
+          rideMap.updateVehicleLocation(pos, source: 'socket');
+        }
+      }
 
       custName.value =
           (payload['custName'] ??
@@ -617,22 +662,15 @@ class RideStatsController extends GetxController
       // event listener was overridden elsewhere.
       // Guard: some backends send `0` temporarily (unknown), which would otherwise
       // incorrectly flip UI into "reached destination".
+      _lastSocketFixAt = DateTime.now();
       if (dropM > 0) {
-        final reached = dropM <= _REACHED_DESTINATION_RADIUS_M;
-
-        // Preference: if we know the drop coordinates, the GPS-based distance
-        // check (`_updateReachedDestinationByDistance`) is the source of truth.
-        // Use socket distance only as a positive fallback.
-        final hasDropCoords = bookingToLocation.value != null;
-        if (!driverCompletedRide.value && reached) {
-          driverCompletedRide.value = true;
-        } else if (!hasDropCoords) {
-          final exit = dropM >= _REACHED_DESTINATION_EXIT_RADIUS_M;
-          if (driverCompletedRide.value && exit) {
-            driverCompletedRide.value = false;
-          }
+        if (!_reachedDropSocket && dropM <= _REACHED_DESTINATION_RADIUS_M) {
+          _reachedDropSocket = true;
+        } else if (_reachedDropSocket && dropM >= _REACHED_DESTINATION_EXIT_RADIUS_M) {
+          _reachedDropSocket = false;
         }
       }
+      _recomputeReachedDestination();
     });
 
     socketService.on('driver-reached-destination', (data) {
@@ -654,7 +692,11 @@ class RideStatsController extends GetxController
           rawStatus == 1 ||
           rawStatus?.toString().trim().toLowerCase() == 'true' ||
           rawStatus?.toString().trim() == '1';
-      if (reached) driverCompletedRide.value = true;
+      if (reached) {
+        _lastSocketFixAt = DateTime.now();
+        _reachedDropSocket = true;
+        _recomputeReachedDestination();
+      }
     });
 
     socketService.on('driver-cancelled', (data) {
@@ -700,16 +742,30 @@ class RideStatsController extends GetxController
     // Keep UI distance usable even if socket is delayed/offline.
     driverStatusController.dropDistanceInMeters.value = distanceToDropM;
 
-    final reached = distanceToDropM <= _REACHED_DESTINATION_RADIUS_M;
-    final exit = distanceToDropM >= _REACHED_DESTINATION_EXIT_RADIUS_M;
-
-    if (!driverCompletedRide.value && reached) {
-      driverCompletedRide.value = true;
+    _lastGpsFixAt = DateTime.now();
+    if (!_reachedDropGps && distanceToDropM <= _REACHED_DESTINATION_RADIUS_M) {
+      _reachedDropGps = true;
       CommonLogger.log.i(
-        'Auto driverCompletedRide TRUE at ${distanceToDropM.toStringAsFixed(1)}m from drop',
+        'Auto driverCompletedRide TRUE (gps) at ${distanceToDropM.toStringAsFixed(1)}m from drop',
       );
-    } else if (driverCompletedRide.value && exit) {
-      driverCompletedRide.value = false;
+    } else if (_reachedDropGps && distanceToDropM >= _REACHED_DESTINATION_EXIT_RADIUS_M) {
+      _reachedDropGps = false;
+    }
+
+    _recomputeReachedDestination();
+  }
+
+  void _recomputeReachedDestination() {
+    final now = DateTime.now();
+    final gpsFresh =
+        _lastGpsFixAt != null && now.difference(_lastGpsFixAt!) <= _gpsReachedTtl;
+    final socketFresh =
+        _lastSocketFixAt != null &&
+        now.difference(_lastSocketFixAt!) <= _socketReachedTtl;
+
+    final next = gpsFresh ? _reachedDropGps : (socketFresh ? _reachedDropSocket : false);
+    if (driverCompletedRide.value != next) {
+      driverCompletedRide.value = next;
     }
   }
 
@@ -741,6 +797,7 @@ class RideStatsController extends GetxController
         _setMarkerImmediate(current, currentBearing.value);
         rideMap.updateVehicleLocation(
           current,
+          source: 'gps',
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
           accuracyMeters: acc,
@@ -763,6 +820,7 @@ class RideStatsController extends GetxController
         _lastDriverPosition = current; // update reference without rotating
         rideMap.updateVehicleLocation(
           current,
+          source: 'gps',
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
           accuracyMeters: acc,
@@ -778,6 +836,7 @@ class RideStatsController extends GetxController
         _lastDriverPosition = current;
         rideMap.updateVehicleLocation(
           current,
+          source: 'gps',
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
           accuracyMeters: acc,
@@ -813,6 +872,7 @@ class RideStatsController extends GetxController
       currentBearing.value = targetBearing;
       rideMap.updateVehicleLocation(
         current,
+        source: 'gps',
         speedMetersPerSecond: speed.isFinite ? speed : null,
         headingDeg: heading >= 0 ? heading : null,
         accuracyMeters: acc,
@@ -844,6 +904,12 @@ class RideStatsController extends GetxController
     _ensureVisibleRoute(from);
 
     try {
+      if (kDebugMode) {
+        debugPrint(
+          '[ROUTE_REQUEST] origin=driver lat=${from.latitude} lng=${from.longitude} '
+          'dest=drop lat=${to.latitude} lng=${to.longitude}',
+        );
+      }
       final result = await getDriverFriendlyRouteInfo(
         origin: from,
         destination: to,
@@ -868,6 +934,12 @@ class RideStatsController extends GetxController
     _ensureVisibleRoute(from);
 
     try {
+      if (kDebugMode) {
+        debugPrint(
+          '[ROUTE_REQUEST] origin=driver lat=${from.latitude} lng=${from.longitude} '
+          'dest=drop lat=${to.latitude} lng=${to.longitude}',
+        );
+      }
       final result = await getDriverFriendlyRouteInfo(
         origin: from,
         destination: to,
@@ -1184,7 +1256,9 @@ class RideStatsController extends GetxController
     isDriverFocused.value = false;
     autoFollowEnabled.value = false;
     rideMap.setAutoFollowEnabled(false);
-    await fitBoundsToRoute(force: true);
+    // Second tap behavior: fit full trip (driver + pickup/drop + polyline).
+    // This uses RideMapController's centralized bounds logic.
+    await rideMap.fitFullTrip(padding: 95);
   }
 
   // ---------------- UI HELPERS ----------------

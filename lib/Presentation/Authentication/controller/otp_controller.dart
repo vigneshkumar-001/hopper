@@ -5,6 +5,7 @@ import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
+import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -63,6 +64,13 @@ class OtpController extends GetxController {
             await controller.getDriverStatus();
             Get.off(() => DriverMainScreen());
             await prefs.setBool("isVerified", true);
+          } else if (response.data.formStatus == 2) {
+            // formStatus=2 => onboarding submitted / in-review: show CompletedScreens.
+            await prefs.setBool("isVerified", true);
+            final ChooseServiceController chooseCtrl =
+                Get.put(ChooseServiceController(), permanent: true);
+            await chooseCtrl.getUserDetails();
+            Get.offAll(() => const CompletedScreens());
           } else if (response.data.formStatus == 1 &&
               response.data.userStatus == 'new') {
             Get.off(() => TermsScreen());

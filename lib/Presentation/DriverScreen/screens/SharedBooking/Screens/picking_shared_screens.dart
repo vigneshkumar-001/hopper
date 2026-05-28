@@ -16,16 +16,16 @@ import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controlle
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/share_ride_start_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
 import 'package:hopper/utils/ride_map/ride_map_view.dart';
-import 'package:hopper/utils/map/ride_route_overlays.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
+import 'package:hopper/utils/ride_map/ride_map_controller.dart';
 
-import '../Controller/booking_request_controller.dart';
-import '../Controller/picking_customer_shared_controller.dart';
-import '../../verify_rider_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/booking_request_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/picking_customer_shared_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
 import 'booking_overlay_request.dart';
 
 // ─── Design tokens (Light theme) ─────────────────────────────────────────────
@@ -239,7 +239,7 @@ class _PickingCustomerSharedScreenState
 
   Future<void> _onSelectRider(SharedRiderItem rider) async {
     await c.selectRider(rider);
-    await c.rideMap.fitToBounds(padding: 95);
+    await c.rideMap.fitFullTrip(padding: 95);
   }
 
   Future<void> _sendQuickReply(SharedRiderItem rider, String text) async {
@@ -252,7 +252,7 @@ class _PickingCustomerSharedScreenState
   }
 
   Future<void> _recenterToActiveRoute() async {
-    await c.rideMap.fitToBounds(padding: 95);
+    await c.rideMap.fitFullTrip(padding: 95);
   }
 
   static IconData _maneuverIcon(String maneuverRaw, String directionRaw) {
@@ -658,22 +658,24 @@ class _PickingCustomerSharedScreenState
   }
 
   Widget _buildFocusBtn() {
-    return Obx(
-      () => MapFocusToggleButton(
-        isDriverFocused: c.isDriverFocused.value,
-        onFocusDriver: () async {
-          await c.rideMap.focusVehicle(
-            zoom: c.followZoom.value,
-            tilt: 0,
-            bearingEnabled: true,
-          );
-        },
-        onFitBounds: () {
-          c.rideMap.fitToBounds(padding: 95);
-        },
-        onDriverFocusedChanged: (v) => c.isDriverFocused.value = v,
-        accentColor: _C.green,
-      ),
+    return ValueListenableBuilder<MapFocusMode>(
+      valueListenable: c.rideMap.focusMode,
+      builder: (context, mode, _) {
+        final focused = mode == MapFocusMode.driver;
+        return MapFocusToggleButton(
+          isDriverFocused: focused,
+          onFocusDriver: () async {
+            c.rideMap.applyFocusMode(MapFocusMode.driver, userInitiated: true);
+            c.isDriverFocused.value = true;
+          },
+          onFitBounds: () async {
+            c.rideMap.applyFocusMode(MapFocusMode.fullTrip, userInitiated: true);
+            c.isDriverFocused.value = false;
+          },
+          onDriverFocusedChanged: (v) => c.isDriverFocused.value = v,
+          accentColor: _C.green,
+        );
+      },
     );
   }
 

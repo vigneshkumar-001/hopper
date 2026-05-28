@@ -21,6 +21,7 @@ import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:hopper/utils/ride_map/ride_map_view.dart';
+import 'package:hopper/utils/ride_map/ride_map_controller.dart';
 
 import '../controller/driver_status_controller.dart';
 import '../controller/pickup_customer_controller.dart';
@@ -200,18 +201,31 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                         },
                       ),
                       const SizedBox(height: 10),
-                      Obx(
-                        () => MapFocusToggleButton(
-                          isDriverFocused: c.isDriverFocused.value,
-                          onFocusDriver: () {
-                            c.focusDriverMarker(zoom: 17.2);
-                          },
-                          onFitBounds: () {
-                            c.focusRouteOverview();
-                          },
-                          onDriverFocusedChanged:
-                              (v) => c.isDriverFocused.value = v,
-                        ),
+                      ValueListenableBuilder<MapFocusMode>(
+                        valueListenable: c.rideMap.focusMode,
+                        builder: (context, mode, _) {
+                          final focused = mode == MapFocusMode.driver;
+                          return MapFocusToggleButton(
+                            isDriverFocused: focused,
+                            onFocusDriver: () async {
+                              // Always focus driver on first tap.
+                              c.rideMap.applyFocusMode(
+                                MapFocusMode.driver,
+                                userInitiated: true,
+                              );
+                              c.isDriverFocused.value = true;
+                            },
+                            onFitBounds: () async {
+                              // Always fit full leg/route on second tap.
+                              c.rideMap.applyFocusMode(
+                                MapFocusMode.fullTrip,
+                                userInitiated: true,
+                              );
+                              c.isDriverFocused.value = false;
+                            },
+                            onDriverFocusedChanged: (v) => c.isDriverFocused.value = v,
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -1717,15 +1731,20 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Never fall back to pickup/drop for the vehicle marker.
+    // Only show the driver marker once we have a real driver location fix.
+    final LatLng? vehiclePos = driverLocation;
+
     final markers = <Marker>{
-      Marker(
-        markerId: const MarkerId('driver'),
-        position: driverLocation ?? widget.driverLocation,
-        icon: carIcon ?? BitmapDescriptor.defaultMarker,
-        rotation: carBearing,
-        anchor: const Offset(0.5, 0.5),
-        flat: true,
-      ),
+      if (vehiclePos != null)
+        Marker(
+          markerId: const MarkerId('driver'),
+          position: vehiclePos,
+          icon: carIcon ?? BitmapDescriptor.defaultMarker,
+          rotation: carBearing,
+          anchor: const Offset(0.5, 0.5),
+          flat: true,
+        ),
       Marker(
         markerId: const MarkerId('pickup'),
         position: widget.pickupLocation,
@@ -1757,12 +1776,15 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen> {
                   },
                   initialPosition: widget.pickupLocation,
                   markers: markers,
-                  polylines: RideRouteOverlays.buildRoutePolylines(
-                    routePoints: polylinePoints,
-                    origin: driverLocation ?? widget.driverLocation,
-                    destination: widget.pickupLocation,
-                    idPrefix: 'route_pickup',
-                  ),
+                  polylines:
+                      vehiclePos == null
+                          ? const <Polyline>{}
+                          : RideRouteOverlays.buildRoutePolylines(
+                              routePoints: polylinePoints,
+                              origin: vehiclePos,
+                              destination: widget.pickupLocation,
+                              idPrefix: 'route_pickup',
+                            ),
                 ),
               ),
 

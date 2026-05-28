@@ -586,6 +586,8 @@ class PickingCustomerSharedController extends GetxController {
     }
 
     _lastPos = loc;
+    // Immediate vehicle marker visibility from socket (do not wait for GPS stream).
+    rideMap.updateVehicleLocation(loc, source: 'socket');
     sharedRideController.updateDriverLocation(loc);
     routeUi.value = routeUi.value.copyWith(driverLocation: loc);
   }
@@ -875,6 +877,7 @@ class PickingCustomerSharedController extends GetxController {
       // Common map engine updates (smooth marker + trim + reroute).
       rideMap.updateVehicleLocation(
         currentRaw,
+        source: 'gps',
         speedMetersPerSecond: speed.isFinite ? speed : null,
         headingDeg: heading >= 0 ? heading : null,
         accuracyMeters: acc,
@@ -1516,6 +1519,8 @@ class PickingCustomerSharedController extends GetxController {
     }
 
     _lastPos = loc;
+    // Immediate vehicle marker visibility from socket (do not wait for GPS stream).
+    rideMap.updateVehicleLocation(loc, source: 'socket');
     sharedRideController.updateDriverLocation(loc);
     routeUi.value = routeUi.value.copyWith(driverLocation: loc);
   }

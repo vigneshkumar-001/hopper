@@ -280,12 +280,22 @@ class DriverAnalyticsController extends GetxController {
     if (etaMinutes >= threshold) {
       slaAlert.value =
           'High ETA delay ($etaMinutes min). Suggest: quick message/call rider.';
-      Get.snackbar(
-        'SLA Alert',
-        slaAlert.value,
-        snackPosition: SnackPosition.TOP,
-        duration: const Duration(seconds: 3),
-      );
+      // Production safety: avoid crashing when no Overlay is available yet
+      // (e.g. during early socket events / background engine).
+      try {
+        final ctx = Get.overlayContext ?? Get.context;
+        final hasOverlay = ctx != null && Overlay.maybeOf(ctx) != null;
+        if (hasOverlay) {
+          Get.snackbar(
+            'SLA Alert',
+            slaAlert.value,
+            snackPosition: SnackPosition.TOP,
+            duration: const Duration(seconds: 3),
+          );
+        }
+      } catch (_) {
+        // ignore (never crash app for snackbars)
+      }
     } else {
       slaAlert.value = '';
     }

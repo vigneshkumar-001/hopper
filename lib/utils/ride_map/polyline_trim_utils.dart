@@ -23,12 +23,16 @@ class PolylineTrimUtils {
   /// Trim a route polyline based on current vehicle position.
   ///
   /// - Snaps to nearest point on polyline (segment-based).
-  /// - Finds a stable nearest index (point-based) within [lookAheadPoints].
+  /// - Uses [previousNearestIndex] to search a local window (prevents snapping
+  ///   to the wrong leg near U-turns / flyovers where the route comes close to
+  ///   itself).
   /// - Produces completed + remaining polylines without flicker.
   static PolylineTrimResult trim({
     required List<LatLng> route,
     required LatLng vehicle,
     int lookAheadPoints = 80,
+    int? previousNearestIndex,
+    int backtrackPoints = 25,
   }) {
     if (route.length < 2) {
       return PolylineTrimResult(
@@ -40,41 +44,53 @@ class PolylineTrimUtils {
       );
     }
 
-    final snap = snapToPolyline(vehicle, route, maxSegments: lookAheadPoints);
+    // Window the snap search to the vicinity of the last known progress to
+    // avoid selecting a geographically-close but earlier segment (common when
+    // the polyline has a U-turn and the two legs are near each other).
+    final int maxSegIndex = route.length - 2; // last valid segment start
+    final int hint = previousNearestIndex ?? -1;
 
-    // Find nearest vertex index near the snapped segment. This keeps trimming stable.
+    int windowStartSeg = 0;
+    // With no hint (e.g. first paint), search the full route so we can handle
+    // opening the screen mid-trip (already near the end of the polyline).
+    int windowEndSeg = maxSegIndex;
+    if (hint >= 0) {
+      windowStartSeg = math.max(0, math.min(maxSegIndex, hint - backtrackPoints));
+      windowEndSeg = math.min(maxSegIndex, hint + lookAheadPoints);
+      if (windowEndSeg <= windowStartSeg) {
+        windowStartSeg = math.max(0, windowEndSeg - 1);
+      }
+    }
+
+    final int windowEndExclusivePoint = math.min(route.length, windowEndSeg + 2);
+    final windowPolyline = route.sublist(windowStartSeg, windowEndExclusivePoint);
+
+    final snapLocal = snapToPolyline(vehicle, windowPolyline);
+    final snap = PolylineSnapResult(
+      point: snapLocal.point,
+      distanceMeters: snapLocal.distanceMeters,
+      segmentIndex: windowStartSeg + snapLocal.segmentIndex,
+      t: snapLocal.t,
+    );
+
     final seg = snap.segmentIndex.clamp(0, route.length - 2);
-    final i0 = seg;
-    final i1 = seg + 1;
 
-    final d0 = _distanceMeters(snap.point, route[i0]);
-    final d1 = _distanceMeters(snap.point, route[i1]);
-    final nearest = d0 <= d1 ? i0 : i1;
-
-    final start = math.max(0, nearest - 1);
-    final completed = start > 0 ? route.sublist(0, start) : const <LatLng>[];
-
-    // Remaining: replace first point with snapped vehicle point to avoid gaps.
-    final remainingBase = route.sublist(start);
-    final remaining = <LatLng>[snap.point, ...remainingBase.skip(1)];
+    // Completed + remaining should split at the snapped segment, not at a
+    // nearest vertex, otherwise U-turns can appear as a straight chord.
+    final completed = <LatLng>[];
+    if (seg > 0) {
+      completed.addAll(route.sublist(0, seg));
+      completed.add(snap.point);
+    }
+    final remaining = <LatLng>[snap.point, ...route.sublist(seg + 1)];
 
     return PolylineTrimResult(
       snapped: snap.point,
       snapDistanceMeters: snap.distanceMeters,
-      nearestIndex: nearest,
+      nearestIndex: seg,
       remaining: remaining,
       completed: completed,
     );
   }
 
-  static double _distanceMeters(LatLng a, LatLng b) {
-    // Fast equirectangular approx (sufficient for short distances in UI).
-    final dx = (a.latitude - b.latitude) * 111320.0;
-    final dy =
-        (a.longitude - b.longitude) *
-        111320.0 *
-        math.cos(a.latitude * math.pi / 180.0);
-    return math.sqrt(dx * dx + dy * dy);
-  }
 }
-

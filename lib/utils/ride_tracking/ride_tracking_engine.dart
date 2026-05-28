@@ -87,6 +87,7 @@ class RideTrackingEngine {
   /// - off-route detection + reroute
   void ingestLocation({
     required LatLng position,
+    String source = 'unknown',
     double? speedMetersPerSecond,
     double? headingDeg,
     double? accuracyMeters,
@@ -95,6 +96,7 @@ class RideTrackingEngine {
     if (_stage == RideStage.completed) return;
     map.updateVehicleLocation(
       position,
+      source: source,
       speedMetersPerSecond: speedMetersPerSecond,
       headingDeg: headingDeg,
       accuracyMeters: accuracyMeters,
@@ -148,4 +150,3 @@ class RideTrackingEngine {
     await MarkerIconCache.loadVehicle(_vehicleType);
   }
 }
-

@@ -62,11 +62,20 @@ class _RideMapViewState extends State<RideMapView> {
   @override
   Widget build(BuildContext context) {
     final mediaPadding = MediaQuery.paddingOf(context);
+    // For pickup screen, keep Google attribution closer to the bottom edge
+    // (still visible above the bottom sheet) to match user expectation and
+    // remain branding-compliant.
+    // Keep Google attribution as low as possible while ensuring it stays above
+    // the bottom sheet (branding-compliant: visible, not obscured).
+    final bottomExtra =
+        widget.controller.mode == RideMapMode.pickupNavigation ? 8.0 : MapUiConfig.mapBottomExtraPadding;
     final padding = EdgeInsets.fromLTRB(
       MapUiConfig.mapSidePadding,
       mediaPadding.top + MapUiConfig.mapTopPadding,
       MapUiConfig.mapSidePadding,
-      widget.controller.bottomSheetHeight + MapUiConfig.mapBottomExtraPadding,
+      mediaPadding.bottom +
+          widget.controller.bottomSheetHeight +
+          bottomExtra,
     );
 
     return ValueListenableBuilder<Set<Marker>>(

@@ -317,7 +317,8 @@ class DriverMainController extends GetxController
     // âœ… stop any callbacks after close
     if (_disposed || isClosed) return;
     _refreshVehicleIconIfNeeded();
-    rideMap.updateVehicleLocation(newPos);
+    // This is the driver's live GPS stream tick (real source).
+    rideMap.updateVehicleLocation(newPos, source: 'gps');
     final icon = carIcon ?? BitmapDescriptor.defaultMarker;
 
     if (lastPosition == null || carMarker == null) {
@@ -374,6 +375,7 @@ class DriverMainController extends GetxController
     updateCarMarker(latLng);
     rideMap.updateVehicleLocation(
       latLng,
+      source: 'gps',
       speedMetersPerSecond: pos.speed.isFinite ? pos.speed : null,
       headingDeg: pos.heading.isFinite ? pos.heading : null,
       accuracyMeters: pos.accuracy.isFinite ? pos.accuracy : null,

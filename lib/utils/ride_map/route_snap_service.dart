@@ -34,11 +34,13 @@ class RouteSnapService {
     required LatLng vehicle,
     int lookAheadPoints = 80,
     double lookAheadMeters = 60,
+    int? previousNearestIndex,
   }) {
     final trim = PolylineTrimUtils.trim(
       route: route,
       vehicle: vehicle,
       lookAheadPoints: lookAheadPoints,
+      previousNearestIndex: previousNearestIndex,
     );
 
     final remaining = trim.remaining;
@@ -88,4 +90,3 @@ class RouteSnapService {
     return math.sqrt(dx * dx + dy * dy);
   }
 }
-

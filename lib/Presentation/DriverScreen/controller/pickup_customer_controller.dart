@@ -1,9 +1,10 @@
-// lib/Presentation/DriverScreen/controller/pickup_customer_controller.dart
+﻿// lib/Presentation/DriverScreen/controller/pickup_customer_controller.dart
 
 import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
@@ -124,7 +125,13 @@ class PickingCustomerController extends GetxController {
 
   // ----- flow flags -----
   final arrivedAtPickup = true.obs; // before pressing "Arrived at Pickup Point"
-  final driverReached = false.obs; // driver near pickup (from socket event)
+  // UI source-of-truth for "Arrived" CTA visibility.
+  // Computed from GPS first; falls back to socket distance only if GPS is stale.
+  final driverReached = false.obs;
+  bool _driverReachedGps = false;
+  bool _driverReachedSocket = false;
+  DateTime? _lastGpsFixAt;
+  DateTime? _lastSocketFixAt;
   final showRedTimer = false.obs;
   final isArrivedSubmitting = false.obs;
   final isOffRouteAlert = false.obs;
@@ -150,9 +157,14 @@ class PickingCustomerController extends GetxController {
 
   // ----- routing/polylines -----
   List<LatLng> _poly = [];
+  bool _hasRoadRoute = false;
   final RxList<Marker> maneuverMarkers = <Marker>[].obs;
   int _maneuverGen = 0;
   DateTime _lastRouteFetch = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _routeFetchInFlight = false;
+  DateTime _lastRouteRequestAt = DateTime.fromMillisecondsSinceEpoch(0);
+  LatLng? _lastRouteOrigin;
+  LatLng? _lastRouteDestination;
   PickingUiState? _cachedUiState;
   bool _pendingRouteRetry = false;
   Timer? _routeRetryTimer;
@@ -170,15 +182,19 @@ class PickingCustomerController extends GetxController {
   static const double _OFF_ROUTE_TOLERANCE_M = 25.0;
   static const double _SNAP_TOLERANCE_M = 35.0; // project marker onto route
   static const double _ARRIVED_PICKUP_RADIUS_M = 500.0;
+  static const double _ARRIVED_PICKUP_EXIT_RADIUS_M = 650.0;
   static const double _POLYLINE_TRIM_TOLERANCE_M = 30.0;
   static const int _POLYLINE_TRIM_LOOKAHEAD_POINTS = 40;
   static const int _OFF_ROUTE_LOOKAHEAD_POINTS = 80;
+
+  static const Duration _gpsReachedTtl = Duration(seconds: 8);
+  static const Duration _socketReachedTtl = Duration(seconds: 12);
 
   @override
   void onInit() {
     super.onInit();
 
-    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ MUST SET BEFORE _fetchRoute()
+    // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ MUST SET BEFORE _fetchRoute()
     DirectionsConfig.apiKey = ApiConstents.googleMapApiKey;
 
     ui =
@@ -203,21 +219,27 @@ class PickingCustomerController extends GetxController {
     unawaited(_joinBookingRoom());
     _bootFromJoinedOrReverseGeocode();
     _startTracking();
-    rideMap.setPickupDrop(pickup: pickupLocation);
+    rideMap.setPickupDrop(pickup: pickupLocation, showPickupPin: true);
     rideMap.setShowCompletedRoute(false);
+    if (kDebugMode) {
+      debugPrint(
+        '[PICKUP_MARKER] source=actualPickup lat=${pickupLocation.latitude} lng=${pickupLocation.longitude}',
+      );
+      debugPrint(
+        '[DESTINATION] mode=pickupNavigation lat=${pickupLocation.latitude} lng=${pickupLocation.longitude}',
+      );
+    }
 
-    // Keep map UI state in sync without doing side-effects inside `Obx` builds.
-    // - pickup marker follows adjusted pickup (if any)
-    // - map bottom padding follows bottom sheet expanded/collapsed height
+    // Pickup marker must always be the actual pickup destination (never driver/adjusted).
     _pickupMarkerWorker?.dispose();
-    _pickupMarkerWorker = ever<LatLng?>(
-      adjustedPickupLocation,
-      (p) => rideMap.setPickupDrop(pickup: p ?? pickupLocation),
-    );
+    _pickupMarkerWorker = null;
 
     _sheetHeightWorker?.dispose();
     void applySheetHeight(bool arrived) {
-      rideMap.setBottomSheetHeight(arrived ? 330.0 : 180.0);
+      // Padding hint used by RideMapView -> GoogleMap.padding.
+      // Keep it conservative so Google attribution stays as low as possible
+      // while not being obscured by the pickup bottom sheet.
+      rideMap.setBottomSheetHeight(arrived ? 280.0 : 150.0);
     }
 
     applySheetHeight(arrivedAtPickup.value);
@@ -318,11 +340,16 @@ class PickingCustomerController extends GetxController {
       final joined = Map<String, dynamic>.from(data as Map);
       JoinedBookingData().setData(joined);
 
-      driverStatusController.setServiceTypeFrom(
-        joined['rideType'] ?? joined['serviceType'],
-      );
+      // Defer Rx updates until after the first frame to avoid
+      // "markNeedsBuild during build" crashes from Obx.
+      final serviceType = joined['rideType'] ?? joined['serviceType'];
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          driverStatusController.setServiceTypeFrom(serviceType);
+        } catch (_) {}
+      });
 
-      // ✅ IMPORTANT: fill these so UI shows customer name
+      // âœ… IMPORTANT: fill these so UI shows customer name
       customerName.value = (joined['customerName'] ?? '').toString();
       customerPhone.value = (joined['customerPhone'] ?? '').toString();
       customerProfilePic.value =
@@ -348,6 +375,28 @@ class PickingCustomerController extends GetxController {
       final toLat = asDouble(joined['toLatitude'] ?? loc['toLatitude']);
       final toLng = asDouble(joined['toLongitude'] ?? loc['toLongitude']);
 
+      // If joined-booking already contains a driverLocation, show vehicle marker
+      // immediately (do not wait for driver-location event).
+      final driverLocRaw = joined['driverLocation'];
+      if (driverLocRaw is Map) {
+        final d = Map<String, dynamic>.from(driverLocRaw as Map);
+        final dLat = asDouble(d['latitude'] ?? d['lat']);
+        final dLng = asDouble(d['longitude'] ?? d['lng']);
+        if (dLat != null && dLng != null) {
+          final joinedDriver = LatLng(dLat, dLng);
+          // Comes from backend payload => treat as socket source.
+          rideMap.updateVehicleLocation(joinedDriver, source: 'socket');
+          _lastPos ??= joinedDriver;
+          ui.value = ui.value.copyWith(driverLocation: joinedDriver);
+          // Ensure polyline is visible immediately while API route loads.
+          // If we already have a road route, never overwrite it with a straight line.
+          if (!_hasRoadRoute) {
+            _setDirectPolyline(joinedDriver, pickupLocation);
+          }
+          unawaited(_fetchRoute(force: true));
+        }
+      }
+
       if (fromLat != null && fromLng != null) {
         pickupAddressText.value = await getAddressFromLatLng(fromLat, fromLng);
       }
@@ -362,9 +411,34 @@ class PickingCustomerController extends GetxController {
     socketService.on('driver-location', (data) {
       if (data == null) return;
 
+      // Live driver position from backend/socket.
+      double? asDouble(dynamic v) {
+        if (v is num) return v.toDouble();
+        return double.tryParse(v?.toString() ?? '');
+      }
+
+      final lat = asDouble(data['latitude'] ?? data['lat']);
+      final lng = asDouble(data['longitude'] ?? data['lng']);
+      if (lat != null && lng != null) {
+        final p = LatLng(lat, lng);
+        rideMap.updateVehicleLocation(p, source: 'socket');
+      }
+
       if (data['pickupDistanceInMeters'] != null) {
-        driverStatusController.pickupDistanceInMeters.value =
-            (data['pickupDistanceInMeters'] as num).toDouble();
+        final pickupM = (data['pickupDistanceInMeters'] as num).toDouble();
+        driverStatusController.pickupDistanceInMeters.value = pickupM;
+
+        _lastSocketFixAt = DateTime.now();
+        if (!_driverReachedSocket && pickupM > 0 && pickupM <= _ARRIVED_PICKUP_RADIUS_M) {
+          _driverReachedSocket = true;
+          CommonLogger.log.i(
+            'Auto driverReached TRUE (socket) pickupDistanceInMeters=${pickupM.toStringAsFixed(1)}m',
+          );
+        } else if (_driverReachedSocket && pickupM >= _ARRIVED_PICKUP_EXIT_RADIUS_M) {
+          _driverReachedSocket = false;
+        }
+
+        _recomputeDriverReached();
       }
       if (data['pickupDurationInMin'] != null) {
         driverStatusController.pickupDurationInMin.value =
@@ -411,9 +485,14 @@ class PickingCustomerController extends GetxController {
     // if joined-booking already saved, hydrate now
     final joined = JoinedBookingData().getData();
     if (joined != null) {
-      driverStatusController.setServiceTypeFrom(
-        joined['rideType'] ?? joined['serviceType'],
-      );
+      // Avoid "setState/markNeedsBuild during build" from GetX Obx trees.
+      // Defer Rx updates until after the first frame.
+      final serviceType = joined['rideType'] ?? joined['serviceType'];
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          driverStatusController.setServiceTypeFrom(serviceType);
+        } catch (_) {}
+      });
 
       customerName.value = (joined['customerName'] ?? '').toString();
       customerPhone.value = (joined['customerPhone'] ?? '').toString();
@@ -518,6 +597,7 @@ class PickingCustomerController extends GetxController {
     );
     rideMap.updateVehicleLocation(
       LatLng(pos.latitude, pos.longitude),
+      source: 'gps',
       speedMetersPerSecond: pos.speed.isFinite ? pos.speed : null,
       headingDeg: pos.heading.isFinite ? pos.heading : null,
       accuracyMeters: pos.accuracy.isFinite ? pos.accuracy : null,
@@ -552,43 +632,99 @@ class PickingCustomerController extends GetxController {
         return;
       }
 
-      final now = DateTime.now();
-      if (!force) {
-        if (now.difference(_lastRouteFetch).inSeconds < 8) return;
-      }
-      _lastRouteFetch = now;
-
-      final origin = ui.value.driverLocation;
-      if (_lastPos == null) {
-        // Guard: never build route from pickup/drop param as origin.
+      if (_routeFetchInFlight) {
+        if (kDebugMode) {
+          debugPrint('[ROUTE_DEDUPE] skipped reason=loading');
+        }
         return;
       }
 
-      final result = await getDriverFriendlyRouteInfo(
+      final now = DateTime.now();
+      if (_lastPos == null) {
+        // Wait for a real driver location (GPS/socket). Never route from pickup/drop.
+        return;
+      }
+      final origin = _lastPos!;
+      final dest = pickupLocation;
+
+      final sameOrigin =
+          _lastRouteOrigin != null &&
+          Geolocator.distanceBetween(
+                _lastRouteOrigin!.latitude,
+                _lastRouteOrigin!.longitude,
+                origin.latitude,
+                origin.longitude,
+              ) <=
+              10.0;
+      final sameDest =
+          _lastRouteDestination != null &&
+          Geolocator.distanceBetween(
+                _lastRouteDestination!.latitude,
+                _lastRouteDestination!.longitude,
+                dest.latitude,
+                dest.longitude,
+              ) <=
+              10.0;
+      final driverMovedSinceLast =
+          _lastRouteOrigin == null
+              ? 9999.0
+              : Geolocator.distanceBetween(
+                  _lastRouteOrigin!.latitude,
+                  _lastRouteOrigin!.longitude,
+                  origin.latitude,
+                  origin.longitude,
+                );
+      final recentlyRequested =
+          now.difference(_lastRouteRequestAt).inSeconds < (force ? 12 : 15);
+
+      if (sameOrigin && sameDest && recentlyRequested && driverMovedSinceLast < 50) {
+        if (kDebugMode) {
+          debugPrint(
+            '[ROUTE_DEDUPE] skipped reason=same_origin_dest_recent '
+            'force=$force moved=${driverMovedSinceLast.toStringAsFixed(1)}m',
+          );
+        }
+        return;
+      }
+
+      if (!force && now.difference(_lastRouteFetch).inSeconds < 8 && driverMovedSinceLast < 30) {
+        if (kDebugMode) {
+          debugPrint('[ROUTE_DEDUPE] skipped reason=throttle');
+        }
+        return;
+      }
+
+      _lastRouteFetch = now;
+      _lastRouteRequestAt = now;
+      _lastRouteOrigin = origin;
+      _lastRouteDestination = dest;
+      _routeFetchInFlight = true;
+
+      if (kDebugMode) {
+        debugPrint(
+          '[ROUTE_REQUEST] origin=driver lat=${origin.latitude} lng=${origin.longitude} '
+          'dest=pickup lat=${pickupLocation.latitude} lng=${pickupLocation.longitude}',
+        );
+      }
+
+      CommonLogger.log.i(
+        '[PICKUP_ROUTE] request origin=$origin dest=$pickupLocation force=$force',
+      );
+      // Pickup navigation must always route to the *actual* pickup marker.
+      // Do NOT use "driver friendly stop" adjusted destinations here, otherwise
+      // the polyline can end before the pickup marker (screenshot issue).
+      final result = await getRouteInfo(
         origin: origin,
-        destination: pickupLocation,
-        // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ keep consistent
+        destination: dest,
         alternatives: false,
         traffic: true,
         mode: TravelModeResolver.getTravelMode(rideMap.vehicleType),
         routeIndex: 0,
-        maxAdjustMeters: 140,
       );
 
-      final adj = result['adjustedDestination'];
-      if (adj is Map) {
-        final lat = adj['lat'];
-        final lng = adj['lng'];
-        if (lat is num && lng is num) {
-          adjustedPickupLocation.value = LatLng(lat.toDouble(), lng.toDouble());
-        }
-      } else {
-        adjustedPickupLocation.value = null;
-      }
-      pickupAdjustMeters.value = (result['adjustedMeters'] is int)
-          ? (result['adjustedMeters'] as int)
-          : int.tryParse('${result['adjustedMeters']}') ?? 0;
-
+      // Route rendering must end at the actual pickup marker.
+      adjustedPickupLocation.value = null;
+      pickupAdjustMeters.value = 0;
       final poly = (result['polyline'] ?? '').toString();
       final rawPts = decodePolyline(poly);
       final pts = _simplifyPolyline(
@@ -599,29 +735,95 @@ class PickingCustomerController extends GetxController {
       );
 
       if (pts.length < 2) {
-        _setDirectPolyline(ui.value.driverLocation);
+        _setDirectPolyline(origin, pickupLocation);
         if ((_cachedUiState?.polyline.length ?? 0) >= 2) {
           ui.value = _cachedUiState!;
         }
         _scheduleRouteRetry();
+        CommonLogger.log.w('[PICKUP_ROUTE] got <2 points, fallback direct polyline');
+        if (kDebugMode) {
+          debugPrint(
+            '[PICKUP_POLYLINE] driver=${origin.latitude},${origin.longitude} '
+            'pickup=${pickupLocation.latitude},${pickupLocation.longitude}',
+          );
+          debugPrint('[PICKUP_POLYLINE] apiPoints=${pts.length}');
+          debugPrint('[PICKUP_POLYLINE] fallbackDirect=true');
+          debugPrint('[PICKUP_POLYLINE] setRoutePoints count=2');
+        }
         return;
       }
 
-      CommonLogger.log.i("route pts=${pts.length}");
+      CommonLogger.log.i('[PICKUP_ROUTE] route pts=${pts.length}');
 
-      _poly = pts;
+      // ================= Polyline validation/fix (must reach pickup marker) =================
+      final double firstDistToDriver = Geolocator.distanceBetween(
+        pts.first.latitude,
+        pts.first.longitude,
+        origin.latitude,
+        origin.longitude,
+      );
+      final double lastDistToPickup = Geolocator.distanceBetween(
+        pts.last.latitude,
+        pts.last.longitude,
+        pickupLocation.latitude,
+        pickupLocation.longitude,
+      );
+      if (kDebugMode) {
+        debugPrint(
+          '[POLYLINE_VALIDATE] firstDistToDriver=${firstDistToDriver.toStringAsFixed(1)} '
+          'lastDistToPickup=${lastDistToPickup.toStringAsFixed(1)} count=${pts.length}',
+        );
+      }
+
+      final fixed = <LatLng>[...pts];
+      if (firstDistToDriver > 10.0) {
+        fixed.insert(0, origin);
+        if (kDebugMode) {
+          debugPrint(
+            '[POLYLINE_FIX] prepended driver origin distance=${firstDistToDriver.toStringAsFixed(1)}m',
+          );
+        }
+      }
+      if (lastDistToPickup > 10.0) {
+        fixed.add(pickupLocation);
+        if (kDebugMode) {
+          debugPrint(
+            '[POLYLINE_FIX] appended pickup endpoint distance=${lastDistToPickup.toStringAsFixed(1)}m',
+          );
+        }
+      }
+      if (kDebugMode) {
+        debugPrint(
+          '[DISPLAY_POLYLINE] count=${fixed.length} first=${fixed.first.latitude},${fixed.first.longitude} '
+          'last=${fixed.last.latitude},${fixed.last.longitude}',
+        );
+      }
+
+      _hasRoadRoute = true;
+      _poly = fixed;
 
       ui.value = ui.value.copyWith(
-        polyline: pts,
+        polyline: fixed,
         directionText: _stripHtml((result['direction'] ?? '').toString()),
         distanceText: (result['distance'] ?? '').toString(),
         maneuver: (result['maneuver'] ?? '').toString(),
       );
 
-      final dest = adjustedPickupLocation.value ?? pickupLocation;
-      rideMap.setPickupDrop(pickup: dest);
-      rideMap.setRoutePoints(pts);
-      rideMap.setNavigationDestination(dest, driverFriendlyStop: true);
+      // Pickup marker must always equal active pickup destination.
+      if (kDebugMode) {
+        debugPrint(
+          '[PICKUP_MARKER] lat=${pickupLocation.latitude} lng=${pickupLocation.longitude}',
+        );
+      }
+      rideMap.setPickupDrop(pickup: pickupLocation, showPickupPin: true);
+      rideMap.setRoutePoints(fixed);
+      rideMap.setNavigationDestination(pickupLocation, driverFriendlyStop: false);
+      if (kDebugMode) {
+        debugPrint(
+          '[FIT_FULL_TRIP] mode=pickupNavigation points=${fixed.length} zoomClamp=true',
+        );
+      }
+      unawaited(rideMap.fitFullTrip(padding: 95, clampMinZoom: true));
       final mp = result['maneuverPoints'];
       final maneuverPoints =
           mp is List
@@ -634,7 +836,7 @@ class PickingCustomerController extends GetxController {
           rawPts.length >= 2 ? rawPts : pts,
           idPrefix: 'pickup_$bookingId',
           travelOrigin: origin,
-          avoid: <LatLng>[dest],
+          avoid: <LatLng>[pickupLocation],
           maneuverPoints: maneuverPoints,
         ),
       );
@@ -656,17 +858,26 @@ class PickingCustomerController extends GetxController {
       if (_cachedUiState != null) {
         ui.value = _cachedUiState!;
       }
-      _setDirectPolyline(ui.value.driverLocation);
+      final origin = _lastPos ?? ui.value.driverLocation;
+      if (origin != null) {
+        _setDirectPolyline(origin, pickupLocation);
+      }
       _scheduleRouteRetry();
+    } finally {
+      _routeFetchInFlight = false;
     }
   }
 
-  void _setDirectPolyline(LatLng origin) {
-    final dest = adjustedPickupLocation.value ?? pickupLocation;
+  void _setDirectPolyline(LatLng origin, LatLng dest) {
+    if (_hasRoadRoute) return;
+    // Fallback polyline must always connect real driver -> actual pickup destination.
     final direct = <LatLng>[origin, dest];
     _poly = direct;
     ui.value = ui.value.copyWith(polyline: direct);
     maneuverMarkers.clear();
+    rideMap.setRoutePoints(direct);
+    rideMap.setPickupDrop(pickup: pickupLocation, showPickupPin: true);
+    rideMap.setNavigationDestination(pickupLocation, driverFriendlyStop: false);
   }
 
   Future<void> _rebuildManeuverMarkers(
@@ -778,7 +989,7 @@ class PickingCustomerController extends GetxController {
       final raw = LatLng(pos.latitude, pos.longitude);
       final current = _maybeSnapToRoute(raw);
       _lastPos = current;
-      _setDirectPolyline(current);
+      _setDirectPolyline(current, pickupLocation);
       ui.value = ui.value.copyWith(driverLocation: current);
       _updateDriverReachedByDistance(current);
       await _fetchRoute(force: true);
@@ -808,6 +1019,7 @@ class PickingCustomerController extends GetxController {
         ui.value = ui.value.copyWith(driverLocation: current);
         rideMap.updateVehicleLocation(
           raw,
+          source: 'gps',
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
           accuracyMeters: acc,
@@ -829,6 +1041,7 @@ class PickingCustomerController extends GetxController {
         ui.value = ui.value.copyWith(driverLocation: current);
         rideMap.updateVehicleLocation(
           raw,
+          source: 'gps',
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
           accuracyMeters: acc,
@@ -852,6 +1065,7 @@ class PickingCustomerController extends GetxController {
         );
         rideMap.updateVehicleLocation(
           raw,
+          source: 'gps',
           speedMetersPerSecond: speed.isFinite ? speed : null,
           headingDeg: heading >= 0 ? heading : null,
           accuracyMeters: acc,
@@ -889,6 +1103,7 @@ class PickingCustomerController extends GetxController {
       ui.value = ui.value.copyWith(driverLocation: current, bearing: targetBearing);
       rideMap.updateVehicleLocation(
         raw,
+        source: 'gps',
         speedMetersPerSecond: speed.isFinite ? speed : null,
         headingDeg: heading >= 0 ? heading : null,
         accuracyMeters: acc,
@@ -909,9 +1124,9 @@ class PickingCustomerController extends GetxController {
   }
 
   void _updateDriverReachedByDistance(LatLng current) {
-    if (driverReached.value) return;
     if (enableArrivedTesting) {
       driverReached.value = true;
+      _driverReachedGps = true;
       return;
     }
 
@@ -922,11 +1137,37 @@ class PickingCustomerController extends GetxController {
       pickupLocation.longitude,
     );
 
-    if (distanceToPickup <= _ARRIVED_PICKUP_RADIUS_M) {
-      driverReached.value = true;
+    _lastGpsFixAt = DateTime.now();
+    if (!_driverReachedGps && distanceToPickup <= _ARRIVED_PICKUP_RADIUS_M) {
+      _driverReachedGps = true;
       CommonLogger.log.i(
-        "Auto driverReached TRUE at ${distanceToPickup.toStringAsFixed(1)}m from pickup",
+        "Auto driverReached TRUE (gps) at ${distanceToPickup.toStringAsFixed(1)}m from pickup",
       );
+    } else if (_driverReachedGps && distanceToPickup >= _ARRIVED_PICKUP_EXIT_RADIUS_M) {
+      // Hysteresis: avoid flicker around the threshold.
+      _driverReachedGps = false;
+    }
+
+    _recomputeDriverReached();
+  }
+
+  void _recomputeDriverReached() {
+    if (!arrivedAtPickup.value) return;
+
+    final now = DateTime.now();
+    final gpsFresh =
+        _lastGpsFixAt != null && now.difference(_lastGpsFixAt!) <= _gpsReachedTtl;
+    final socketFresh =
+        _lastSocketFixAt != null &&
+        now.difference(_lastSocketFixAt!) <= _socketReachedTtl;
+
+    // Priority rule:
+    // - If GPS is fresh, trust GPS (even if socket says otherwise).
+    // - Else fall back to socket.
+    final next = gpsFresh ? _driverReachedGps : (socketFresh ? _driverReachedSocket : false);
+
+    if (driverReached.value != next) {
+      driverReached.value = next;
     }
   }
 
@@ -1022,7 +1263,9 @@ class PickingCustomerController extends GetxController {
   Future<void> focusRouteOverview() async {
     isDriverFocused.value = false;
     rideMap.setAutoFollowEnabled(false);
-    await rideMap.fitToBounds(padding: 80);
+    // Second tap behavior: fit full trip route when available.
+    // If route isn't ready yet, RideMapController safely falls back.
+    await rideMap.fitFullTrip(padding: 95);
   }
 
   Future<void> focusDriverNow() async {
@@ -1223,6 +1466,8 @@ class PickingCustomerController extends GetxController {
 
       if (res != null && res.status == 200) {
         arrivedAtPickup.value = false;
+        // Freeze reached state once we transition out of pickup-navigation UI.
+        driverReached.value = true;
         startNoShowTimer();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1248,7 +1493,7 @@ class PickingCustomerController extends GetxController {
 
     _stopNoShowTimer();
 
-    // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ navigate to Verify screen
+    // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ navigate to Verify screen
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -1353,7 +1598,7 @@ class PickingCustomerController extends GetxController {
 //   PickingCustomerController({
 //     required this.pickupLocation,
 //     required this.bookingId,
-//     required LatLng driverLocation, // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ add this
+//     required LatLng driverLocation, // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ add this
 //     this.pickupLocationAddress,
 //     this.dropLocationAddress,
 //   }) : _initialDriverLocation = driverLocation;
@@ -1581,7 +1826,7 @@ class PickingCustomerController extends GetxController {
 //           dropAddressText.value = dropLocationAddress ?? '';
 //         }
 //
-//         CommonLogger.log.i("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ joined-booking handled for $bookingId");
+//         CommonLogger.log.i("ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ joined-booking handled for $bookingId");
 //         CommonLogger.log.i("vehicle: $vehicle");
 //       } catch (e) {
 //         CommonLogger.log.e("joined-booking parse error: $e");
@@ -1626,7 +1871,7 @@ class PickingCustomerController extends GetxController {
 //
 //     if (!socketService.connected) {
 //       socketService.connect();
-//       socketService.onConnect(() => CommonLogger.log.i("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ socket connected"));
+//       socketService.onConnect(() => CommonLogger.log.i("ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ socket connected"));
 //     }
 //   }
 //
@@ -1915,14 +2160,14 @@ class PickingCustomerController extends GetxController {
 //     stopNoShowTimer();
 //
 //     // 4) Navigate to Verify screen
-//     //    ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ single ride -> it will go RideStatsScreen after verify
+//     //    ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ single ride -> it will go RideStatsScreen after verify
 //     Get.to(
 //       () => VerifyRiderScreen(
 //         bookingId: bookingId,
 //         custName: customerName.value,
 //         pickupAddress: pickupLocationAddress ?? pickupAddressText.value,
 //         dropAddress: dropLocationAddress ?? dropAddressText.value,
-//         isSharedRide: false, // ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ single pickup screen
+//         isSharedRide: false, // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ single pickup screen
 //       ),
 //     );
 //   }
@@ -2043,3 +2288,4 @@ class PickingCustomerController extends GetxController {
 //     return simplified;
 //   }
 // }
+
