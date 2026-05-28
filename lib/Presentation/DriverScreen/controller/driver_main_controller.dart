@@ -70,6 +70,8 @@ class DriverMainController extends GetxController
   final RideMapController rideMap = RideMapController(mode: RideMapMode.home);
 
   // Marker
+  // Match Customer app marker clarity on Home map.
+  static const double _kHomeVehicleMarkerSizeDp = 48.0;
   BitmapDescriptor? carIcon;
   String? _vehicleIconConfigKey;
   bool _vehicleIconLoading = false;
@@ -268,13 +270,16 @@ class DriverMainController extends GetxController
     _applyRideMapVehicleType();
     final desiredKey = HopprVehicleMarkerIcon.currentConfigKeyForServiceType(
       statusController.serviceType.value,
+      logicalSizeDp: _kHomeVehicleMarkerSizeDp,
     );
     if (carIcon != null && _vehicleIconConfigKey == desiredKey) return;
     if (_vehicleIconLoading) return;
     _vehicleIconLoading = true;
     try {
+      // No badge/circle: render crisp contained asset at customer-like size.
       carIcon = await HopprVehicleMarkerIcon.loadForServiceType(
         statusController.serviceType.value,
+        logicalSizeDp: _kHomeVehicleMarkerSizeDp,
       );
       _vehicleIconConfigKey = desiredKey;
     } catch (e) {
@@ -292,6 +297,7 @@ class DriverMainController extends GetxController
     _applyRideMapVehicleType();
     final currentKey = HopprVehicleMarkerIcon.currentConfigKeyForServiceType(
       statusController.serviceType.value,
+      logicalSizeDp: _kHomeVehicleMarkerSizeDp,
     );
     if (_vehicleIconConfigKey == currentKey) return;
     unawaited(loadCustomCarIcon());
@@ -313,11 +319,27 @@ class DriverMainController extends GetxController
   }
 
   // ---------------- marker update (animated) ----------------
-  void updateCarMarker(LatLng newPos) {
+  void updateCarMarker(
+    LatLng newPos, {
+    double? speedMs,
+    double? headingDeg,
+    double? accuracyM,
+    DateTime? timestamp,
+  }) {
     // âœ… stop any callbacks after close
     if (_disposed || isClosed) return;
     _refreshVehicleIconIfNeeded();
-    rideMap.updateVehicleLocation(newPos);
+    // This is the driver's live GPS stream tick (real source). Provide full
+    // metadata; otherwise RideMapController assumes "stationary" and may ignore
+    // small moves, which looks like the vehicle is stuck.
+    rideMap.updateVehicleLocation(
+      newPos,
+      source: 'gps',
+      speedMetersPerSecond: speedMs,
+      headingDeg: headingDeg,
+      accuracyMeters: accuracyM,
+      timestamp: timestamp,
+    );
     final icon = carIcon ?? BitmapDescriptor.defaultMarker;
 
     if (lastPosition == null || carMarker == null) {
@@ -371,12 +393,11 @@ class DriverMainController extends GetxController
     final latLng = LatLng(pos.latitude, pos.longitude);
     currentPosition.value = latLng;
 
-    updateCarMarker(latLng);
-    rideMap.updateVehicleLocation(
+    updateCarMarker(
       latLng,
-      speedMetersPerSecond: pos.speed.isFinite ? pos.speed : null,
+      speedMs: pos.speed.isFinite ? pos.speed : null,
       headingDeg: pos.heading.isFinite ? pos.heading : null,
-      accuracyMeters: pos.accuracy.isFinite ? pos.accuracy : null,
+      accuracyM: pos.accuracy.isFinite ? pos.accuracy : null,
       timestamp: pos.timestamp,
     );
 
@@ -392,11 +413,13 @@ class DriverMainController extends GetxController
     // Don't depend on speed-based follow zoom (which can be zoomed out).
     final target = lastPosition ?? currentPosition.value;
     LatLng? latLng = target;
+    Position? fetched;
 
     if (latLng == null) {
       final pos = await getCurrentPos();
       if (_disposed || isClosed) return;
       if (pos == null) return;
+      fetched = pos;
       latLng = LatLng(pos.latitude, pos.longitude);
     }
 
@@ -418,7 +441,17 @@ class DriverMainController extends GetxController
       ),
     );
 
-    updateCarMarker(latLng);
+    // If we fetched a fresh fix here, also update the marker with full metadata.
+    // Otherwise, the normal position stream will update the marker.
+    if (fetched != null) {
+      updateCarMarker(
+        latLng,
+        speedMs: fetched!.speed.isFinite ? fetched!.speed : null,
+        headingDeg: fetched!.heading.isFinite ? fetched!.heading : null,
+        accuracyM: fetched!.accuracy.isFinite ? fetched!.accuracy : null,
+        timestamp: fetched!.timestamp,
+      );
+    }
   }
 
   // ---------------- reverse geo ----------------
@@ -1211,7 +1244,13 @@ class DriverMainController extends GetxController
         'timestamp': now.toIso8601String(),
       };
 
-      updateCarMarker(current);
+      updateCarMarker(
+        current,
+        speedMs: speedMs.isFinite ? speedMs : null,
+        headingDeg: pos.heading.isFinite ? pos.heading : null,
+        accuracyM: accuracyM.isFinite ? accuracyM : null,
+        timestamp: pos.timestamp,
+      );
     });
 
     if (_disposed || isClosed) return;
@@ -2047,17 +2086,31 @@ class DriverMainController extends GetxController
     _appInForeground = false;
 
     // Hand off to background service ONLY when online.
+    var bgRunning = false;
     if (statusController.isOnline.value) {
       driverId ??= await SharedPrefHelper.getDriverId();
       final did = driverId?.trim() ?? '';
       if (did.isNotEmpty) {
-        unawaited(
-          bg.ensureDriverTrackingServiceRunning(
+        try {
+          await bg.ensureDriverTrackingServiceRunning(
             driverId: did,
             bookingId: _resolveBookingIdForLocationPayload(),
-          ),
+          );
+        } catch (_) {}
+        bgRunning = await bg.isDriverTrackingServiceRunning();
+      }
+    }
+
+    // If BG service cannot run (most commonly notifications disabled / OEM blocks),
+    // do NOT disconnect the foreground socket; otherwise customers will lose the
+    // driver marker immediately when the app is minimized.
+    if (statusController.isOnline.value && !bgRunning) {
+      if (kDebugMode) {
+        CommonLogger.log.w(
+          '[BG_HANDOFF] BG service not running; keeping foreground socket active',
         );
       }
+      return;
     }
 
     // Stop foreground emit loop to avoid duplicates.

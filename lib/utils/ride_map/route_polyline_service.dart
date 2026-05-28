@@ -1,5 +1,6 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/utils/map/route_info.dart';
+import 'package:flutter/foundation.dart';
 
 class RoutePolylineResult {
   final List<LatLng> points;
@@ -27,17 +28,29 @@ class RoutePolylineService {
     String mode = 'driving',
   }) async {
     Future<RoutePolylineResult?> attempt(String attemptMode) async {
-      final result = driverFriendlyStop
-          ? await getDriverFriendlyRouteInfo(
-              origin: origin,
-              destination: destination,
-              mode: attemptMode,
-            )
-          : await getRouteInfo(
-              origin: origin,
-              destination: destination,
-              mode: attemptMode,
-            );
+      Map<String, dynamic> result;
+      try {
+        result = driverFriendlyStop
+            ? await getDriverFriendlyRouteInfo(
+                origin: origin,
+                destination: destination,
+                mode: attemptMode,
+              )
+            : await getRouteInfo(
+                origin: origin,
+                destination: destination,
+                mode: attemptMode,
+              );
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint(
+            '[ROUTE_API_FAIL] mode=$attemptMode driverFriendlyStop=$driverFriendlyStop '
+            'origin=${origin.latitude},${origin.longitude} '
+            'dest=${destination.latitude},${destination.longitude} err=$e',
+          );
+        }
+        rethrow;
+      }
 
       final poly = (result['polyline'] ?? '').toString();
       final pts = decodePolyline(poly);
@@ -75,6 +88,12 @@ class RoutePolylineService {
       } catch (_) {}
     }
 
+    if (kDebugMode) {
+      debugPrint(
+        '[ROUTE_FALLBACK_STRAIGHT] origin=${origin.latitude},${origin.longitude} '
+        'dest=${destination.latitude},${destination.longitude} mode=$mode',
+      );
+    }
     return RoutePolylineResult(
       points: <LatLng>[origin, destination],
       isFallbackStraightLine: true,

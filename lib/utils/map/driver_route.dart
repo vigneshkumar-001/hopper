@@ -10,9 +10,18 @@ import 'route_info.dart';
 import 'polyline_snap.dart';
 
 class DriverRouteUpdate {
+  /// Raw GPS fix as received from the platform.
+  ///
+  /// IMPORTANT: screens should prefer this for map/vehicle tracking so higher
+  /// level map engines (snap + reroute + dead-reckoning) can make correct decisions.
+  final LatLng rawLocation;
   final LatLng driverLocation;
   final LatLng destination;
   final double bearing;
+  final double accuracyMeters;
+  final double? speedMetersPerSecond;
+  final double? headingDeg;
+  final DateTime timestamp;
   final List<LatLng> polylinePoints;
   final LatLng? nextPoint;
   final String directionText;
@@ -22,9 +31,14 @@ class DriverRouteUpdate {
   final List<Map<String, dynamic>> maneuverPoints;
 
   DriverRouteUpdate({
+    required this.rawLocation,
     required this.driverLocation,
     required this.destination,
     required this.bearing,
+    required this.accuracyMeters,
+    required this.speedMetersPerSecond,
+    required this.headingDeg,
+    required this.timestamp,
     required this.polylinePoints,
     required this.nextPoint,
     required this.directionText,
@@ -54,18 +68,14 @@ class DriverRouteController {
   // Raw GPS
   LatLng? _currentRaw;
   LatLng? _lastRaw;
+  double _lastAccuracyM = 9999.0;
+  double? _lastSpeedMs;
+  double? _lastHeadingDeg;
+  DateTime _lastFixAt = DateTime.fromMillisecondsSinceEpoch(0);
 
-  // Display (animated) state
+  // Display state (can be snapped to route for instruction stability).
   LatLng? _displayLoc;
   double _displayBearing = 0.0;
-
-  // Target for animation
-  LatLng? _animFrom;
-  LatLng? _animTo;
-  double _bearingFrom = 0.0;
-  double _bearingTo = 0.0;
-  int _animDurationMs = 700;
-  DateTime? _animStartAt;
 
   // Route info
   List<LatLng> _polyline = <LatLng>[];
@@ -78,9 +88,6 @@ class DriverRouteController {
   List<Map<String, dynamic>> _maneuverPoints = const <Map<String, dynamic>>[];
 
   StreamSubscription<Position>? _positionSub;
-
-  // Animation timer (smooth movement)
-  Timer? _animTimer;
 
   // ---------------- tuning ----------------
   static const double _MAX_ACCURACY_M = 25.0;
@@ -103,10 +110,6 @@ class DriverRouteController {
   // Bearing smoothing (raw)
   static const double _BEARING_SMOOTH_ALPHA = 0.35;
 
-  // Animation FPS
-  static const int _ANIM_FPS = 30; // Uber-like smoothness
-  static const int _ANIM_TICK_MS = 1000 ~/ _ANIM_FPS;
-
   Future<void> start() async {
     final hasPermission = await _ensureLocationPermission();
     if (!hasPermission) {
@@ -115,6 +118,10 @@ class DriverRouteController {
 
       _currentRaw = fallbackStart;
       _lastRaw = fallbackStart;
+      _lastAccuracyM = _MAX_ACCURACY_M;
+      _lastSpeedMs = null;
+      _lastHeadingDeg = null;
+      _lastFixAt = DateTime.now();
       _displayLoc = fallbackStart;
       _displayBearing = 0.0;
 
@@ -129,6 +136,10 @@ class DriverRouteController {
 
     _currentRaw = LatLng(pos.latitude, pos.longitude);
     _lastRaw = _currentRaw;
+    _lastAccuracyM = pos.accuracy.isFinite ? pos.accuracy : 9999.0;
+    _lastSpeedMs = pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null;
+    _lastHeadingDeg = pos.heading.isFinite && pos.heading >= 0 ? pos.heading : null;
+    _lastFixAt = pos.timestamp ?? DateTime.now();
 
     // init display
     _displayLoc = _currentRaw;
@@ -140,7 +151,6 @@ class DriverRouteController {
     _emitUpdate();
 
     _startLocationStream();
-    _startAnimLoop(); // ✅ start smooth animation loop
   }
 
   Future<void> updateDestination(LatLng dest) async {
@@ -176,25 +186,25 @@ class DriverRouteController {
     ).listen(_onPosition);
   }
 
-  void _startAnimLoop() {
-    _animTimer?.cancel();
-    _animTimer = Timer.periodic(const Duration(milliseconds: _ANIM_TICK_MS), (
-      _,
-    ) {
-      _tickAnimation();
-    });
-  }
-
   Future<void> _onPosition(Position position) async {
     final acc = position.accuracy.isFinite ? position.accuracy : 9999.0;
     if (acc > _MAX_ACCURACY_M) return;
 
     final rawLoc = LatLng(position.latitude, position.longitude);
-    final newLoc = _maybeSnapToRoute(rawLoc);
+    // For map/vehicle tracking, screens should use `rawLoc` (exposed via
+    // DriverRouteUpdate.rawLocation). We optionally snap *only* the instruction
+    // location to keep maneuvers stable.
+    final newLoc = _maybeSnapToRoute(rawLoc, accuracyMeters: acc);
 
     if (_lastRaw == null) {
       _lastRaw = rawLoc;
       _currentRaw = rawLoc;
+      _lastAccuracyM = acc;
+      _lastSpeedMs =
+          position.speed.isFinite && position.speed >= 0 ? position.speed : null;
+      _lastHeadingDeg =
+          position.heading.isFinite && position.heading >= 0 ? position.heading : null;
+      _lastFixAt = position.timestamp ?? DateTime.now();
       _displayLoc ??= newLoc;
       return;
     }
@@ -210,6 +220,11 @@ class DriverRouteController {
 
     final speed = position.speed.isFinite ? position.speed : 0.0;
     final heading = position.heading.isFinite ? position.heading : -1.0;
+    _lastAccuracyM = acc;
+    _lastSpeedMs = position.speed.isFinite && position.speed >= 0 ? position.speed : null;
+    _lastHeadingDeg =
+        position.heading.isFinite && position.heading >= 0 ? position.heading : null;
+    _lastFixAt = position.timestamp ?? DateTime.now();
 
     // Keep orientation stable when almost stationary (GPS drift only).
     if (speed < _MIN_SPEED_MS && moved < _STATIONARY_DRIFT_M) {
@@ -227,7 +242,7 @@ class DriverRouteController {
     } else if (speed >= _HEADING_TRUST_SPEED_MS && heading >= 0) {
       targetBearing = heading;
     } else {
-      targetBearing = _getBearing(_lastRaw!, newLoc);
+      targetBearing = _getBearing(_lastRaw!, rawLoc);
     }
 
     // Prevent micro-rotation at low speed
@@ -244,111 +259,35 @@ class DriverRouteController {
     );
 
     _currentRaw = rawLoc;
-
-    // ✅ Update animation target (from current display → new gps)
-    _setAnimationTarget(
-      from: _displayLoc ?? _lastRaw!,
-      to: newLoc,
-      bearingFrom: _displayBearing,
-      bearingTo: smoothedBearing,
-      speedMs: speed,
-      movedMeters: moved,
-    );
-
     _lastRaw = rawLoc;
 
+    // Update display immediately; smooth motion is handled by RideMapController.
+    _displayLoc = newLoc;
+    _displayBearing = smoothedBearing;
+    _emitUpdate();
+
     // Update remaining polyline cheaply (no API)
-    _trimPolylineToCurrent(newLoc);
+    _trimPolylineToCurrent(rawLoc);
 
     // If off-route, fetch new route (throttled)
     if (_shouldRefetchRoute(rawLoc)) {
       await _fetchRoute(rawLoc, _destination);
+      _emitUpdate();
     }
   }
 
-  LatLng _maybeSnapToRoute(LatLng raw) {
+  LatLng _maybeSnapToRoute(LatLng raw, {required double accuracyMeters}) {
     if (_polyline.length < 6) return raw;
     final snap = snapToPolyline(
       raw,
       _polyline,
       maxSegments: _OFF_ROUTE_LOOKAHEAD_POINTS,
     );
-    return snap.distanceMeters <= _SNAP_TOLERANCE_M ? snap.point : raw;
-  }
 
-  void _setAnimationTarget({
-    required LatLng from,
-    required LatLng to,
-    required double bearingFrom,
-    required double bearingTo,
-    required double speedMs,
-    required double movedMeters,
-  }) {
-    _animFrom = from;
-    _animTo = to;
-    _bearingFrom = _normalizeAngle(bearingFrom);
-    _bearingTo = _normalizeAngle(bearingTo);
-
-    // ✅ Duration: based on speed/distance (clamped)
-    // if speed is invalid, use movedMeters to estimate.
-    int ms;
-    if (speedMs.isFinite && speedMs > 0.5) {
-      ms = ((movedMeters / speedMs) * 1000).round();
-    } else {
-      // fallback: 5 m/s guess
-      ms = ((movedMeters / 5.0) * 1000).round();
-    }
-
-    // clamp to feel natural
-    _animDurationMs = ms.clamp(280, 1100);
-    _animStartAt = DateTime.now();
-  }
-
-  void _tickAnimation() {
-    if (_animFrom == null || _animTo == null || _animStartAt == null) {
-      return;
-    }
-
-    final elapsed = DateTime.now().difference(_animStartAt!).inMilliseconds;
-    final t = (elapsed / _animDurationMs).clamp(0.0, 1.0);
-
-    // Smooth curve
-    final eased = _easeOutCubic(t);
-
-    // Interpolate LatLng
-    final LatLng from = _animFrom!;
-    final LatLng to = _animTo!;
-    _displayLoc = LatLng(
-      _lerp(from.latitude, to.latitude, eased),
-      _lerp(from.longitude, to.longitude, eased),
-    );
-
-    // Interpolate bearing (shortest angle)
-    _displayBearing = _lerpAngle(_bearingFrom, _bearingTo, eased);
-
-    // Emit frequently (smooth marker)
-    _emitUpdate();
-
-    // finish
-    if (t >= 1.0) {
-      _animFrom = _animTo;
-      _animStartAt = null;
-    }
-  }
-
-  double _easeOutCubic(double t) => 1 - math.pow(1 - t, 3).toDouble();
-
-  double _lerp(double a, double b, double t) => a + (b - a) * t;
-
-  double _lerpAngle(double a, double b, double t) {
-    a = _normalizeAngle(a);
-    b = _normalizeAngle(b);
-
-    double diff = (b - a) % 360;
-    if (diff > 180) diff -= 360;
-    if (diff < -180) diff += 360;
-
-    return _normalizeAngle(a + diff * t);
+    // Dynamic tolerance: when GPS is good, avoid snapping to parallel roads.
+    // When GPS is noisy (still within our accepted max accuracy), allow a little more.
+    final tol = math.min(_SNAP_TOLERANCE_M, math.max(15.0, accuracyMeters * 1.2));
+    return snap.distanceMeters <= tol ? snap.point : raw;
   }
 
   bool _shouldRefetchRoute(LatLng loc) {
@@ -434,12 +373,18 @@ class DriverRouteController {
   void _emitUpdate() {
     final loc = _displayLoc ?? _currentRaw;
     if (loc == null) return;
+    final raw = _currentRaw ?? loc;
 
     onRouteUpdate(
       DriverRouteUpdate(
+        rawLocation: raw,
         driverLocation: loc,
         destination: _adjustedDestination ?? _destination,
         bearing: _normalizeAngle(_displayBearing),
+        accuracyMeters: _lastAccuracyM,
+        speedMetersPerSecond: _lastSpeedMs,
+        headingDeg: _lastHeadingDeg,
+        timestamp: _lastFixAt,
         polylinePoints: List<LatLng>.from(_polyline),
         nextPoint: _nextPoint,
         directionText: _directionText,
@@ -590,7 +535,6 @@ class DriverRouteController {
 
   void dispose() {
     _positionSub?.cancel();
-    _animTimer?.cancel();
   }
 }
 

@@ -587,11 +587,11 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                 if (widget.isSharedRide) {
                                   await _finishSharedAndPop(success: true);
                                 } else {
-                                  Navigator.pushReplacement(
-                                    pageContext,
+                                  Navigator.of(pageContext).pushAndRemoveUntil(
                                     MaterialPageRoute(
                                       builder: (_) => DriverMainScreen(),
                                     ),
+                                    (route) => false,
                                   );
                                 }
                               },

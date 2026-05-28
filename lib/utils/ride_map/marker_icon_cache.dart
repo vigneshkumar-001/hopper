@@ -104,6 +104,7 @@ class MarkerIconCache {
     return png?.buffer.asUint8List();
   }
 
+
   static String _assetForVehicle(RideVehicleType type) {
     switch (type) {
       case RideVehicleType.bike:
@@ -178,4 +179,6 @@ class MarkerIconCache {
       }
     });
   }
+
+
 }

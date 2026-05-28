@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:action_slider/action_slider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
@@ -217,7 +218,6 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   Worker? _serviceTypeWorker;
 
   bool driverCompletedRide = false;
-  bool _isDriverFocused = true;
   bool _leavingScreen = false;
   bool _isNetworkOffline = false;
   bool _isOffRouteAlert = false;
@@ -314,7 +314,9 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       ),
     );
 
-    _animatedDriverPos = widget.driverLocation;
+    // Never seed the vehicle marker from `widget.driverLocation`.
+    // That value can be stale/incorrect (sometimes equals pickup/drop).
+    _animatedDriverPos = null;
 
     _markerAnimator = _MarkerAnimator(
       shouldTick: () => mounted && !_isDisposing,
@@ -350,16 +352,43 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     _rideMap.setNavigationDestination(initialDestination, driverFriendlyStop: true);
     unawaited(_loadStopPin());
 
+    // Safety: if a provided initial driver location equals the pickup/drop target,
+    // treat it as invalid to prevent the vehicle marker appearing at the stop.
+    LatLng? safeInitialLocation = widget.driverLocation;
+    if (safeInitialLocation != null) {
+      final d = Geolocator.distanceBetween(
+        safeInitialLocation.latitude,
+        safeInitialLocation.longitude,
+        initialDestination.latitude,
+        initialDestination.longitude,
+      );
+      if (d <= 2.5) {
+        if (kDebugMode) {
+          debugPrint('[BUG_BLOCKED] initialLocation matched pickup/drop; ignoring it');
+        }
+        safeInitialLocation = null;
+      }
+    }
+
     _routeController = DriverRouteController(
       destination: initialDestination,
-      initialLocation: widget.driverLocation,
+      initialLocation: safeInitialLocation,
       onRouteUpdate: (update) {
         if (!mounted || _isDisposing) return;
-        _markerAnimator.animateTo(update.driverLocation, update.bearing);
-        sharedRideController.updateDriverLocation(update.driverLocation);
-        _updateSmartAutoZoom(update.driverLocation);
+        final raw = update.rawLocation;
+        _animatedDriverPos = raw;
+        _animatedBearing = update.headingDeg ?? update.bearing;
+        sharedRideController.updateDriverLocation(raw);
+        _updateSmartAutoZoom(raw);
 
-        _rideMap.updateVehicleLocation(update.driverLocation);
+        _rideMap.updateVehicleLocation(
+          raw,
+          source: 'gps',
+          speedMetersPerSecond: update.speedMetersPerSecond,
+          headingDeg: update.headingDeg,
+          accuracyMeters: update.accuracyMeters,
+          timestamp: update.timestamp,
+        );
 
         final now = DateTime.now();
         if (_lastUiUpdate != null &&
@@ -387,7 +416,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
             distText != _lastDistanceText ||
             man != _lastManeuver ||
             lane != _lastLaneGuidance;
-        final offRouteNow = _isOffRoute(update.driverLocation, poly);
+        final offRouteNow = _isOffRoute(raw, poly);
 
         if (!mounted || _isDisposing) return;
         if (!polyChanged && !textChanged && _isOffRouteAlert == offRouteNow)
@@ -426,7 +455,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
             _rebuildManeuverMarkers(
               poly,
               maneuverPoints: update.maneuverPoints,
-              travelOrigin: update.driverLocation,
+              travelOrigin: raw,
               avoid: <LatLng>[destNow],
             ),
           );
@@ -717,9 +746,35 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         // Keep service type in sync so driver marker icon is correct (Car/Bike).
         try {
           final first = bookings.first;
-          driverStatusController.setServiceTypeFrom(
-            first['serviceType'] ?? first['rideType'] ?? first['vehicleType'],
-          );
+          final st =
+              first['serviceType'] ?? first['rideType'] ?? first['vehicleType'];
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            try {
+              driverStatusController.setServiceTypeFrom(st);
+            } catch (_) {}
+          });
+        } catch (_) {}
+
+        // If joined-booking already includes driver's real location, show the
+        // vehicle marker immediately (do not wait for driver-location tick).
+        try {
+          final first = bookings.first;
+          final raw = first['driverLocation'];
+          if (raw is Map) {
+            final m = Map<String, dynamic>.from(raw as Map);
+            double? asDouble(dynamic v) {
+              if (v is num) return v.toDouble();
+              return double.tryParse(v?.toString() ?? '');
+            }
+
+            final lat = asDouble(m['latitude'] ?? m['lat']);
+            final lng = asDouble(m['longitude'] ?? m['lng']);
+            if (lat != null && lng != null) {
+              final pos = LatLng(lat, lng);
+              _rideMap.updateVehicleLocation(pos, source: 'socket');
+              _animatedDriverPos ??= pos;
+            }
+          }
         } catch (_) {}
 
         for (final b in bookings) {
@@ -2403,7 +2458,6 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   // Ã¢â€â‚¬Ã¢â€â‚¬ Build Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   @override
   Widget build(BuildContext context) {
-    final driverPos = _animatedDriverPos ?? widget.driverLocation;
     final active = sharedRideController.activeTarget.value;
     final rawTargetPos =
         active == null
@@ -2432,7 +2486,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       _rideMap.setPickupDrop(pickup: targetPos);
       _rideMap.setNavigationDestination(targetPos, driverFriendlyStop: true);
     }
-    _rideMap.setAutoFollowEnabled(_isDriverFocused);
+    _rideMap.setAutoFollowEnabled(_rideMap.focusMode.value == MapFocusMode.driver);
     _rideMap.setBottomSheetHeight(320);
 
     return NoInternetOverlay(
@@ -2452,9 +2506,12 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                   myLocationEnabled: false,
                   fitToBounds: true,
                   trafficEnabled: false,
-                  compassEnabled: false,
+                  compassEnabled: true,
                   extraMarkers: extraMarkers,
-                  onUserCameraMoveStarted: () => setState(() => _isDriverFocused = false),
+                  onUserCameraMoveStarted: () {
+                    _rideMap.setAutoFollowEnabled(false);
+                    _rideMap.focusMode.value = MapFocusMode.fullTrip;
+                  },
                 ),
               ),
 
@@ -2496,23 +2553,27 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                             ),
                       ),
                       const SizedBox(height: 10),
-                      MapFocusToggleButton(
-                        isDriverFocused: _isDriverFocused,
-                        accentColor: _C.green,
-                        onFocusDriver: () async {
-                          await _rideMap.focusVehicle(
-                            zoom: (_followZoom + 0.9).clamp(16.2, 17.8),
-                            tilt: 45,
-                            bearingEnabled: true,
+                      ValueListenableBuilder<MapFocusMode>(
+                        valueListenable: _rideMap.focusMode,
+                        builder: (context, mode, _) {
+                          final focused = mode == MapFocusMode.driver;
+                          return MapFocusToggleButton(
+                            isDriverFocused: focused,
+                            accentColor: _C.green,
+                            onFocusDriver: () async {
+                              _rideMap.applyFocusMode(
+                                MapFocusMode.driver,
+                                userInitiated: true,
+                              );
+                            },
+                            onFitBounds: () async {
+                              _rideMap.applyFocusMode(
+                                MapFocusMode.fullTrip,
+                                userInitiated: true,
+                              );
+                            },
+                            onDriverFocusedChanged: (_) {},
                           );
-                        },
-                        onFitBounds: () {
-                          final pts = polylinePoints;
-                          _rideMap.fitToBounds(padding: 95);
-                        },
-                        onDriverFocusedChanged: (v) {
-                          if (!mounted || _isDisposing) return;
-                          setState(() => _isDriverFocused = v);
                         },
                       ),
                     ],

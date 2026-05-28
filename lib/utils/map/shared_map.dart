@@ -235,10 +235,25 @@ class SharedMapState extends State<SharedMap> {
   }
 
   void _onMapCreated(GoogleMapController controller) {
-    widget.onMapCreated?.call(controller);
-    _mapController = controller;
+    // On some Android devices, rotating (portrait <-> landscape) recreates the
+    // underlying platform view without recreating this State, causing
+    // `onMapCreated` to be called again with a new controller. If we bail out
+    // just because `_cameraInitialized` is true, the new controller never gets
+    // an initial camera move and users can perceive that polylines/markers are
+    // "not showing" (they are just off-screen).
+    final shouldReinitCamera = _cameraInitialized && _mapController != null;
 
-    if (_cameraInitialized) return;
+    _mapController = controller;
+    widget.onMapCreated?.call(controller);
+
+    if (shouldReinitCamera) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _mapController == null) return;
+        _attemptInitialCameraMove();
+      });
+      return;
+    }
+
     _cameraInitialized = true;
 
     if (widget.fitToBounds) {

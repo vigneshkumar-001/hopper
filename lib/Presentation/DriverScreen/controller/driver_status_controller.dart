@@ -929,9 +929,9 @@ class DriverStatusController extends GetxController {
           isLoading.value = false;
 
           if (goToMainOnSuccess) {
-            Navigator.pushReplacement(
-              context,
+            Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(builder: (_) => DriverMainScreen()),
+              (route) => false,
             );
           }
 

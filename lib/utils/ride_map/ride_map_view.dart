@@ -62,11 +62,20 @@ class _RideMapViewState extends State<RideMapView> {
   @override
   Widget build(BuildContext context) {
     final mediaPadding = MediaQuery.paddingOf(context);
+    // For pickup screen, keep Google attribution closer to the bottom edge
+    // (still visible above the bottom sheet) to match user expectation and
+    // remain branding-compliant.
+    // Keep Google attribution as low as possible while ensuring it stays above
+    // the bottom sheet (branding-compliant: visible, not obscured).
+    final bottomExtra =
+        widget.controller.mode == RideMapMode.pickupNavigation ? 8.0 : MapUiConfig.mapBottomExtraPadding;
     final padding = EdgeInsets.fromLTRB(
       MapUiConfig.mapSidePadding,
       mediaPadding.top + MapUiConfig.mapTopPadding,
       MapUiConfig.mapSidePadding,
-      widget.controller.bottomSheetHeight + MapUiConfig.mapBottomExtraPadding,
+      mediaPadding.bottom +
+          widget.controller.bottomSheetHeight +
+          bottomExtra,
     );
 
     return ValueListenableBuilder<Set<Marker>>(
@@ -133,19 +142,21 @@ class _RideMapViewState extends State<RideMapView> {
                                   : PickupIndicatorStyle.pulse,
                           pickupIndicatorColor: const Color(0xFF00A85E),
                           pickupTargetColor: Colors.black,
-                          myLocationEnabled: widget.myLocationEnabled,
-                          fitToBounds: widget.fitToBounds,
-                          trafficEnabled: widget.trafficEnabled,
-                          compassEnabled: widget.compassEnabled,
-                          markers: markers,
-                          polylines: polylines,
-                          circles: <Circle>{...overlayCircles, ...widget.extraCircles},
-                          followDriver: widget.controller.autoFollowEnabled,
-                          followBearingEnabled: MapUiConfig.cameraBearingEnabled,
-                          followZoom:
-                              widget.controller.mode == RideMapMode.home
-                                  ? MapUiConfig.defaultZoom
-                                  : widget.controller.navigationFollowZoom
+                           myLocationEnabled: widget.myLocationEnabled,
+                           fitToBounds: widget.fitToBounds,
+                           trafficEnabled: widget.trafficEnabled,
+                           compassEnabled:
+                               widget.compassEnabled ||
+                               widget.controller.cameraBearingEnabledNow,
+                           markers: markers,
+                           polylines: polylines,
+                            circles: <Circle>{...overlayCircles, ...widget.extraCircles},
+                            followDriver: widget.controller.autoFollowEnabled,
+                            followBearingEnabled: widget.controller.cameraBearingEnabledNow,
+                           followZoom:
+                               widget.controller.mode == RideMapMode.home
+                                   ? MapUiConfig.defaultZoom
+                                   : widget.controller.navigationFollowZoom
                                       .clamp(16.5, 18.0),
                           followTilt:
                               widget.controller.mode == RideMapMode.home

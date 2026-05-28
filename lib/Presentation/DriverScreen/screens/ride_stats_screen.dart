@@ -18,6 +18,7 @@ import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:hopper/utils/ride_map/ride_map_view.dart';
+import 'package:hopper/utils/ride_map/ride_map_controller.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../controller/ride_starts_controller.dart';
@@ -79,12 +80,13 @@ class RideStatsScreen extends StatelessWidget {
                 height: 650,
                 child: Obx(() {
                   final from =
-                      c.driverLocation.value ?? c.bookingFromLocation.value;
+                      c.rideMap.lastVehiclePosition ??
+                      c.driverLocation.value ??
+                      c.bookingFromLocation.value;
                   final toRaw = c.bookingToLocation.value;
                   final to = c.adjustedDropLocation.value ?? toRaw;
 
                   final initialPos = from ?? to ?? const LatLng(0, 0);
-                  c.rideMap.setBottomSheetHeight(c.driverCompletedRide.value ? 350.0 : 270.0);
 
                   return RideMapView(
                     controller: c.rideMap,
@@ -156,17 +158,27 @@ class RideStatsScreen extends StatelessWidget {
                         },
                       ),
                       const SizedBox(height: 10),
-                      Obx(
-                        () => MapFocusToggleButton(
-                          isDriverFocused: c.isDriverFocused.value,
-                          onFocusDriver: () {
-                            c.focusDriverMarker(zoom: 17.2);
-                          },
-                          onFitBounds: () {
-                            c.focusRouteOverview();
-                          },
-                          onDriverFocusedChanged: c.setDriverFocused,
-                        ),
+                      ValueListenableBuilder<MapFocusMode>(
+                        valueListenable: c.rideMap.focusMode,
+                        builder: (context, mode, _) {
+                          final focused = mode == MapFocusMode.driver;
+                          return MapFocusToggleButton(
+                            isDriverFocused: focused,
+                            onFocusDriver: () async {
+                              c.rideMap.applyFocusMode(
+                                MapFocusMode.driver,
+                                userInitiated: true,
+                              );
+                            },
+                            onFitBounds: () async {
+                              c.rideMap.applyFocusMode(
+                                MapFocusMode.fullTrip,
+                                userInitiated: true,
+                              );
+                            },
+                            onDriverFocusedChanged: (_) {},
+                          );
+                        },
                       ),
                     ],
                   ),

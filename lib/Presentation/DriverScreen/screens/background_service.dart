@@ -148,6 +148,18 @@ Future<void> stopDriverTrackingService() async {
   service.invoke('data', {'action': 'stopService'});
 }
 
+/// Safe to call from the foreground isolate to verify whether the tracking
+/// service is actually running (used for handoff decisions).
+Future<bool> isDriverTrackingServiceRunning() async {
+  if (!isBackgroundTrackingEnabled()) return false;
+  try {
+    await initializeBackgroundService();
+    return await FlutterBackgroundService().isRunning();
+  } catch (_) {
+    return false;
+  }
+}
+
 @pragma('vm:entry-point')
 bool onIosBackground(ServiceInstance service) {
   WidgetsFlutterBinding.ensureInitialized();
