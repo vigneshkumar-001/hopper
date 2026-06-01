@@ -7,6 +7,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hopper/Core/Constants/log.dart';
 import '../../../api/repository/api_config_controller.dart';
@@ -35,9 +36,9 @@ Future<void> initializeBackgroundService() async {
     // Missing/invalid notification can crash on newer Android.
     try {
       const channel = AndroidNotificationChannel(
-        'driver_tracking',
-        'Driver Tracking',
-        description: 'Background location tracking',
+        'hopper_driver_location',
+        'Hopper Driver Location',
+        description: 'Driver navigation background location tracking',
         importance: Importance.low,
       );
       final plugin = FlutterLocalNotificationsPlugin();
@@ -56,9 +57,10 @@ Future<void> initializeBackgroundService() async {
         autoStart: false,
         autoStartOnBoot: false,
         foregroundServiceTypes: const [AndroidForegroundType.location],
-        notificationChannelId: 'driver_tracking',
-        initialNotificationTitle: 'Driver Tracking Active',
-        initialNotificationContent: 'Sending location updates...',
+        notificationChannelId: 'hopper_driver_location',
+        initialNotificationTitle: 'Hopper - Navigation Active',
+        initialNotificationContent: 'Tap to return to Hopper',
+        foregroundServiceNotificationId: 888,
       ),
       iosConfiguration: IosConfiguration(
         onForeground: onStart,
@@ -183,7 +185,7 @@ void onStart(ServiceInstance service) async {
     await androidService?.setAsForegroundService();
     await androidService?.setForegroundNotificationInfo(
       title: 'Driver Tracking Active',
-      content: 'Sending location updates...',
+      content: 'Tap to return to Hoppr Driver',
     );
   } catch (_) {}
 
@@ -191,7 +193,7 @@ void onStart(ServiceInstance service) async {
   const double maxAccuracyM = 25.0;
   const double stationaryJumpM = 30.0;
   const double jumpAcceptAccuracyM = 12.0;
-  const Duration minEmitInterval = Duration(seconds: 5);
+  const Duration minEmitInterval = Duration(seconds: 3);
 
   double? lastLat;
   double? lastLng;
@@ -207,6 +209,16 @@ void onStart(ServiceInstance service) async {
     socketUrl = shared
         ? ApiConfigController.sharedSocket
         : ApiConfigController.singleSocket;
+  } catch (_) {}
+
+  // Optional override (used when a screen explicitly starts tracking before
+  // opening external navigation).
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final override = prefs.getString('bg_socket_url');
+    if (override != null && override.trim().isNotEmpty) {
+      socketUrl = override.trim();
+    }
   } catch (_) {}
 
   Map<String, dynamic>? _pendingPayload;
@@ -343,9 +355,18 @@ void onStart(ServiceInstance service) async {
 
     final locationData = {
       'userId': driverId,
+      'driverId': driverId,
+      // Keep legacy keys used by backend/customer app.
       'latitude': position.latitude,
       'longitude': position.longitude,
+      // Add common aliases for compatibility with other clients.
+      'lat': position.latitude,
+      'lng': position.longitude,
+      'bearing': position.heading,
+      'speed': position.speed,
+      'accuracy': position.accuracy,
       if (currentBookingId != null) 'bookingId': currentBookingId,
+      if (currentBookingId != null) 'rideId': currentBookingId,
       'timestamp': now.toIso8601String(),
     };
     if (!socket.connected) {
@@ -355,6 +376,22 @@ void onStart(ServiceInstance service) async {
     } else {
       socket.emit('updateLocation', locationData);
     }
+
+    // Mirror to the UI isolate (so screens can refresh immediately on return).
+    // This is best-effort; if the UI isolate is not active, this is ignored.
+    try {
+      service.invoke('locationUpdate', {
+        'lat': position.latitude,
+        'lng': position.longitude,
+        'bearing': position.heading,
+        'speed': position.speed,
+        'accuracy': position.accuracy,
+        if (currentBookingId != null) 'bookingId': currentBookingId,
+        if (driverId != null) 'driverId': driverId,
+        'timestamp': now.toIso8601String(),
+      });
+    } catch (_) {}
+
     CommonLogger.log.i('[BG_SOCKET_EMIT] updateLocation $locationData');
   });
 
@@ -398,9 +435,16 @@ void onStart(ServiceInstance service) async {
 
       final locationData = {
         'userId': driverId,
+        'driverId': driverId,
         'latitude': position.latitude,
         'longitude': position.longitude,
+        'lat': position.latitude,
+        'lng': position.longitude,
+        'bearing': position.heading,
+        'speed': position.speed,
+        'accuracy': position.accuracy,
         if (currentBookingId != null) 'bookingId': currentBookingId,
+        if (currentBookingId != null) 'rideId': currentBookingId,
         'timestamp': now.toIso8601String(),
       };
 
@@ -411,6 +455,20 @@ void onStart(ServiceInstance service) async {
       } else {
         socket.emit(isMoving ? 'updateLocation' : 'driver-heartbeat', locationData);
       }
+
+      try {
+        service.invoke('locationUpdate', {
+          'lat': position.latitude,
+          'lng': position.longitude,
+          'bearing': position.heading,
+          'speed': position.speed,
+          'accuracy': position.accuracy,
+          if (currentBookingId != null) 'bookingId': currentBookingId,
+          if (driverId != null) 'driverId': driverId,
+          'timestamp': now.toIso8601String(),
+        });
+      } catch (_) {}
+
       CommonLogger.log.i(
         '[BG_SOCKET_EMIT] ${isMoving ? 'updateLocation' : 'driver-heartbeat'} (poll) $locationData',
       );

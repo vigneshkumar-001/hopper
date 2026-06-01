@@ -4,12 +4,14 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:hopper/Core/Constants/log.dart';
+import 'package:hopper/Core/Services/driver_background_location_service.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_response.dart';
@@ -28,7 +30,7 @@ import 'package:hopper/utils/ride_map/marker_icon_cache.dart';
 import 'package:hopper/utils/ride_map/ride_map_controller.dart';
 
 class RideStatsController extends GetxController
-    with GetSingleTickerProviderStateMixin {
+    with GetSingleTickerProviderStateMixin, WidgetsBindingObserver {
   RideStatsController({
     required this.bookingId,
     this.pickupAddress,
@@ -73,6 +75,9 @@ class RideStatsController extends GetxController
   DateTime _lastCameraFollowAt = DateTime.fromMillisecondsSinceEpoch(0);
   bool _didInitialRouteFit = false;
   bool _isMapActive = false;
+  StreamSubscription<dynamic>? _bgLocationSub;
+  Worker? _paymentStatusWorker;
+  bool _trackingStopped = false;
 
   // Reach-destination detection (GPS-first, socket fallback).
   bool _reachedDropGps = false;
@@ -146,6 +151,10 @@ class RideStatsController extends GetxController
   @override
   void onInit() {
     super.onInit();
+    WidgetsBinding.instance.addObserver(this);
+    _setupBackgroundServiceListener();
+    // Ensure the BG isolate is always aligned to the current (drop-phase) booking id.
+    unawaited(DriverBackgroundLocationService.updateRidePhase(bookingId));
     DirectionsConfig.apiKey = ApiConstents.googleMapApiKey;
     _markerController = AnimationController(
       vsync: this,
@@ -188,6 +197,21 @@ class RideStatsController extends GetxController
     unawaited(_primeDriverLocationAndRoute());
     _startLocationStream();
 
+    // Stop background tracking once the trip is fully completed (cash collected).
+    // This avoids continuing a foreground service beyond the active trip.
+    _paymentStatusWorker?.dispose();
+    _paymentStatusWorker = ever<String>(
+      driverStatusController.paymentStatus,
+      (status) {
+        if (_trackingStopped) return;
+        final v = status.trim().toUpperCase();
+        if (v == 'PAID' || v == 'COMPLETED') {
+          _trackingStopped = true;
+          unawaited(DriverBackgroundLocationService.stopTracking());
+        }
+      },
+    );
+
     // Keep map padding hint in sync with the bottom sheet, without doing
     // side-effects from the widget build method.
     void applySheetHeight(bool completed) {
@@ -200,10 +224,13 @@ class RideStatsController extends GetxController
 
   @override
   void onClose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _bgLocationSub?.cancel();
     _positionStream?.cancel();
     _autoFollowTimer?.cancel();
     _routeRetryTimer?.cancel();
     _serviceTypeWorker?.dispose();
+    _paymentStatusWorker?.dispose();
     _mapTargetWorker?.dispose();
     _sheetHeightWorker?.dispose();
     _isMapActive = false;
@@ -223,6 +250,54 @@ class RideStatsController extends GetxController
     } catch (_) {}
 
     super.onClose();
+  }
+
+  void _setupBackgroundServiceListener() {
+    _bgLocationSub?.cancel();
+    try {
+      _bgLocationSub =
+          FlutterBackgroundService().on('locationUpdate').listen((data) {
+        if (isClosed || data == null) return;
+        if (data is! Map) return;
+
+        final lat = (data['lat'] as num?)?.toDouble();
+        final lng = (data['lng'] as num?)?.toDouble();
+        if (lat == null || lng == null) return;
+
+        final bearing = (data['bearing'] as num?)?.toDouble();
+        final speed = (data['speed'] as num?)?.toDouble();
+        final acc = (data['accuracy'] as num?)?.toDouble();
+        final tsRaw = data['timestamp']?.toString();
+        final ts = tsRaw == null ? null : DateTime.tryParse(tsRaw);
+
+        final raw = LatLng(lat, lng);
+        driverLocation.value = raw;
+        rideMap.updateVehicleLocation(
+          raw,
+          source: 'gps',
+          speedMetersPerSecond: speed,
+          headingDeg: bearing,
+          accuracyMeters: acc,
+          timestamp: ts,
+        );
+      });
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Ensure we stop BG tracking and reconnect foreground socket/map when
+      // returning from external Google Maps navigation.
+      if (Get.isRegistered<DriverMainController>()) {
+        unawaited(Get.find<DriverMainController>().onAppResumed());
+      }
+      // When returning from external Google Maps navigation, refresh the camera
+      // quickly so the driver sees their current position immediately.
+      unawaited(goToCurrentLocation());
+    }
   }
 
   // ---------------- ICON ----------------
@@ -635,14 +710,15 @@ class RideStatsController extends GetxController
     socketService.on('driver-location', (data) {
       CommonLogger.log.i('driver-location : $data');
       if (data == null) return;
+      if (data is! Map) return;
+      final payload = Map<String, dynamic>.from(data as Map);
 
       // If we haven't hydrated booking coordinates yet, try to hydrate from the
       // socket payload itself (some backends include a `basePayload` wrapper).
       if ((bookingToLocation.value == null ||
               bookingFromLocation.value == null) &&
-          data is Map) {
-        final m = Map<String, dynamic>.from(data as Map);
-        final raw = m['basePayload'];
+          payload.isNotEmpty) {
+        final raw = payload['basePayload'];
         if (raw is Map) {
           unawaited(
             _applyBookingSnapshot(Map<String, dynamic>.from(raw as Map)),
@@ -650,12 +726,21 @@ class RideStatsController extends GetxController
         }
       }
 
-      final dropM = (data['dropDistanceInMeters'] ?? 0).toDouble();
-      final dropMin = (data['dropDurationInMin'] ?? 0).toDouble();
+      final dropM = _asDouble(payload['dropDistanceInMeters']);
+      final dropMin = _asDouble(payload['dropDurationInMin']);
 
-      driverStatusController.dropDistanceInMeters.value = dropM;
-      driverStatusController.dropDurationInMin.value = dropMin;
-      Get.find<DriverAnalyticsController>().setSlaFromEtaMinutes(dropMin);
+      if (dropM != null) {
+        driverStatusController.dropDistanceInMeters.value = dropM;
+      }
+      if (dropMin != null) {
+        driverStatusController.dropDurationInMin.value = dropMin;
+      }
+      driverStatusController.setLastDriverLocationAtFrom(
+        payload['timestamp'] ?? payload['ts'] ?? payload['time'],
+      );
+      if (dropMin != null) {
+        Get.find<DriverAnalyticsController>().setSlaFromEtaMinutes(dropMin);
+      }
 
       // ✅ Fallback: if server is already sending drop-distance updates, use them
       // to toggle the Complete Ride UI even if the explicit `driver-reached-destination`
@@ -663,10 +748,11 @@ class RideStatsController extends GetxController
       // Guard: some backends send `0` temporarily (unknown), which would otherwise
       // incorrectly flip UI into "reached destination".
       _lastSocketFixAt = DateTime.now();
-      if (dropM > 0) {
-        if (!_reachedDropSocket && dropM <= _REACHED_DESTINATION_RADIUS_M) {
+      final dm = dropM;
+      if (dm != null && dm > 0) {
+        if (!_reachedDropSocket && dm <= _REACHED_DESTINATION_RADIUS_M) {
           _reachedDropSocket = true;
-        } else if (_reachedDropSocket && dropM >= _REACHED_DESTINATION_EXIT_RADIUS_M) {
+        } else if (_reachedDropSocket && dm >= _REACHED_DESTINATION_EXIT_RADIUS_M) {
           _reachedDropSocket = false;
         }
       }
@@ -1281,11 +1367,16 @@ class RideStatsController extends GetxController
   }
 
   String formatDistance(double meters) {
+    if (!meters.isFinite || meters < 0) return '--';
+    if (meters < 1) return '<1 m';
+    if (meters < 950) return '${meters.round()} m';
     final km = meters / 1000.0;
     return '${km.toStringAsFixed(1)} Km';
   }
 
   String formatDuration(double minutes) {
+    if (!minutes.isFinite || minutes < 0) return '--';
+    if (minutes > 0 && minutes < 1) return '<1 min';
     final total = minutes.round();
     final h = total ~/ 60;
     final m = total % 60;

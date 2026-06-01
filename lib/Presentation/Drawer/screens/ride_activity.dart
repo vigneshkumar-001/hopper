@@ -239,7 +239,7 @@ class _RideAndPackageHistoryScreenState
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(40),
                                   child: Image.network(
-                                    '',
+                                    historyData.customer.profilePic.toString(),
                                     height: 35,
                                     width: 35,
                                     errorBuilder:

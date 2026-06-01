@@ -98,6 +98,7 @@ class DriverMainController extends GetxController
   DateTime? _lastHeartbeatEmitAt;
   DateTime _lastHomeRefreshAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _emitLoopToken = 0;
+  bool _backgroundServiceActive = false;
 
   String? driverId;
   String? currentBookingId;
@@ -1279,6 +1280,7 @@ class DriverMainController extends GetxController
 
       _lastSentLocationTimestamp = ts;
       _lastUpdateLocationEmitAt = DateTime.now();
+      if (_backgroundServiceActive) return;
       socketService.emit('updateLocation', payload);
       Get.find<DriverAnalyticsController>().trackOnlineTick(
         const Duration(seconds: 7),
@@ -2101,6 +2103,8 @@ class DriverMainController extends GetxController
       }
     }
 
+    _backgroundServiceActive = bgRunning;
+
     // If BG service cannot run (most commonly notifications disabled / OEM blocks),
     // do NOT disconnect the foreground socket; otherwise customers will lose the
     // driver marker immediately when the app is minimized.
@@ -2125,6 +2129,7 @@ class DriverMainController extends GetxController
   Future<void> onAppResumed() async {
     if (_disposed || isClosed) return;
     _appInForeground = true;
+    _backgroundServiceActive = false;
 
     driverId ??= await SharedPrefHelper.getDriverId();
     final did = driverId?.trim() ?? '';

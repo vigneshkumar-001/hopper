@@ -369,6 +369,7 @@ class SharedController extends GetxController {
           return null;
         },
         (response) {
+          isLoading.value = false;
           return response.message;
         },
       );

@@ -50,6 +50,7 @@ class ApiConstents {
       _u('/shared/customer/shared-booking/status');
   static String get loginApi => _u('/users/signUp');
   static String get driverWalletHistory => _u('/users/driver-wallet-history');
+  static String get driverEarnings => _u('/users/driver-earnings');
   static String get verifyOtp => _u('/users/verify-otp');
   static String get verifyOtpProtect => _u('/users/verify-otp-protect');
   static String get resendOTP => _u('/users/resendOTP');

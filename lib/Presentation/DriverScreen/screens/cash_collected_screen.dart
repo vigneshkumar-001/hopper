@@ -11,7 +11,7 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
-import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
+import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
@@ -37,7 +37,6 @@ class CashCollectedScreen extends StatefulWidget {
 }
 
 class _CashCollectedScreenState extends State<CashCollectedScreen> {
-  late final ChooseServiceController getDetails;
   late final DriverStatusController driverStatusController;
   Timer? _timer;
   bool _isSubmittingCash = false;
@@ -45,10 +44,6 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
   @override
   void initState() {
     super.initState();
-    getDetails =
-        Get.isRegistered<ChooseServiceController>()
-            ? Get.find<ChooseServiceController>()
-            : Get.put(ChooseServiceController());
     driverStatusController =
         Get.isRegistered<DriverStatusController>()
             ? Get.find<DriverStatusController>()
@@ -113,10 +108,34 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
     }
   }
 
-  String _displayName() {
-    final firstName = getDetails.userProfile.value?.firstName ?? 'Customer';
-    final customName = widget.name?.toString().trim() ?? '';
-    return customName.isNotEmpty ? customName : firstName;
+  ({String name, String imageUrl}) _customerInfo() {
+    final widgetName = widget.name?.toString().trim() ?? '';
+    final widgetImage = widget.imageUrl?.toString().trim() ?? '';
+
+    if (widgetName.isNotEmpty || widgetImage.isNotEmpty) {
+      return (
+        name: widgetName.isNotEmpty ? widgetName : 'Customer',
+        imageUrl: widgetImage,
+      );
+    }
+
+    final joined = JoinedBookingData().getData();
+    final joinedName =
+        (joined?['custName'] ?? joined?['customerName'] ?? joined?['name'] ?? '')
+            .toString()
+            .trim();
+    final joinedImage = (joined?['customerProfilePic'] ??
+            joined?['profilePic'] ??
+            joined?['imageUrl'] ??
+            joined?['image'] ??
+            '')
+        .toString()
+        .trim();
+
+    return (
+      name: joinedName.isNotEmpty ? joinedName : 'Customer',
+      imageUrl: joinedImage,
+    );
   }
 
   String _displayAmount() {
@@ -236,24 +255,19 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                   ),
                   const SizedBox(height: 18),
                   Expanded(
-                    child: SingleChildScrollView(
-                      child: Obx(() {
-                        final liveProfile =
-                            getDetails.userProfile.value?.profilePic ?? '';
-                        final imageUrl =
-                            (widget.imageUrl?.toString().trim().isNotEmpty ??
-                                    false)
-                                ? widget.imageUrl!.toString().trim()
-                                : liveProfile;
-                        final paymentType =
-                            driverStatusController.paymentType.value;
-                        final paymentStatus =
-                            driverStatusController.paymentStatus.value;
-                        final riderName = _displayName();
+                      child: SingleChildScrollView(
+                        child: Obx(() {
+                          final paymentType =
+                              driverStatusController.paymentType.value;
+                          final paymentStatus =
+                              driverStatusController.paymentStatus.value;
+                          final customer = _customerInfo();
+                          final imageUrl = customer.imageUrl;
+                          final riderName = customer.name;
 
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.fromLTRB(
@@ -485,8 +499,9 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
       enableDrag: false,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        final profilePic = getDetails.userProfile.value?.profilePic ?? '';
-        final riderName = _displayName();
+        final customer = _customerInfo();
+        final profilePic = customer.imageUrl;
+        final riderName = customer.name;
 
         return StatefulBuilder(
           builder: (context, setModalState) {

@@ -46,35 +46,35 @@ class OtpController extends GetxController {
           CustomSnackBar.showError(failure.message);
           return failure.message;
         },
-        (response) async {
-          final prefs = await SharedPreferences.getInstance();
+          (response) async {
+            final prefs = await SharedPreferences.getInstance();
 
-          accessToken = response.data.token;
-          driverId = response.data.driverId;
+            accessToken = response.data.token;
+            driverId = response.data.driverId;
 
           // ✅ Persist auth BEFORE any follow-up calls (getUserDetails/getDriverStatus)
           if (accessToken.isNotEmpty) {
             await prefs.setString('token', accessToken);
           }
-          if (driverId.isNotEmpty) {
-            await prefs.setString('driverId', driverId);
-          }
+            if (driverId.isNotEmpty) {
+              await prefs.setString('driverId', driverId);
+            }
 
-          if (response.data.formStatus == 3) {
-            await controller.getDriverStatus();
-            Get.off(() => DriverMainScreen());
-            await prefs.setBool("isVerified", true);
-          } else if (response.data.formStatus == 2) {
-            // formStatus=2 => onboarding submitted / in-review: show CompletedScreens.
-            await prefs.setBool("isVerified", true);
-            final ChooseServiceController chooseCtrl =
-                Get.put(ChooseServiceController(), permanent: true);
-            await chooseCtrl.getUserDetails();
-            Get.offAll(() => const CompletedScreens());
-          } else if (response.data.formStatus == 1 &&
-              response.data.userStatus == 'new') {
-            Get.off(() => TermsScreen());
-          } else if (response.data.formStatus == 1 &&
+            if (response.data.formStatus == 3) {
+              await prefs.setBool("isVerified", true);
+              // Navigate immediately; fetch status in the background so the OTP
+              // screen doesn't "sit" for a second after success.
+              Get.off(() => DriverMainScreen());
+              controller.getDriverStatus();
+            } else if (response.data.formStatus == 2) {
+              // formStatus=2 => onboarding submitted / in-review: show CompletedScreens.
+              await prefs.setBool("isVerified", true);
+              Get.put(ChooseServiceController(), permanent: true);
+              Get.offAll(() => const CompletedScreens());
+            } else if (response.data.formStatus == 1 &&
+                response.data.userStatus == 'new') {
+              Get.off(() => TermsScreen());
+            } else if (response.data.formStatus == 1 &&
               response.data.userStatus == 'exist') {
             await loadAndNavigate();
           } else {

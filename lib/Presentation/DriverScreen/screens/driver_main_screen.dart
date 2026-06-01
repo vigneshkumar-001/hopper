@@ -1239,18 +1239,30 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                const Expanded(
-                                                  child: Text(
-                                                    'Demand Opportunity',
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      fontSize: 14,
-                                                      fontWeight:
-                                                          FontWeight.w900,
-                                                      letterSpacing: 0.1,
-                                                    ),
+                                                Expanded(
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.trending_up_rounded,
+                                                        size: 18,
+                                                        color: cs.primary,
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      const Expanded(
+                                                        child: Text(
+                                                          'Demand Opportunity',
+                                                          maxLines: 1,
+                                                          overflow:
+                                                              TextOverflow.ellipsis,
+                                                          style: TextStyle(
+                                                            fontSize: 15,
+                                                            fontWeight:
+                                                                FontWeight.w900,
+                                                            letterSpacing: 0.1,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
                                                 if (isSelected) ...[

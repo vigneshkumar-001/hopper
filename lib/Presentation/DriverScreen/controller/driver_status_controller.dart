@@ -439,7 +439,7 @@ class DriverStatusController extends GetxController {
   }
 */
 
-  Future<String?> otpInsert(
+  Future<({bool success, String message})> otpInsert(
     BuildContext context, {
     required String bookingId,
     required String otp,
@@ -455,17 +455,17 @@ class DriverStatusController extends GetxController {
       return results.fold(
         (failure) {
           isLoading.value = false;
-          CustomSnackBar.showError(failure.message);
-          return null;
+          return (success: false, message: failure.message);
         },
         (response) {
+          isLoading.value = false;
           CommonLogger.log.i(response.message);
-          return response.message;
+          return (success: true, message: response.message);
         },
       );
-    } catch (e) {
+    } catch (_) {
       isLoading.value = false;
-      return null;
+      return (success: false, message: 'Something went wrong');
     }
   }
 

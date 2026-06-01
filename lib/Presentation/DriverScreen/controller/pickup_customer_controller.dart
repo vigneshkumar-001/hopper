@@ -134,6 +134,7 @@ class PickingCustomerController extends GetxController {
   DateTime? _lastSocketFixAt;
   final showRedTimer = false.obs;
   final isArrivedSubmitting = false.obs;
+  bool _otpNavInFlight = false;
   final isOffRouteAlert = false.obs;
   final isNetworkOffline = false.obs;
   final pendingQueueCount = 0.obs;
@@ -410,6 +411,8 @@ class PickingCustomerController extends GetxController {
     });
     socketService.on('driver-location', (data) {
       if (data == null) return;
+      if (data is! Map) return;
+      final payload = Map<String, dynamic>.from(data as Map);
 
       // Live driver position from backend/socket.
       double? asDouble(dynamic v) {
@@ -417,15 +420,15 @@ class PickingCustomerController extends GetxController {
         return double.tryParse(v?.toString() ?? '');
       }
 
-      final lat = asDouble(data['latitude'] ?? data['lat']);
-      final lng = asDouble(data['longitude'] ?? data['lng']);
+      final lat = asDouble(payload['latitude'] ?? payload['lat']);
+      final lng = asDouble(payload['longitude'] ?? payload['lng']);
       if (lat != null && lng != null) {
         final p = LatLng(lat, lng);
         rideMap.updateVehicleLocation(p, source: 'socket');
       }
 
-      if (data['pickupDistanceInMeters'] != null) {
-        final pickupM = (data['pickupDistanceInMeters'] as num).toDouble();
+      final pickupM = asDouble(payload['pickupDistanceInMeters']);
+      if (pickupM != null) {
         driverStatusController.pickupDistanceInMeters.value = pickupM;
 
         _lastSocketFixAt = DateTime.now();
@@ -440,10 +443,14 @@ class PickingCustomerController extends GetxController {
 
         _recomputeDriverReached();
       }
-      if (data['pickupDurationInMin'] != null) {
-        driverStatusController.pickupDurationInMin.value =
-            (data['pickupDurationInMin'] as num).toDouble();
+      final pickupMin = asDouble(payload['pickupDurationInMin']);
+      if (pickupMin != null) {
+        driverStatusController.pickupDurationInMin.value = pickupMin;
       }
+
+      driverStatusController.setLastDriverLocationAtFrom(
+        payload['timestamp'] ?? payload['ts'] ?? payload['time'],
+      );
     });
 
     socketService.on('driver-cancelled', (data) {
@@ -1281,7 +1288,7 @@ class PickingCustomerController extends GetxController {
     await rideMap.focusVehicle(zoom: z, tilt: 0, bearingEnabled: true);
   }
 
-  Future<void> sendQuickMessage(String text, {int? delayMinutes}) async {
+  Future<bool> sendQuickMessage(String text, {int? delayMinutes}) async {
     final driverId = _driverId ?? await SharedPrefHelper.getDriverId();
     final payload = <String, dynamic>{
       'bookingId': bookingId,
@@ -1292,15 +1299,28 @@ class PickingCustomerController extends GetxController {
 
     if (isNetworkOffline.value || !socketService.connected) {
       _enqueueSocketEmit('driver-message', payload);
-      return;
+      return false; // queued (offline / not connected)
     }
+
+    final completer = Completer<bool>();
+    Timer? timeout;
+    timeout = Timer(const Duration(milliseconds: 1200), () {
+      if (completer.isCompleted) return;
+      // If the server doesn't ACK quickly, treat this as "sent" for UI feedback.
+      // The queue fallback still protects delivery if ACK later fails.
+      completer.complete(true);
+    });
 
     socketService.emitWithAck('driver-message', payload, (ack) {
       final ok = (ack is Map && ack['success'] == true);
       if (!ok) {
         _enqueueSocketEmit('driver-message', payload);
       }
+      timeout?.cancel();
+      if (!completer.isCompleted) completer.complete(ok);
     });
+
+    return completer.future;
   }
 
   void _enqueueSocketEmit(String event, Map<String, dynamic> payload) {
@@ -1480,33 +1500,38 @@ class PickingCustomerController extends GetxController {
   }
 
   Future<void> onSwipeStartRide(BuildContext context) async {
+    if (_otpNavInFlight) return;
+    _otpNavInFlight = true;
+
     // request OTP
-    final msg = await driverStatusController.otpRequest(
-      context,
-      bookingId: bookingId,
-      custName: customerName.value,
-      pickupAddress: pickupLocationAddress ?? pickupAddressText.value,
-      dropAddress: dropLocationAddress ?? dropAddressText.value,
-    );
+    try {
+      final msg = await driverStatusController.otpRequest(
+        context,
+        bookingId: bookingId,
+        custName: customerName.value,
+        pickupAddress: pickupLocationAddress ?? pickupAddressText.value,
+        dropAddress: dropLocationAddress ?? dropAddressText.value,
+      );
 
-    if (msg == null) return;
+      if (msg == null) return;
 
-    _stopNoShowTimer();
+      _stopNoShowTimer();
 
-    // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ navigate to Verify screen
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) => VerifyRiderScreen(
-              bookingId: bookingId,
-              custName: customerName.value,
-              pickupAddress: pickupLocationAddress ?? pickupAddressText.value,
-              dropAddress: dropLocationAddress ?? dropAddressText.value,
-              isSharedRide: false,
-            ),
-      ),
-    );
+      // Navigate to verify screen (prevent duplicate pushes)
+      if (Get.currentRoute.contains('VerifyRiderScreen')) return;
+
+      Get.to(
+        () => VerifyRiderScreen(
+          bookingId: bookingId,
+          custName: customerName.value,
+          pickupAddress: pickupLocationAddress ?? pickupAddressText.value,
+          dropAddress: dropLocationAddress ?? dropAddressText.value,
+          isSharedRide: false,
+        ),
+      );
+    } finally {
+      _otpNavInFlight = false;
+    }
   }
 
   void debugSetDriverReachedTrue() {

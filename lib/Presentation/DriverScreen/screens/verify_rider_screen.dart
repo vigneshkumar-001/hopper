@@ -76,12 +76,14 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
     if (enteredOtp.isEmpty) {
       setState(() {
         otpError = "Please enter the OTP";
+        enableColor = AppColors.containerColor1;
       });
       errorController.add(ErrorAnimationType.shake);
       return;
     } else if (enteredOtp.length != 4) {
       setState(() {
         otpError = "OTP must be 4 digits";
+        enableColor = AppColors.containerColor1;
       });
       errorController.add(ErrorAnimationType.shake);
       return;
@@ -100,8 +102,13 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
 
     if (!mounted) return;
 
-    if (result == null) {
-      // already showed snackbar in controller
+    if (!result.success) {
+      setState(() {
+        otpError =
+            result.message.trim().isEmpty ? 'Invalid OTP. Please try again.' : result.message;
+        enableColor = AppColors.containerColor1;
+      });
+      errorController.add(ErrorAnimationType.shake);
       return;
     }
 
@@ -115,17 +122,14 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
 
     if (widget.isSharedRide) {
       // 👉 Shared ride flow: just tell previous screen "OTP verified"
-      Navigator.pop<bool>(context, true);
+      Get.back<bool>(result: true);
     } else {
       // 👉 Normal flow: go to RideStatsScreen (your existing behaviour)
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => RideStatsScreen(
-            pickupAddress: widget.pickupAddress,
-            dropAddress: widget.dropAddress,
-            bookingId: widget.bookingId,
-          ),
+      Get.offAll(
+        () => RideStatsScreen(
+          pickupAddress: widget.pickupAddress,
+          dropAddress: widget.dropAddress,
+          bookingId: widget.bookingId,
         ),
       );
     }
@@ -252,18 +256,14 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                   onChanged: (value) {
                                     setState(() {
                                       verifyCode = value;
-                                      if (value.isEmpty) {
-                                        otpError = "Please enter the OTP";
-                                        enableColor =
-                                            AppColors.containerColor1;
-                                      } else if (value.length != 4) {
-                                        otpError = "OTP must be 4 digits";
-                                        enableColor =
-                                            AppColors.containerColor1;
-                                      } else {
-                                        otpError = null;
-                                        enableColor = Colors.black;
-                                      }
+                                      // Clear error state once user edits again.
+                                      if (otpError != null) otpError = null;
+
+                                      // Only enable the button color when OTP is fully entered.
+                                      enableColor =
+                                          value.trim().length == 4
+                                              ? Colors.black
+                                              : AppColors.containerColor1;
                                     });
                                   },
                                   beforeTextPaste: (text) => true,

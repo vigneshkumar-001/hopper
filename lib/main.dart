@@ -8,11 +8,11 @@ import 'package:flutter/services.dart';
 
 import 'Core/Constants/log.dart';
 import 'Core/Firebase/firebase_service.dart';
+import 'Core/Services/driver_background_location_service.dart';
 import 'splash_screen.dart';
 import 'utils/init_Controller.dart';
 import 'utils/map/route_info.dart';
 import 'api/repository/api_constents.dart';
-import 'Presentation/DriverScreen/screens/background_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,7 +23,7 @@ Future<void> main() async {
   DirectionsConfig.apiKey = ApiConstents.googleMapApiKey;
 
   // ✅ Configure (do not start) background tracking service
-  await initializeBackgroundService();
+  await DriverBackgroundLocationService.initialize();
 
   // ✅ Firebase init should never crash the app
   var firebaseReady = false;

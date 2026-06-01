@@ -168,7 +168,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                 ),
                 _SettingsRowTile(
-                  icon: Icons.directions_car_filled_outlined,
+                  icon: (() {
+                    final s = (profile?.serviceType ?? '').toString().trim().toLowerCase();
+                    if (s.contains('bike') || s.contains('2w') || s.contains('two')) {
+                      return Icons.two_wheeler;
+                    }
+                    return Icons.directions_car_filled_outlined;
+                  })(),
                   title: 'Vehicles',
                   subtitle: 'Brand, model, plate and registration',
                   onTap:

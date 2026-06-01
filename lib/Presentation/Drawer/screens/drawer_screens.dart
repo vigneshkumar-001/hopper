@@ -6,6 +6,7 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Presentation/Drawer/controller/notification_controller.dart';
 import 'package:hopper/Presentation/Drawer/screens/notification_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/ride_activity.dart';
+import 'package:hopper/Presentation/Drawer/screens/driver_earnings_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/settings_screen.dart';
 import 'package:hopper/Presentation/Drawer/screens/wallet_screen.dart';
 import 'package:hopper/Presentation/CustomerSupport/screens/customer_support_list_screen.dart';
@@ -208,6 +209,11 @@ class _DrawerScreenState extends State<DrawerScreen> {
                         _MenuTile(
                           title: 'Wallet',
                           onTap: () => Get.to(() => WalletScreen()),
+                        ),
+                        const _MenuDivider(),
+                        _MenuTile(
+                          title: 'Earnings',
+                          onTap: () => Get.to(() => const DriverEarningsScreen()),
                         ),
                         const _MenuDivider(),
                         _MenuTile(

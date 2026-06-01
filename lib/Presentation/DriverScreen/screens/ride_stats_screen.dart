@@ -4,15 +4,18 @@ import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:hopper/Core/Constants/Colors.dart';
+import 'package:hopper/Core/Services/driver_background_location_service.dart';
+import 'package:hopper/Core/Services/navigation_service.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
+import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/map/driver_message_suggestions.dart';
-import 'package:hopper/utils/map/navigation_voice_service.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
@@ -29,12 +32,75 @@ class RideStatsScreen extends StatelessWidget {
   final String? pickupAddress;
   final String? dropAddress;
 
+  final NavigationService _navigationService = NavigationService();
+
   RideStatsScreen({
     super.key,
     required this.bookingId,
     this.pickupAddress,
     this.dropAddress,
   });
+
+  Future<void> _onNavigatePressed(RideStatsController c) async {
+    final ok = await _navigationService.requestPermissions();
+    if (!ok) {
+      Get.snackbar(
+        'Permission Required',
+        'Please allow background location for tracking',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    final driverId = (await SharedPrefHelper.getDriverId())?.trim() ?? '';
+    if (driverId.isEmpty) {
+      Get.snackbar(
+        'Error',
+        'Driver ID missing. Please re-login.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    final socketUrl =
+        Get.isRegistered<ApiConfigController>()
+            ? Get.find<ApiConfigController>().socketUrl
+            : ApiConfigController.singleSocket;
+
+    // Hand-off before launching external Google Maps (single socket session).
+    if (Get.isRegistered<DriverMainController>()) {
+      await Get.find<DriverMainController>().onAppPaused();
+    }
+
+    await DriverBackgroundLocationService.startTracking(
+      socketUrl: socketUrl,
+      rideId: bookingId,
+      driverId: driverId,
+    );
+
+    final dest =
+        c.adjustedDropLocation.value ?? c.bookingToLocation.value;
+    if (dest == null) return;
+
+    await _navigationService.openGoogleMapsNavigation(
+      destLat: dest.latitude,
+      destLng: dest.longitude,
+      destinationLabel: 'Drop Location',
+    );
+
+    Get.snackbar(
+      '',
+      'Location sharing active. Tap notification to return to app',
+      snackPosition: SnackPosition.BOTTOM,
+      backgroundColor: Colors.black87,
+      colorText: Colors.white,
+      duration: const Duration(seconds: 3),
+      margin: const EdgeInsets.all(16),
+      borderRadius: 8,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -137,25 +203,9 @@ class RideStatsScreen extends StatelessWidget {
                   right: 10,
                   child: Column(
                     children: [
-                      ValueListenableBuilder<bool>(
-                        valueListenable:
-                            NavigationVoiceService.instance.mutedNotifier,
-                        builder: (context, muted, _) {
-                          return MapControlButton(
-                            icon:
-                                muted
-                                    ? Icons.volume_off_rounded
-                                    : Icons.volume_up_rounded,
-                            iconColor:
-                                muted
-                                    ? const Color(0xFFE53935)
-                                    : const Color(0xFF00A85E),
-                            onTap:
-                                () =>
-                                    NavigationVoiceService.instance
-                                        .toggleMuted(),
-                          );
-                        },
+                      NavigateToDestinationButton(
+                        onTap: () => _onNavigatePressed(c),
+                        label: 'To Drop',
                       ),
                       const SizedBox(height: 10),
                       ValueListenableBuilder<MapFocusMode>(
@@ -348,10 +398,23 @@ class RideStatsScreen extends StatelessWidget {
                                       icon: Icons.call_rounded,
                                       color: const Color(0xFF00A85E),
                                       onTap: () async {
-                                        if (phone.isEmpty) return;
-                                        final url = Uri.parse('tel:$phone');
+                                        final ph = phone.replaceAll(
+                                          RegExp(r'[^0-9+]'),
+                                          '',
+                                        );
+                                        if (ph.isEmpty) return;
+                                        final url = Uri(scheme: 'tel', path: ph);
                                         if (await canLaunchUrl(url)) {
-                                          await launchUrl(url);
+                                          await launchUrl(
+                                            url,
+                                            mode: LaunchMode.externalApplication,
+                                          );
+                                        } else {
+                                          Get.snackbar(
+                                            'Call failed',
+                                            'Unable to open phone dialer',
+                                            snackPosition: SnackPosition.BOTTOM,
+                                          );
                                         }
                                       },
                                     );
@@ -559,19 +622,21 @@ class RideStatsScreen extends StatelessWidget {
                                           const Duration(milliseconds: 300),
                                         );
                                         if (!context.mounted) return;
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder:
-                                                (_) => CashCollectedScreen(
-                                                  Amount: c.amount.value,
-                                                  bookingId: bookingId,
-                                                  isSharedRide: false,
-                                                ),
-                                          ),
-                                        );
-                                        return;
-                                      }
+                                         Navigator.push(
+                                           context,
+                                           MaterialPageRoute(
+                                             builder:
+                                                 (_) => CashCollectedScreen(
+                                                   Amount: c.amount.value,
+                                                   bookingId: bookingId,
+                                                   name: c.custName.value,
+                                                   imageUrl: c.profilePic.value,
+                                                   isSharedRide: false,
+                                                 ),
+                                           ),
+                                         );
+                                         return;
+                                       }
 
                                       controller.failure();
                                       await Future<void>.delayed(
@@ -1868,7 +1933,15 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                         const SizedBox(height: 20),
                         if (!driverCompletedRide) ...[
                           GestureDetector(
-                            onTap: () => Get.to(CashCollectedScreen(Amount: c.amount.value, bookingId: bookingId)),
+                            onTap:
+                                () => Get.to(
+                                  CashCollectedScreen(
+                                    Amount: c.amount.value,
+                                    bookingId: bookingId,
+                                    name: c.custName.value,
+                                    imageUrl: c.profilePic.value,
+                                  ),
+                                ),
                             child: Container(
                               color: AppColors.rideInProgress.withOpacity(0.1),
                               padding: const EdgeInsets.all(15),

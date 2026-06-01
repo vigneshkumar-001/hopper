@@ -8,6 +8,7 @@ import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/models/loginResponse.dart';
 import 'package:hopper/Presentation/Authentication/models/otp_response.dart';
 import 'package:hopper/Presentation/Drawer/model/add_wallet_response.dart';
+import 'package:hopper/Presentation/Drawer/model/driver_earnings_response.dart';
 import 'package:hopper/Presentation/Drawer/model/withdraw_request_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/get_driver_status.dart';
 import 'package:hopper/Presentation/DriverScreen/models/stop_request_response.dart';
@@ -1877,6 +1878,71 @@ class ApiDataSource extends BaseApiDataSource {
       return Left(ServerFailure('Unexpected error'));
     } catch (e) {
       CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, DriverEarningsResponse>> driverEarnings({
+    required int limit,
+    String? cursor,
+    required String category,
+    String? bookingType,
+    String? paymentMode,
+    String? status,
+    String? fromDate,
+    String? toDate,
+    String? transactionType,
+  }) async {
+    try {
+      final url = ApiConstents.driverEarnings;
+      final payload = <String, dynamic>{
+        'limit': limit,
+        if (cursor != null && cursor.trim().isNotEmpty) 'cursor': cursor.trim(),
+        'category': category,
+        if (bookingType != null && bookingType.trim().isNotEmpty)
+          'bookingType': bookingType.trim(),
+        if (paymentMode != null && paymentMode.trim().isNotEmpty)
+          'paymentMode': paymentMode.trim(),
+        if (status != null && status.trim().isNotEmpty) 'status': status.trim(),
+        if (fromDate != null && fromDate.trim().isNotEmpty)
+          'fromDate': fromDate.trim(),
+        if (toDate != null && toDate.trim().isNotEmpty) 'toDate': toDate.trim(),
+        if (transactionType != null && transactionType.trim().isNotEmpty)
+          'transactionType': transactionType.trim(),
+      };
+
+      dynamic response = await Request.sendRequest(url, payload, 'POST', false);
+
+      if (response is Response && response.statusCode == 200) {
+        if (response.data is Map && response.data['success'] == true) {
+          return Right(
+            DriverEarningsResponse.fromJson(
+              Map<String, dynamic>.from(response.data as Map),
+            ),
+          );
+        }
+        if (response.data is Map) {
+          return Left(
+            ServerFailure(
+              (response.data['message'] ?? 'Failed to load earnings').toString(),
+            ),
+          );
+        }
+        return Left(ServerFailure('Failed to load earnings'));
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(
+            (response.data is Map
+                    ? (response.data['message'] ?? 'Unexpected error')
+                    : 'Unexpected error')
+                .toString(),
+          ),
+        );
+      }
+      return Left(ServerFailure('Unexpected error'));
+    } catch (e, st) {
+      CommonLogger.log.e(e);
+      CommonLogger.log.e(st);
       return Left(ServerFailure('Something went wrong'));
     }
   }
