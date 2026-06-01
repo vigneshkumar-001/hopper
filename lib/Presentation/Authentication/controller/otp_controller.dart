@@ -60,6 +60,7 @@ class OtpController extends GetxController {
               await prefs.setString('driverId', driverId);
             }
 
+<<<<<<< HEAD
             if (response.data.formStatus == 3) {
               await prefs.setBool("isVerified", true);
               // Navigate immediately; fetch status in the background so the OTP
@@ -75,6 +76,23 @@ class OtpController extends GetxController {
                 response.data.userStatus == 'new') {
               Get.off(() => TermsScreen());
             } else if (response.data.formStatus == 1 &&
+=======
+          if (response.data.formStatus == 3) {
+            await controller.getDriverStatus();
+            Get.off(() => DriverMainScreen());
+            await prefs.setBool("isVerified", true);
+          } else if (response.data.formStatus == 2) {
+            // formStatus=2 => onboarding submitted / in-review: show CompletedScreens.
+            await prefs.setBool("isVerified", true);
+            final ChooseServiceController chooseCtrl =
+                Get.put(ChooseServiceController(), permanent: true);
+            await chooseCtrl.getUserDetails();
+            Get.offAll(() => const CompletedScreens());
+          } else if (response.data.formStatus == 1 &&
+              response.data.userStatus == 'new') {
+            Get.off(() => TermsScreen());
+          } else if (response.data.formStatus == 1 &&
+>>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
               response.data.userStatus == 'exist') {
             await loadAndNavigate();
           } else {

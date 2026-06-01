@@ -381,6 +381,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         sharedRideController.updateDriverLocation(raw);
         _updateSmartAutoZoom(raw);
 
+<<<<<<< HEAD
         _rideMap.updateVehicleLocation(
           raw,
           source: 'gps',
@@ -389,6 +390,9 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
           accuracyMeters: update.accuracyMeters,
           timestamp: update.timestamp,
         );
+=======
+        _rideMap.updateVehicleLocation(update.driverLocation, source: 'gps');
+>>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
 
         final now = DateTime.now();
         if (_lastUiUpdate != null &&

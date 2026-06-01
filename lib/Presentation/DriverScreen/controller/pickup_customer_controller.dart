@@ -418,6 +418,33 @@ class PickingCustomerController extends GetxController {
       double? asDouble(dynamic v) {
         if (v is num) return v.toDouble();
         return double.tryParse(v?.toString() ?? '');
+<<<<<<< HEAD
+=======
+      }
+
+      final lat = asDouble(data['latitude'] ?? data['lat']);
+      final lng = asDouble(data['longitude'] ?? data['lng']);
+      if (lat != null && lng != null) {
+        final p = LatLng(lat, lng);
+        rideMap.updateVehicleLocation(p, source: 'socket');
+      }
+
+      if (data['pickupDistanceInMeters'] != null) {
+        final pickupM = (data['pickupDistanceInMeters'] as num).toDouble();
+        driverStatusController.pickupDistanceInMeters.value = pickupM;
+
+        _lastSocketFixAt = DateTime.now();
+        if (!_driverReachedSocket && pickupM > 0 && pickupM <= _ARRIVED_PICKUP_RADIUS_M) {
+          _driverReachedSocket = true;
+          CommonLogger.log.i(
+            'Auto driverReached TRUE (socket) pickupDistanceInMeters=${pickupM.toStringAsFixed(1)}m',
+          );
+        } else if (_driverReachedSocket && pickupM >= _ARRIVED_PICKUP_EXIT_RADIUS_M) {
+          _driverReachedSocket = false;
+        }
+
+        _recomputeDriverReached();
+>>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
       }
 
       final lat = asDouble(payload['latitude'] ?? payload['lat']);
@@ -1517,6 +1544,7 @@ class PickingCustomerController extends GetxController {
 
       _stopNoShowTimer();
 
+<<<<<<< HEAD
       // Navigate to verify screen (prevent duplicate pushes)
       if (Get.currentRoute.contains('VerifyRiderScreen')) return;
 
@@ -1532,6 +1560,22 @@ class PickingCustomerController extends GetxController {
     } finally {
       _otpNavInFlight = false;
     }
+=======
+    // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ navigate to Verify screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) => VerifyRiderScreen(
+              bookingId: bookingId,
+              custName: customerName.value,
+              pickupAddress: pickupLocationAddress ?? pickupAddressText.value,
+              dropAddress: dropLocationAddress ?? dropAddressText.value,
+              isSharedRide: false,
+            ),
+      ),
+    );
+>>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
   }
 
   void debugSetDriverReachedTrue() {

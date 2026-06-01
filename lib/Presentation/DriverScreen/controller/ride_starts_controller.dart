@@ -87,6 +87,14 @@ class RideStatsController extends GetxController
   static const Duration _gpsReachedTtl = Duration(seconds: 8);
   static const Duration _socketReachedTtl = Duration(seconds: 12);
 
+  // Reach-destination detection (GPS-first, socket fallback).
+  bool _reachedDropGps = false;
+  bool _reachedDropSocket = false;
+  DateTime? _lastGpsFixAt;
+  DateTime? _lastSocketFixAt;
+  static const Duration _gpsReachedTtl = Duration(seconds: 8);
+  static const Duration _socketReachedTtl = Duration(seconds: 12);
+
   /// polyline + nav banner
   final RxList<LatLng> polylinePoints = <LatLng>[].obs;
   final RxString directionText = ''.obs;
@@ -197,6 +205,7 @@ class RideStatsController extends GetxController
     unawaited(_primeDriverLocationAndRoute());
     _startLocationStream();
 
+<<<<<<< HEAD
     // Stop background tracking once the trip is fully completed (cash collected).
     // This avoids continuing a foreground service beyond the active trip.
     _paymentStatusWorker?.dispose();
@@ -212,6 +221,8 @@ class RideStatsController extends GetxController
       },
     );
 
+=======
+>>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
     // Keep map padding hint in sync with the bottom sheet, without doing
     // side-effects from the widget build method.
     void applySheetHeight(bool completed) {
@@ -748,11 +759,18 @@ class RideStatsController extends GetxController
       // Guard: some backends send `0` temporarily (unknown), which would otherwise
       // incorrectly flip UI into "reached destination".
       _lastSocketFixAt = DateTime.now();
+<<<<<<< HEAD
       final dm = dropM;
       if (dm != null && dm > 0) {
         if (!_reachedDropSocket && dm <= _REACHED_DESTINATION_RADIUS_M) {
           _reachedDropSocket = true;
         } else if (_reachedDropSocket && dm >= _REACHED_DESTINATION_EXIT_RADIUS_M) {
+=======
+      if (dropM > 0) {
+        if (!_reachedDropSocket && dropM <= _REACHED_DESTINATION_RADIUS_M) {
+          _reachedDropSocket = true;
+        } else if (_reachedDropSocket && dropM >= _REACHED_DESTINATION_EXIT_RADIUS_M) {
+>>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
           _reachedDropSocket = false;
         }
       }

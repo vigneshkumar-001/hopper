@@ -219,14 +219,24 @@ class RideStatsScreen extends StatelessWidget {
                                 MapFocusMode.driver,
                                 userInitiated: true,
                               );
+<<<<<<< HEAD
+=======
+                              c.setDriverFocused(true);
+>>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
                             },
                             onFitBounds: () async {
                               c.rideMap.applyFocusMode(
                                 MapFocusMode.fullTrip,
                                 userInitiated: true,
                               );
+<<<<<<< HEAD
                             },
                             onDriverFocusedChanged: (_) {},
+=======
+                              c.setDriverFocused(false);
+                            },
+                            onDriverFocusedChanged: c.setDriverFocused,
+>>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
                           );
                         },
                       ),
