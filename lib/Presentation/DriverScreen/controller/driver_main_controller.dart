@@ -93,6 +93,7 @@ class DriverMainController extends GetxController
   Timer? heartbeatTimer;
   Map<String, dynamic>? latestLocationPayload;
   String? _lastSentLocationTimestamp;
+  DateTime? _lastLocationEmitAt;
   DateTime? _lastMovedAt;
   DateTime? _lastUpdateLocationEmitAt;
   DateTime? _lastHeartbeatEmitAt;
@@ -165,6 +166,11 @@ class DriverMainController extends GetxController
   // Demand marker style toggle (kept mutable to avoid constant-folding)
   bool useDefaultDemandMarker = false;
 
+  static const Duration _activeTripFastEmitInterval = Duration(seconds: 3);
+  static const Duration _onlineMovingEmitInterval = Duration(seconds: 5);
+  static const Duration _onlineSlowEmitInterval = Duration(seconds: 8);
+  static const Duration _movementIdleCutoff = Duration(seconds: 20);
+
   // Expose demand micro-interaction animations (for UI overlays).
   Listenable get demandBounceListenable => _demandBounceCtrl;
   double get demandBounceT => _demandBounceCtrl.value;
@@ -180,6 +186,21 @@ class DriverMainController extends GetxController
     if (value is int) return value;
     if (value is double) return value.round();
     return int.tryParse(value.toString()) ?? 0;
+  }
+
+  Duration _preferredLocationEmitInterval(Map<String, dynamic> payload) {
+    final speed = safeToDouble(payload['speed']);
+    final bookingId = payload['bookingId']?.toString().trim() ?? '';
+    final hasActiveBooking = bookingId.isNotEmpty;
+
+    if (hasActiveBooking) {
+      return speed >= 1.2
+          ? _activeTripFastEmitInterval
+          : _onlineMovingEmitInterval;
+    }
+
+    if (speed >= 2.2) return _onlineMovingEmitInterval;
+    return _onlineSlowEmitInterval;
   }
 
   String formatDistance(double meters) {
@@ -1239,8 +1260,14 @@ class DriverMainController extends GetxController
       final bookingIdForPayload = _resolveBookingIdForLocationPayload();
       latestLocationPayload = {
         'userId': driverId,
+        'driverId': driverId,
         'latitude': current.latitude,
         'longitude': current.longitude,
+        'lat': current.latitude,
+        'lng': current.longitude,
+        'bearing': pos.heading.isFinite ? pos.heading : 0.0,
+        'speed': speedMs.isFinite ? speedMs : 0.0,
+        'accuracy': accuracyM.isFinite ? accuracyM : null,
         if (bookingIdForPayload != null) 'bookingId': bookingIdForPayload,
         'timestamp': now.toIso8601String(),
       };
@@ -1257,7 +1284,7 @@ class DriverMainController extends GetxController
     if (_disposed || isClosed) return;
     if (token != _emitLoopToken) return;
 
-    final localEmitTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+    final localEmitTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (_disposed || isClosed) return;
       if (token != _emitLoopToken) return;
       if (!statusController.isOnline.value) return;
@@ -1274,12 +1301,21 @@ class DriverMainController extends GetxController
           movedAt == null
               ? const Duration(days: 9999)
               : DateTime.now().difference(movedAt);
-      if (idleFor >= const Duration(seconds: 20)) {
+      if (idleFor >= _movementIdleCutoff) {
+        return;
+      }
+
+      final preferredInterval = _preferredLocationEmitInterval(payload);
+      final lastEmitAt = _lastLocationEmitAt;
+      final now = DateTime.now();
+      if (lastEmitAt != null &&
+          now.difference(lastEmitAt) < preferredInterval) {
         return;
       }
 
       _lastSentLocationTimestamp = ts;
-      _lastUpdateLocationEmitAt = DateTime.now();
+      _lastLocationEmitAt = now;
+      _lastUpdateLocationEmitAt = now;
       if (_backgroundServiceActive) return;
       socketService.emit('updateLocation', payload);
       Get.find<DriverAnalyticsController>().trackOnlineTick(

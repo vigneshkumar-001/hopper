@@ -87,6 +87,8 @@ class AppImages {
   static String tripPayment = "assets/images/tripPayment.png";
   static String packageDelivery = "assets/images/packageDelivery.png";
   static String wallet = "assets/images/wallet.png";
+  static String bikeImage = "assets/images/tripPayment.png";
+  static String carImage = "assets/images/wallet_top.png";
 
   static String currencyRound = "assets/images/currencyRound.png";
   static String loc = "assets/images/loc.png";

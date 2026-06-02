@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
+import 'package:hopper/Presentation/Authentication/screens/post_otp_routing_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/OnBoarding/controller/chooseservice_controller.dart';
 import 'package:hopper/Presentation/OnBoarding/screens/completedScreens.dart';
@@ -20,10 +23,7 @@ class OtpController extends GetxController {
   final RxBool isEmailVerified = false.obs;
   final RxString verifiedEmail = ''.obs;
   final DriverStatusController controller = Get.put(DriverStatusController());
-  // Constructor to accept phone number
-  // OtpController({required String phoneNumber}) {
-  //   mobileNumber.text = phoneNumber;
-  // }
+
   @override
   void onInit() {
     super.onInit();
@@ -34,8 +34,7 @@ class OtpController extends GetxController {
     BuildContext context,
     String otp, {
     String? type,
-  }) async
-  {
+  }) async {
     try {
       isLoading.value = true;
       final results = await apiDataSource.verifyOtp(otp);
@@ -46,49 +45,48 @@ class OtpController extends GetxController {
           CustomSnackBar.showError(failure.message);
           return failure.message;
         },
-          (response) async {
-            final prefs = await SharedPreferences.getInstance();
+        (response) async {
+          final prefs = await SharedPreferences.getInstance();
 
-            accessToken = response.data.token;
-            driverId = response.data.driverId;
+          accessToken = response.data.token;
+          driverId = response.data.driverId;
 
-          // ✅ Persist auth BEFORE any follow-up calls (getUserDetails/getDriverStatus)
           if (accessToken.isNotEmpty) {
             await prefs.setString('token', accessToken);
           }
-            if (driverId.isNotEmpty) {
-              await prefs.setString('driverId', driverId);
-            }
+          if (driverId.isNotEmpty) {
+            await prefs.setString('driverId', driverId);
+          }
 
-            if (response.data.formStatus == 3) {
-              await prefs.setBool("isVerified", true);
-              // Navigate immediately; fetch status without blocking UI.
-              Get.off(() => DriverMainScreen());
-              // ignore: unawaited_futures
-              controller.getDriverStatus();
-            } else if (response.data.formStatus == 2) {
-              // formStatus=2 => onboarding submitted / in-review: show CompletedScreens.
-              await prefs.setBool("isVerified", true);
-              final ChooseServiceController chooseCtrl =
-                  Get.put(ChooseServiceController(), permanent: true);
-              try {
-                await chooseCtrl.getUserDetails();
-              } catch (_) {}
-              Get.offAll(() => const CompletedScreens());
-            } else if (response.data.formStatus == 1 &&
-                response.data.userStatus == 'new') {
-              Get.off(() => TermsScreen());
-            } else if (response.data.formStatus == 1 &&
-              response.data.userStatus == 'exist') {
-            await loadAndNavigate();
+          final formStatus = response.data.formStatus;
+          final userStatus = response.data.userStatus;
+
+          isLoading.value = false;
+
+          if (formStatus == 3) {
+            await prefs.setBool("isVerified", true);
+            Get.off(() => DriverMainScreen());
+            unawaited(controller.getDriverStatus());
+          } else if (formStatus == 2) {
+            await prefs.setBool("isVerified", true);
+            Get.offAll(() => const CompletedScreens());
+            final ChooseServiceController chooseCtrl = Get.put(
+              ChooseServiceController(),
+              permanent: true,
+            );
+            unawaited(chooseCtrl.getUserDetails());
+          } else if (formStatus == 1 && userStatus == 'new') {
+            Get.off(() => TermsScreen());
+          } else if (formStatus == 1 && userStatus == 'exist') {
+            Get.off(() => const PostOtpRoutingScreen());
           } else {
             CommonLogger.log.i('Basic Info');
           }
-          final fcmToken = prefs.getString('fcmToken');
-          sendFcmToken(fcmToken: fcmToken ?? '');
-          isLoading.value = false;
 
-          return response.message;
+          final fcmToken = prefs.getString('fcmToken');
+          unawaited(sendFcmToken(fcmToken: fcmToken ?? ''));
+
+          return null;
         },
       );
     } catch (e) {
@@ -96,7 +94,6 @@ class OtpController extends GetxController {
       return 'An error occurred';
     }
   }
-
 
   Future<String?> emailVerifyOtp(
     BuildContext context,
@@ -118,13 +115,12 @@ class OtpController extends GetxController {
         (failure) {
           isLoading.value = false;
 
-          CommonLogger.log.e('${failure.message}');
+          CommonLogger.log.e(failure.message);
           CustomSnackBar.showError(failure.message);
 
-          return failure.message; // from ServerFailure('...')
+          return failure.message;
         },
         (response) async {
-          // 681889f5a36e808c5056d290
           if (type == 'basicInfo') {
             isEmailVerified.value = response.status == 200;
             if (response.status == 200) {
@@ -138,9 +134,6 @@ class OtpController extends GetxController {
           CommonLogger.log.d('Auth token stored');
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('token', response.data.token);
-          // await prefs.setString('userId', response.userId);
-          // CustomSnackBar.showSuccess(response.message);
-          // await loadAndNavigate(context);
 
           return response.message;
         },
@@ -152,7 +145,10 @@ class OtpController extends GetxController {
   }
 
   Future<void> loadAndNavigate() async {
-    final ChooseServiceController chooseCtrl = Get.put(ChooseServiceController(), permanent: true);
+    final ChooseServiceController chooseCtrl = Get.put(
+      ChooseServiceController(),
+      permanent: true,
+    );
     await chooseCtrl.getUserDetails();
     chooseCtrl.handleLandingPageNavigation(clearStack: false);
   }
@@ -177,18 +173,10 @@ class OtpController extends GetxController {
           CommonLogger.log.e('Failure: ${failure.message}');
           CustomSnackBar.showError(failure.message);
 
-          return failure.message; // from ServerFailure('...')
+          return failure.message;
         },
         (response) async {
-          // 681889f5a36e808c5056d290
           isLoading.value = false;
-          // accessToken = response.data.token;
-          // CommonLogger.log.i('Response = $accessToken');
-          // final prefs = await SharedPreferences.getInstance();
-          // await prefs.setString('token', response.data.token);
-          // // await prefs.setString('userId', response. data.);
-          // CustomSnackBar.showSuccess(response.message);
-
           return response.message;
         },
       );
@@ -203,13 +191,6 @@ class OtpController extends GetxController {
       final results = await apiDataSource.sendFcmToken(fcmToken: fcmToken);
       results.fold(
         (failure) {
-          // Get.snackbar(
-          //   "Error",
-          //   failure.message,
-          //   snackPosition: SnackPosition.TOP,
-          //   backgroundColor: Get.theme.colorScheme.secondary,
-          //   colorText: Get.theme.colorScheme.onSecondary,
-          // );
           isLoading.value = false;
         },
         (response) {
@@ -227,7 +208,6 @@ class OtpController extends GetxController {
 
   void clearState() {
     accessToken = '';
-
     isVerified.value = false;
     isEmailVerified.value = false;
     verifiedEmail.value = '';

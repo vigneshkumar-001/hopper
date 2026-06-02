@@ -1,15 +1,14 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
+import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
+import 'package:hopper/Presentation/Drawer/model/wallet_history_response.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 
-import '../controller/ride_history_controller.dart';
-import '../model/wallet_history_response.dart';
 import 'add_money_screens.dart';
 import 'withdraw_screen.dart';
 
@@ -314,7 +313,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         vertical: 8,
                       ),
                       child: buildTransaction(
-                        image: _getImageByType(tx.imageType ?? ''),
+                        image: _getImageByType(tx),
                         title: tx.displayText ?? '',
                         subtitle: tx.walletDescription ?? '',
                         subtitle2: tx.createdAt.toString(),
@@ -447,7 +446,10 @@ class _WalletScreenState extends State<WalletScreen> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () {
-                      Get.to(() => WithdrawScreen(walletController: walletController));
+                      Get.to(
+                        () =>
+                            WithdrawScreen(walletController: walletController),
+                      );
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white.withOpacity(0.10),
@@ -519,13 +521,25 @@ class _WalletScreenState extends State<WalletScreen> {
     return walletController.traction;
   }
 
-  String _getImageByType(String type) {
-    switch (type) {
+  String _getImageByType(Transaction tx) {
+    final normalized = (tx.imageType ?? '').trim().toLowerCase();
+    final bookingType = (tx.booking?.bookingType ?? '').trim().toLowerCase();
+    switch (normalized) {
       case "Refund":
+      case "refund":
         return AppImages.refund;
-      case "Bike":
-        return AppImages.tripPayment;
+      case "bike":
+        return AppImages.bikeImage;
+      case "car":
+        return AppImages.carImage;
+      case "package":
+      case "parcel":
+      case "delivery":
+        return AppImages.packageDelivery;
       default:
+        if (bookingType == 'parcel' || bookingType == 'package') {
+          return AppImages.packageDelivery;
+        }
         return AppImages.wallet_top;
     }
   }

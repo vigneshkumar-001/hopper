@@ -17,6 +17,10 @@ Future<void>? _configureOnce;
 Future<void>? _startOnce;
 DateTime _lastStartRequestedAt = DateTime.fromMillisecondsSinceEpoch(0);
 
+const Duration _bgActiveTripPollInterval = Duration(seconds: 12);
+const Duration _bgActiveTripMinEmitGap = Duration(seconds: 10);
+const Duration _bgIdleMinEmitGap = Duration(seconds: 18);
+
 bool isBackgroundTrackingEnabled() {
   // Enabled for production: this app needs to send driver location even when the
   // app is backgrounded / screen-locked (Android foreground service).
@@ -44,7 +48,8 @@ Future<void> initializeBackgroundService() async {
       final plugin = FlutterLocalNotificationsPlugin();
       await plugin
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+            AndroidFlutterLocalNotificationsPlugin
+          >()
           ?.createNotificationChannel(channel);
     } catch (_) {}
 
@@ -83,8 +88,10 @@ Future<void> ensureDriverTrackingServiceRunning({
   try {
     final plugin = FlutterLocalNotificationsPlugin();
     final android =
-        plugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+        plugin
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin
+            >();
     final enabled = await android?.areNotificationsEnabled();
     if (enabled == false) {
       CommonLogger.log.w(
@@ -206,9 +213,10 @@ void onStart(ServiceInstance service) async {
   String socketUrl = ApiConfigController.singleSocket;
   try {
     final shared = await SharedPrefHelper.instance.getSharedBookingEnabled();
-    socketUrl = shared
-        ? ApiConfigController.sharedSocket
-        : ApiConfigController.singleSocket;
+    socketUrl =
+        shared
+            ? ApiConfigController.sharedSocket
+            : ApiConfigController.singleSocket;
   } catch (_) {}
 
   // Optional override (used when a screen explicitly starts tracking before
@@ -333,9 +341,10 @@ void onStart(ServiceInstance service) async {
         position.longitude,
       );
 
-      final speedMs = (position.speed.isFinite && position.speed >= 0)
-          ? position.speed
-          : 0.0;
+      final speedMs =
+          (position.speed.isFinite && position.speed >= 0)
+              ? position.speed
+              : 0.0;
 
       if (speedMs < 1.0 &&
           movedMeters >= stationaryJumpM &&
@@ -397,11 +406,15 @@ void onStart(ServiceInstance service) async {
 
   // If the stream doesn't emit (driver stationary / OEM throttling), poll and emit
   // periodically so the server still receives location while driver is online.
-  pollTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
+  pollTimer = Timer.periodic(_bgActiveTripPollInterval, (_) async {
     if (driverId == null || driverId!.trim().isEmpty) return;
 
     final now = DateTime.now();
-    if (now.difference(lastEmitAt) < const Duration(seconds: 18)) return;
+    final hasActiveBooking =
+        currentBookingId != null && currentBookingId!.trim().isNotEmpty;
+    final minEmitGap =
+        hasActiveBooking ? _bgActiveTripMinEmitGap : _bgIdleMinEmitGap;
+    if (now.difference(lastEmitAt) < minEmitGap) return;
 
     try {
       final position = await Geolocator.getCurrentPosition(
@@ -430,8 +443,11 @@ void onStart(ServiceInstance service) async {
                 position.longitude,
               );
       final speedMs =
-          (position.speed.isFinite && position.speed >= 0) ? position.speed : 0.0;
-      final isMoving = (movedMeters != null && movedMeters >= 5.0) || speedMs >= 0.6;
+          (position.speed.isFinite && position.speed >= 0)
+              ? position.speed
+              : 0.0;
+      final isMoving =
+          (movedMeters != null && movedMeters >= 5.0) || speedMs >= 0.6;
 
       final locationData = {
         'userId': driverId,
@@ -453,7 +469,10 @@ void onStart(ServiceInstance service) async {
         _pendingPayload = locationData;
         socket.connect();
       } else {
-        socket.emit(isMoving ? 'updateLocation' : 'driver-heartbeat', locationData);
+        socket.emit(
+          isMoving ? 'updateLocation' : 'driver-heartbeat',
+          locationData,
+        );
       }
 
       try {
