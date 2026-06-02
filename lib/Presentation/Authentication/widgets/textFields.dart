@@ -308,7 +308,7 @@ class CustomTextfield {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('• ', style: TextStyle(fontSize: 16, height: 1.5)),
+          Text('- ', style: TextStyle(fontSize: 16, height: 1.5)),
           Expanded(
             child: Text(
               title,

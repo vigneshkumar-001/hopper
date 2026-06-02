@@ -8,9 +8,9 @@ class CommonLogger {
       methodCount: 0,
       errorMethodCount: 8,
       lineLength: 140,
-      colors: !kReleaseMode,
+      colors: true,
       printEmojis: false,
-      noBoxingByDefault: true,
+      
     ),
   );
 }

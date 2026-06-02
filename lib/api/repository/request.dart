@@ -2,13 +2,35 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import '../../Core/Constants/log.dart';
+import 'package:hopper/Core/Consents/app_logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Request {
   static String _tokenFromHeaders(Map<String, dynamic> headers) {
     final v = headers['Authorization']?.toString() ?? '';
-    return v.trim();
+    return v.toString().replaceFirst('Bearer ', '').trim();
+  }
+
+  static void _debugLogInfo(String message) {
+    if (!kDebugMode) return;
+    AppLogger.log.i(message);
+  }
+
+  static String _formatBody(dynamic body) {
+    if (body == null) return '{}';
+    if (body is FormData) {
+      final fields = body.fields
+          .map((e) => '${e.key}: ${e.value}')
+          .toList(growable: false);
+      final files = body.files
+          .map((e) {
+            final f = e.value;
+            return '${e.key}: {filename: ${f.filename}, length: ${f.length}, contentType: ${f.contentType}}';
+          })
+          .toList(growable: false);
+      return 'FormData{fields: $fields, files: $files}';
+    }
+    return body.toString();
   }
 
   static Future<dynamic> sendRequest(
@@ -29,32 +51,29 @@ class Request {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) {
-          if (kDebugMode) {
-            final t = _tokenFromHeaders(options.headers);
-            CommonLogger.log.d(
-              "HTTP REQUEST ${options.method} ${options.uri}\n"
-              "URL: ${options.uri}\n"
-              "Token: $t\n"
-              "Body: ${options.data}",
-            );
-          }
+          final t = _tokenFromHeaders(options.headers);
+          _debugLogInfo(
+            'Method: ${options.method}\n'
+            'Url: ${options.uri}\n'
+            'Token: $t\n'
+            'Body: ${_formatBody(options.data)}',
+          );
           return handler.next(options);
         },
         onResponse: (
           Response<dynamic> response,
           ResponseInterceptorHandler handler,
         ) {
-          if (kDebugMode) {
-            final t = _tokenFromHeaders(response.requestOptions.headers);
-            CommonLogger.log.d(
-              "HTTP RESPONSE ${response.statusCode} ${response.realUri}\n"
-              "URL: ${response.realUri}\n"
-              "Token: $t\n"
-              "Response: ${response.data}",
-            );
-          } else {
-            CommonLogger.log.d("HTTP ${response.statusCode} $url");
-          }
+          final t = _tokenFromHeaders(response.requestOptions.headers);
+          final reqBody =
+              response.requestOptions.data ?? response.requestOptions.queryParameters;
+          _debugLogInfo(
+            'Method: ${response.requestOptions.method}\n'
+            'Url: ${response.realUri}\n'
+            'Token: $t\n'
+            'Body: ${_formatBody(reqBody)}\n'
+            'Response: ${response.data}',
+          );
           return handler.next(response);
         },
         onError: (DioException error, ErrorInterceptorHandler handler) async {
@@ -73,9 +92,6 @@ class Request {
             //Too many Attempts
             return handler.reject(error);
           }
-          CommonLogger.log.w(
-            "HTTP ${error.response?.statusCode} $url (dio error: ${error.type})",
-          );
           return handler.next(error);
         },
       ),
@@ -86,10 +102,14 @@ class Request {
             url,
             data: body,
             options: Options(
-              headers: {"Authorization": token != null ? "Bearer $token" : ""},
+              headers: {
+                "Authorization": token != null ? "Bearer $token" : "",
+                "Content-Type": "application/json",
+              },
               validateStatus: (status) {
-                // Allow all status codes below 500 to be handled manually
-                return status != null && status < 503;
+                // Allow non-standard backend/proxy codes (e.g. 600) to be handled
+                // by the caller instead of surfacing as DioException.
+                return status != null && status < 700;
               },
             ),
           )
@@ -100,10 +120,13 @@ class Request {
             },
           );
 
-      CommonLogger.log.d("HTTP ${response.statusCode} $url");
       return response;
     } catch (e) {
-      CommonLogger.log.e('API: $url \n ERROR: $e ');
+      // Production-safe: if Dio has a Response object (even for non-2xx / non-standard
+      // codes), return it so the caller can show the backend message.
+      if (e is DioException && e.response != null) {
+        return e.response!;
+      }
 
       return e;
     }
@@ -122,32 +145,29 @@ class Request {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) {
-          if (kDebugMode) {
-            final t = _tokenFromHeaders(options.headers);
-            CommonLogger.log.d(
-              "HTTP REQUEST ${options.method} ${options.uri}\n"
-              "URL: ${options.uri}\n"
-              "Token: $t\n"
-              "Body: ${options.data}",
-            );
-          }
+          final t = _tokenFromHeaders(options.headers);
+          _debugLogInfo(
+            'Method: ${options.method}\n'
+            'Url: ${options.uri}\n'
+            'Token: $t\n'
+            'Body: ${_formatBody(options.data)}',
+          );
           return handler.next(options);
         },
         onResponse: (
           Response<dynamic> response,
           ResponseInterceptorHandler handler,
         ) {
-          if (kDebugMode) {
-            final t = _tokenFromHeaders(response.requestOptions.headers);
-            CommonLogger.log.d(
-              "HTTP RESPONSE ${response.statusCode} ${response.realUri}\n"
-              "URL: ${response.realUri}\n"
-              "Token: $t\n"
-              "Response: ${response.data}",
-            );
-          } else {
-            CommonLogger.log.d("HTTP ${response.statusCode} $url");
-          }
+          final t = _tokenFromHeaders(response.requestOptions.headers);
+          final reqBody =
+              response.requestOptions.data ?? response.requestOptions.queryParameters;
+          _debugLogInfo(
+            'Method: ${response.requestOptions.method}\n'
+            'Url: ${response.realUri}\n'
+            'Token: $t\n'
+            'Body: ${_formatBody(reqBody)}\n'
+            'Response: ${response.data}',
+          );
           return handler.next(response);
         },
         onError: (DioException error, ErrorInterceptorHandler handler) async {
@@ -166,9 +186,6 @@ class Request {
             //Too many Attempts
             return handler.reject(error);
           }
-          CommonLogger.log.w(
-            "HTTP ${error.response?.statusCode} $url (dio error: ${error.type})",
-          );
           return handler.next(error);
         },
       ),
@@ -190,12 +207,8 @@ class Request {
         ),
       );
 
-      CommonLogger.log.d("HTTP ${response.statusCode} $url");
-
       return response;
     } catch (e) {
-      CommonLogger.log.e('API: $url \n ERROR: $e ');
-
       return e;
     }
   }
@@ -216,32 +229,29 @@ class Request {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) {
-          if (kDebugMode) {
-            final t = _tokenFromHeaders(options.headers);
-            CommonLogger.log.d(
-              "HTTP REQUEST ${options.method} ${options.uri}\n"
-              "URL: ${options.uri}\n"
-              "Token: $t\n"
-              "Query: ${options.queryParameters}",
-            );
-          }
+          final t = _tokenFromHeaders(options.headers);
+          _debugLogInfo(
+            'Method: ${options.method}\n'
+            'Url: ${options.uri}\n'
+            'Token: $t\n'
+            'Body: ${options.queryParameters}',
+          );
           return handler.next(options);
         },
         onResponse: (
           Response<dynamic> response,
           ResponseInterceptorHandler handler,
         ) {
-          if (kDebugMode) {
-            final t = _tokenFromHeaders(response.requestOptions.headers);
-            CommonLogger.log.d(
-              "HTTP RESPONSE ${response.statusCode} ${response.realUri}\n"
-              "URL: ${response.realUri}\n"
-              "Token: $t\n"
-              "Response: ${response.data}",
-            );
-          } else {
-            CommonLogger.log.d("HTTP ${response.statusCode} $url");
-          }
+          final t = _tokenFromHeaders(response.requestOptions.headers);
+          final reqBody =
+              response.requestOptions.data ?? response.requestOptions.queryParameters;
+          _debugLogInfo(
+            'Method: ${response.requestOptions.method}\n'
+            'Url: ${response.realUri}\n'
+            'Token: $t\n'
+            'Body: ${_formatBody(reqBody)}\n'
+            'Response: ${response.data}',
+          );
           return handler.next(response);
         },
         onError: (DioException error, ErrorInterceptorHandler handler) async {
@@ -278,10 +288,8 @@ class Request {
         ),
       );
 
-      CommonLogger.log.d("HTTP ${response.statusCode} $url");
       return response;
     } catch (e) {
-      CommonLogger.log.e('GET API: $url \n ERROR: $e');
       return null;
     }
   }

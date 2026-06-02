@@ -330,7 +330,6 @@ class DriverMainController extends GetxController
     // âœ… stop any callbacks after close
     if (_disposed || isClosed) return;
     _refreshVehicleIconIfNeeded();
-<<<<<<< HEAD
     // This is the driver's live GPS stream tick (real source). Provide full
     // metadata; otherwise RideMapController assumes "stationary" and may ignore
     // small moves, which looks like the vehicle is stuck.
@@ -342,10 +341,6 @@ class DriverMainController extends GetxController
       accuracyMeters: accuracyM,
       timestamp: timestamp,
     );
-=======
-    // This is the driver's live GPS stream tick (real source).
-    rideMap.updateVehicleLocation(newPos, source: 'gps');
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
     final icon = carIcon ?? BitmapDescriptor.defaultMarker;
 
     if (lastPosition == null || carMarker == null) {
@@ -401,12 +396,7 @@ class DriverMainController extends GetxController
 
     updateCarMarker(
       latLng,
-<<<<<<< HEAD
       speedMs: pos.speed.isFinite ? pos.speed : null,
-=======
-      source: 'gps',
-      speedMetersPerSecond: pos.speed.isFinite ? pos.speed : null,
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
       headingDeg: pos.heading.isFinite ? pos.heading : null,
       accuracyM: pos.accuracy.isFinite ? pos.accuracy : null,
       timestamp: pos.timestamp,

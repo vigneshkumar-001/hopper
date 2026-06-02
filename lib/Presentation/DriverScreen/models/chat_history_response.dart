@@ -149,20 +149,26 @@ class Customer {
   final String id;
   final String firstName;
   final String profileImage;
+  final String phone;
   final bool online;
 
   Customer({
     required this.id,
     required this.firstName,
     required this.profileImage,
+    required this.phone,
     required this.online,
   });
 
   factory Customer.fromJson(Map<String, dynamic> json) {
+    String _s(dynamic v) => (v ?? '').toString();
     return Customer(
       id: json['_id'] ?? '',
       firstName: json['firstName'] ?? '',
       profileImage: json['profileImage'] ?? '',
+      phone: _s(json['phone']).isNotEmpty
+          ? _s(json['phone'])
+          : _s(json['mobileNumber'] ?? json['mobile'] ?? json['contact']),
       online: json['online'] ?? false,
     );
   }

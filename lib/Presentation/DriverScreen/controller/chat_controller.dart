@@ -14,6 +14,7 @@ class ChatController extends GetxController {
   /// Header bits for DRIVER app (show the **customer**)
   final RxString customerName = ''.obs;
   final RxString customerImage = ''.obs;
+  final RxString customerPhone = ''.obs;
   final RxString driverImage = ''.obs;    // full URL or ''
   Future<void> fetchChatHistory({
     required String bookingId,
@@ -43,12 +44,14 @@ class ChatController extends GetxController {
             chatMessages.clear();
             customerName.value = 'Customer';
             customerImage.value = '';
+            customerPhone.value = '';
             return;
           }
 
           // App bar: show customer in driver app
           customerName.value = data.customer?.firstName ?? 'Customer';
           customerImage.value = data.customer?.profileImage ?? '';
+          customerPhone.value = (data.customer?.phone ?? '').trim();
           driverImage.value = (response.data?.driver?.profilePic ?? '').trim();
 
           // timeline (old -> new)

@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+﻿import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -22,7 +22,7 @@ import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:hopper/utils/ride_map/ride_map_view.dart';
 import 'package:hopper/utils/ride_map/ride_map_controller.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:hopper/utils/phone/call_launcher.dart';
 
 import '../controller/ride_starts_controller.dart';
 import 'cash_collected_screen.dart';
@@ -185,7 +185,7 @@ class RideStatsScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Text(
-                      'Recommended drop point • ${meters}m',
+                      'Recommended drop point - ${meters}m',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 12.5,
@@ -219,24 +219,14 @@ class RideStatsScreen extends StatelessWidget {
                                 MapFocusMode.driver,
                                 userInitiated: true,
                               );
-<<<<<<< HEAD
-=======
-                              c.setDriverFocused(true);
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
                             },
                             onFitBounds: () async {
                               c.rideMap.applyFocusMode(
                                 MapFocusMode.fullTrip,
                                 userInitiated: true,
                               );
-<<<<<<< HEAD
                             },
                             onDriverFocusedChanged: (_) {},
-=======
-                              c.setDriverFocused(false);
-                            },
-                            onDriverFocusedChanged: c.setDriverFocused,
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
                           );
                         },
                       ),
@@ -408,28 +398,14 @@ class RideStatsScreen extends StatelessWidget {
                                       icon: Icons.call_rounded,
                                       color: const Color(0xFF00A85E),
                                       onTap: () async {
-                                        final ph = phone.replaceAll(
-                                          RegExp(r'[^0-9+]'),
-                                          '',
+                                        await CallLauncher.openDialer(
+                                          phone: phone,
+                                          context: context,
                                         );
-                                        if (ph.isEmpty) return;
-                                        final url = Uri(scheme: 'tel', path: ph);
-                                        if (await canLaunchUrl(url)) {
-                                          await launchUrl(
-                                            url,
-                                            mode: LaunchMode.externalApplication,
-                                          );
-                                        } else {
-                                          Get.snackbar(
-                                            'Call failed',
-                                            'Unable to open phone dialer',
-                                            snackPosition: SnackPosition.BOTTOM,
-                                          );
-                                        }
                                       },
                                     );
                                   }),
-                                  const SizedBox(width: 10),
+                                  const SizedBox(width: 11),
                                   _ActionIconButton(
                                     icon: Icons.chat_bubble_rounded,
                                     color: const Color(0xFF111827),
@@ -534,7 +510,7 @@ class RideStatsScreen extends StatelessWidget {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Text(
-                                      '$eta • $dist',
+                                      '$eta - $dist',
                                       style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.w800,
@@ -1265,7 +1241,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
   static const double _MIN_MOVE_METERS = 3.0;
   static const double _MIN_SPEED_MS = 1.0;
   static const double _HEADING_TRUST_MS =
-      2.0; // use sensor heading only if ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°Ãƒâ€šÃ‚Â¥ 2 m/s
+      2.0; // use sensor heading only if ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥ 2 m/s
   static const double _MIN_TURN_DEG = 10.0; // ignore tiny turns when slow
   double _angleDeltaDeg(double a, double b) {
     double d = (b - a) % 360;
@@ -1689,7 +1665,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     return _normalizeAngle(bearing);
   }
 
-  // pick shortest rotation direction (e.g., 350ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° -> 10ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° goes +20ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°, not -340ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°)
+  // pick shortest rotation direction (e.g., 350ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° -> 10ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° goes +20ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°, not -340ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°)
   double _shortestAngle(double from, double to) {
     double diff = (to - from) % 360;
     if (diff > 180) diff -= 360;
@@ -2529,7 +2505,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 //         _currentMapBearing = rotation;
 //       });
 //
-//       // ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â½Ãƒâ€šÃ‚Â¯ Animate map with rotation like Google Maps/Uber/Ola
+//       // ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â½ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯ Animate map with rotation like Google Maps/Uber/Ola
 //       if (_autoFollowEnabled && _mapController != null) {
 //         final currentZoom = await _mapController!.getZoomLevel();
 //         final safeZoom = currentZoom > 15 ? 15.0 : currentZoom;
@@ -2575,7 +2551,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 //
 //         // arrivedAtPickup = false;
 //         CommonLogger.log.i(
-//           'ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â¦ driver-reached-destination updated to false $data',
+//           'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ driver-reached-destination updated to false $data',
 //         );
 //       }
 //     });
@@ -2614,16 +2590,16 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 //     });
 //     // Debug: See all events
 //     socketService.socket.onAny((event, data) {
-//       CommonLogger.log.i('ÃƒÆ’Ã‚Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚Â¦ [onAny] $event: $data');
+//       CommonLogger.log.i('ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ [onAny] $event: $data');
 //     });
 //
 //     if (!socketService.connected) {
 //       socketService.connect();
 //       socketService.onConnect(() {
-//         CommonLogger.log.i("ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Socket connected");
+//         CommonLogger.log.i("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ Socket connected");
 //       });
 //     } else {
-//       CommonLogger.log.i("ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Socket already connected");
+//       CommonLogger.log.i("ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ Socket already connected");
 //     }
 //   }
 //
@@ -2968,7 +2944,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 //                       CameraUpdate.newLatLngBounds(bounds, 100),
 //                     );
 //
-//                     // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ Clamp zoom between 12 (normal city view) and 17 (max detail)
+//                     // ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ Clamp zoom between 12 (normal city view) and 17 (max detail)
 //                     final zoomLevel = await _mapController!.getZoomLevel();
 //                     double safeZoom = zoomLevel.clamp(12.0, 17.0);
 //                     _mapController!.animateCamera(
@@ -3156,7 +3132,7 @@ class _RideStatsScreenState extends State<RideStatsScreen>
 //                               () => CustomTextfield.textWithStyles600(
 //                                 formatDuration(
 //                                   driverStatusController.dropDurationInMin.value
-//                                       .toInt(), // ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ FIXED
+//                                       .toInt(), // ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ FIXED
 //                                 ),
 //                                 fontSize: 20,
 //                               ),

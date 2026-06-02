@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:hopper/utils/phone/call_launcher.dart';
 
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
@@ -226,15 +226,11 @@ class _PickingCustomerSharedScreenState
 
   // ── Actions ───────────────────────────────────────────────────────────────
   Future<void> _launchPhone(String phone) async {
-    final url = Uri.parse('tel:$phone');
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url);
-      return;
-    }
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Unable to open call app')));
+    await CallLauncher.openDialer(
+      phone: phone,
+      context: mounted ? context : null,
+      failureMessage: 'Unable to open call app',
+    );
   }
 
   Future<void> _onSelectRider(SharedRiderItem rider) async {
@@ -2693,7 +2689,7 @@ Widget _addrDot(Color color, {bool glowing = false}) => Container(
 //         ),
 //       ),
 //       child: Text(
-//         'Swipe to Start  •  ${rider.name}',
+//         'Swipe to Start - ${rider.name}',
 //         style: TextStyle(
 //           fontSize: 13.5,
 //           fontWeight: FontWeight.w600,

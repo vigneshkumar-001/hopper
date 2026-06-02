@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:hopper/utils/phone/call_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:hopper/Core/Utility/app_loader.dart';
@@ -529,13 +529,20 @@ class _ChatScreenState extends State<ChatScreen> {
                   padding: const EdgeInsets.all(8.0),
                   child: InkWell(
                     onTap: () async {
-                      const phoneNumber = 'tel:8248191110';
-                      final Uri url = Uri.parse(phoneNumber);
-                      if (await canLaunchUrl(url)) {
-                        await launchUrl(url);
-                      } else {
-                        CommonLogger.log.w('Could not launch dialer');
+                      final phone = chatController.customerPhone.value.trim();
+                      if (phone.isEmpty) {
+                        Get.snackbar(
+                          'Call',
+                          'Customer phone not available',
+                          backgroundColor: Colors.black87,
+                          colorText: Colors.white,
+                        );
+                        return;
                       }
+                      await CallLauncher.openDialer(
+                        phone: phone,
+                        context: context,
+                      );
                     },
                     child: Image.asset(AppImages.call, height: 20, width: 20),
                   ),

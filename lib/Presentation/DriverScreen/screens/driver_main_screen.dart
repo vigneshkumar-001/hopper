@@ -320,7 +320,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                             ),
                                             child: Text(
                                               connectedCount > 0
-                                                  ? 'Shared ride • $connectedCount riders'
+                                                  ? 'Shared ride - $connectedCount riders'
                                                   : 'Shared ride',
                                               style: TextStyle(
                                                 fontSize: 12,

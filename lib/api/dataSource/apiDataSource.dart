@@ -1887,28 +1887,36 @@ class ApiDataSource extends BaseApiDataSource {
     String? cursor,
     required String category,
     String? bookingType,
-    String? paymentMode,
-    String? status,
+    List<String>? paymentModes,
+    List<String>? statuses,
     String? fromDate,
     String? toDate,
-    String? transactionType,
+    List<String>? transactionTypes,
   }) async {
     try {
       final url = ApiConstents.driverEarnings;
+
+      List<String> _cleanList(List<String>? v) =>
+          (v ?? const <String>[]).map((e) => e.trim()).where((e) => e.isNotEmpty).toList(growable: false);
+
+      final pm = _cleanList(paymentModes);
+      final st = _cleanList(statuses);
+      final tt = _cleanList(transactionTypes);
+
       final payload = <String, dynamic>{
         'limit': limit,
         if (cursor != null && cursor.trim().isNotEmpty) 'cursor': cursor.trim(),
         'category': category,
         if (bookingType != null && bookingType.trim().isNotEmpty)
           'bookingType': bookingType.trim(),
-        if (paymentMode != null && paymentMode.trim().isNotEmpty)
-          'paymentMode': paymentMode.trim(),
-        if (status != null && status.trim().isNotEmpty) 'status': status.trim(),
+
+        // API supports string OR comma OR array. Prefer array when multiple.
+        if (pm.isNotEmpty) 'paymentMode': pm.length == 1 ? pm.first : pm,
+        if (st.isNotEmpty) 'status': st.length == 1 ? st.first : st,
         if (fromDate != null && fromDate.trim().isNotEmpty)
           'fromDate': fromDate.trim(),
         if (toDate != null && toDate.trim().isNotEmpty) 'toDate': toDate.trim(),
-        if (transactionType != null && transactionType.trim().isNotEmpty)
-          'transactionType': transactionType.trim(),
+        if (tt.isNotEmpty) 'transactionType': tt.length == 1 ? tt.first : tt,
       };
 
       dynamic response = await Request.sendRequest(url, payload, 'POST', false);

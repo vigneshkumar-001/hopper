@@ -8,11 +8,16 @@ class DriverEarningsController extends GetxController {
   final ApiDataSource _api = ApiDataSource();
 
   // Filters (defaults match the request sample)
-  final RxString category = 'EARNING'.obs;
-  final RxString bookingType = 'Ride'.obs;
-  final RxString paymentMode = 'WALLET'.obs;
-  final RxString status = 'PAID'.obs;
-  final RxString transactionType = 'CASH_COMMISSION'.obs;
+  final RxString category = 'EARNING'.obs; // ALL, EARNING, TOPUP, WITHDRAWAL, ADJUSTMENT
+  // Empty string means "all booking types" (omit from payload).
+  final RxString bookingType = ''.obs; // Ride, Parcel
+
+  // API supports single value OR comma separated OR array.
+  // Keep these as lists to match API response shape (filters.paymentModes/statuses/transactionTypes).
+  // Empty list means "all" (omit from payload).
+  final RxList<String> paymentModes = <String>[].obs;
+  final RxList<String> statuses = <String>[].obs;
+  final RxList<String> transactionTypes = <String>[].obs;
 
   final Rxn<DateTime> fromDate = Rxn<DateTime>();
   final Rxn<DateTime> toDate = Rxn<DateTime>();
@@ -33,10 +38,9 @@ class DriverEarningsController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    // Default to current month range for a good first-load UX.
+    // Default to last 30 days for a good first-load UX.
     final now = DateTime.now();
-    final start = DateTime(now.year, now.month, 1);
-    fromDate.value = start;
+    fromDate.value = now.subtract(const Duration(days: 30));
     toDate.value = now;
     refreshList(silent: true);
   }
@@ -62,12 +66,12 @@ class DriverEarningsController extends GetxController {
         limit: _pageSize,
         cursor: null,
         category: category.value,
-        bookingType: bookingType.value,
-        paymentMode: paymentMode.value,
-        status: status.value,
+        bookingType: bookingType.value.trim().isEmpty ? null : bookingType.value,
+        paymentModes: paymentModes.toList(growable: false),
+        statuses: statuses.toList(growable: false),
         fromDate: fromDate.value != null ? _fmtDate(fromDate.value!) : null,
         toDate: toDate.value != null ? _fmtDate(toDate.value!) : null,
-        transactionType: transactionType.value,
+        transactionTypes: transactionTypes.toList(growable: false),
       );
 
       res.fold((l) {
@@ -99,12 +103,12 @@ class DriverEarningsController extends GetxController {
         limit: _pageSize,
         cursor: cursor,
         category: category.value,
-        bookingType: bookingType.value,
-        paymentMode: paymentMode.value,
-        status: status.value,
+        bookingType: bookingType.value.trim().isEmpty ? null : bookingType.value,
+        paymentModes: paymentModes.toList(growable: false),
+        statuses: statuses.toList(growable: false),
         fromDate: fromDate.value != null ? _fmtDate(fromDate.value!) : null,
         toDate: toDate.value != null ? _fmtDate(toDate.value!) : null,
-        transactionType: transactionType.value,
+        transactionTypes: transactionTypes.toList(growable: false),
       );
 
       res.fold((l) {
@@ -139,16 +143,27 @@ class DriverEarningsController extends GetxController {
   }
 
   Future<void> applyFilters({
+    String? categoryValue,
     required String bookingTypeValue,
-    required String paymentModeValue,
-    required String statusValue,
-    required String transactionTypeValue,
+    required List<String> paymentModeValues,
+    required List<String> statusValues,
+    required List<String> transactionTypeValues,
   }) async {
-    bookingType.value = bookingTypeValue;
-    paymentMode.value = paymentModeValue;
-    status.value = statusValue;
-    transactionType.value = transactionTypeValue;
+    if (categoryValue != null && categoryValue.trim().isNotEmpty) {
+      category.value = categoryValue.trim();
+    }
+    bookingType.value = bookingTypeValue.trim();
+
+    paymentModes.assignAll(
+      paymentModeValues.map((e) => e.trim()).where((e) => e.isNotEmpty),
+    );
+    statuses.assignAll(
+      statusValues.map((e) => e.trim()).where((e) => e.isNotEmpty),
+    );
+    transactionTypes.assignAll(
+      transactionTypeValues.map((e) => e.trim()).where((e) => e.isNotEmpty),
+    );
+
     await refreshList();
   }
 }
-

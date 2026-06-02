@@ -11,6 +11,7 @@ import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 import '../controller/ride_history_controller.dart';
 import '../model/wallet_history_response.dart';
 import 'add_money_screens.dart';
+import 'withdraw_screen.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -445,7 +446,9 @@ class _WalletScreenState extends State<WalletScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: _openWithdrawSheet,
+                    onPressed: () {
+                      Get.to(() => WithdrawScreen(walletController: walletController));
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white.withOpacity(0.10),
                       foregroundColor: Colors.white,

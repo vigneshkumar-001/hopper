@@ -126,7 +126,7 @@ class DriverAnalyticsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Accepted $accepted  •  Declined $declined  •  Cancelled $cancelled',
+            'Accepted $accepted  |  Declined $declined  |  Cancelled $cancelled',
             style: const TextStyle(
               color: Colors.white70,
               fontSize: 12,

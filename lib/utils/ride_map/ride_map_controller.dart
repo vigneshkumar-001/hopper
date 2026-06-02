@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -104,7 +104,6 @@ class RideMapController {
   bool _routeIsFallbackStraight = false;
   Timer? _routeRetryTimer;
   DateTime _lastRouteRetryAt = DateTime.fromMillisecondsSinceEpoch(0);
-<<<<<<< HEAD
 
   // Full-trip preview (pickup->drop) used during pickupNavigation when the user
   // taps the "full trip" (landscape) control. This ensures the entire ride
@@ -112,8 +111,6 @@ class RideMapController {
   List<LatLng> _previewPickupToDrop = <LatLng>[];
   String _previewPickupToDropSig = '';
   bool _previewRouteLoading = false;
-=======
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
 
   final RouteSnapService _snapService = const RouteSnapService();
   final RerouteService _rerouteService = RerouteService();
@@ -300,21 +297,16 @@ class RideMapController {
   ///
   /// This is the "second tap" behavior for the existing location/focus button.
   /// If there is no active polyline, it falls back to fitting current markers.
-<<<<<<< HEAD
   Future<void> fitFullTrip({
     double padding = 95,
     bool clampMinZoom = false,
     bool includeAllStops = false,
   }) async {
-=======
-  Future<void> fitFullTrip({double padding = 95, bool clampMinZoom = false}) async {
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
     final c = _mapController;
     if (c == null) return;
 
     final route = _routeFull;
     final pose = _vehicleAnim.pose.value;
-<<<<<<< HEAD
     final preview =
         (includeAllStops && _mode == RideMapMode.pickupNavigation)
             ? _previewPickupToDrop
@@ -328,42 +320,19 @@ class RideMapController {
       ...route,
       ...preview,
     ];
-=======
-    final pts = <LatLng>[
-      ..._fitPointsForMode(),
-      // Include overlay markers (maneuvers/stop pins) so full-fit never hides them.
-      ...overlayMarkers.value.map((m) => m.position),
-    ];
-    // De-dupe (very close points).
-    final unique = <LatLng>[];
-    for (final p in pts) {
-      final exists = unique.any((u) => _distanceMeters(u, p) <= 1.0);
-      if (!exists) unique.add(p);
-    }
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
 
     // If we don't have enough points to compute bounds, fallback to focusing the driver.
     // If the polyline isn't loaded yet but we have driver/pickup/drop points, we still
     // fit bounds using those markers (prevents "blank random focus" on open).
-<<<<<<< HEAD
     if (pts.length < 2) {
       _dbg(
         'fitFullTrip(): routePoints=${route.length} preview=${preview.length} points=${pts.length} -> focus driver',
-=======
-    if (unique.length < 2) {
-      _dbg(
-        'fitFullTrip(): routePoints=${route.length} points=${unique.length} -> focus driver',
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
       );
       if (pose != null) {
         await focusVehicle(
           zoom: MapUiConfig.navigationZoom,
           tilt: MapUiConfig.cameraTilt,
-<<<<<<< HEAD
           bearingEnabled: cameraBearingEnabledNow,
-=======
-          bearingEnabled: MapUiConfig.cameraBearingEnabled,
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
         );
         return;
       }
@@ -371,7 +340,6 @@ class RideMapController {
       return;
     }
 
-<<<<<<< HEAD
     _dbg(
       'fitFullTrip(): routePoints=${route.length} preview=${preview.length} points=${pts.length} padding=$padding',
     );
@@ -381,15 +349,6 @@ class RideMapController {
     double minLng = pts.first.longitude;
     double maxLng = pts.first.longitude;
     for (final p in pts) {
-=======
-    _dbg('fitFullTrip(): routePoints=${route.length} points=${unique.length} padding=$padding');
-
-    double minLat = unique.first.latitude;
-    double maxLat = unique.first.latitude;
-    double minLng = unique.first.longitude;
-    double maxLng = unique.first.longitude;
-    for (final p in unique) {
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
       if (p.latitude < minLat) minLat = p.latitude;
       if (p.latitude > maxLat) maxLat = p.latitude;
       if (p.longitude < minLng) minLng = p.longitude;
@@ -777,7 +736,6 @@ class RideMapController {
     final speed = speedMetersPerSecond ?? 0.0;
 
     double targetBearing = currentBearing;
-<<<<<<< HEAD
     double? motionBearing;
     final motionFrom = _lastSnappedForBearing ?? currentPos;
     if (motionFrom != null && _distanceMeters(motionFrom, targetPos) >= 1.8) {
@@ -787,10 +745,7 @@ class RideMapController {
     final heading = hasHeading ? BearingUtils.normalize360(headingDeg!) : null;
 
     if (snappedSegmentBearing != null) {
-      // Even at low speed (or slow GPS tick rate), keep the marker oriented
-      // to the route when snapped. This prevents rotation shake at junctions.
       final routeBearing = snappedSegmentBearing;
-
       // Guard against rare cases where snapping/route direction flips ~180° due
       // to GPS jitter or a reversed remaining segment. Prefer real motion/heading
       // when route bearing is clearly contradictory.
@@ -806,15 +761,14 @@ class RideMapController {
         targetBearing = routeBearing;
       }
     } else if (speed > 2.0) {
-      // If we have a snapped segment direction, always trust the route.
-      // This keeps the marker exactly aligned to the active polyline.
+      // Route look-ahead: prefer route-aligned bearing when available.
       if (_lastLookAheadPoint != null) {
-        // Fallback: look-ahead bearing (still route-based).
-        final lookAheadBearing =
-            BearingUtils.bearingBetween(targetPos, _lastLookAheadPoint!);
+        final lookAheadBearing = BearingUtils.bearingBetween(
+          targetPos,
+          _lastLookAheadPoint!,
+        );
         if (motionBearing != null &&
             BearingUtils.angleDeltaDeg(lookAheadBearing, motionBearing) > 120.0) {
-          // Same anti-flip guard for look-ahead bearing.
           if (heading != null &&
               BearingUtils.angleDeltaDeg(heading, motionBearing) <= 70.0) {
             targetBearing = heading;
@@ -830,25 +784,6 @@ class RideMapController {
           targetBearing = motionBearing;
         } else if (heading != null) {
           targetBearing = heading;
-=======
-    if (snappedSegmentBearing != null) {
-      // Even at low speed (or slow GPS tick rate), keep the marker oriented
-      // to the route when snapped. This prevents rotation shake at junctions.
-      targetBearing = snappedSegmentBearing;
-    } else if (speed > 2.0) {
-      // If we have a snapped segment direction, always trust the route.
-      // This keeps the marker exactly aligned to the active polyline.
-      if (_lastLookAheadPoint != null) {
-        // Fallback: look-ahead bearing (still route-based).
-        targetBearing = BearingUtils.bearingBetween(targetPos, _lastLookAheadPoint!);
-      } else {
-        // No route: movement-based, then GPS heading.
-        final from = _lastSnappedForBearing ?? currentPos;
-        if (from != null && _distanceMeters(from, targetPos) >= 1.2) {
-          targetBearing = BearingUtils.bearingBetween(from, targetPos);
-        } else if (headingDeg != null && headingDeg.isFinite) {
-          targetBearing = headingDeg;
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
         }
       }
     } else {
@@ -1161,21 +1096,14 @@ class RideMapController {
       final pose = _vehicleAnim.pose.value;
       _dbg('[FOCUS_DRIVER] target=${pose?.position}');
       await focusVehicle(
-<<<<<<< HEAD
         zoom: 17.4,
         tilt: MapUiConfig.cameraTilt,
         bearingEnabled: cameraBearingEnabledNow,
-=======
-        zoom: 17.0,
-        tilt: MapUiConfig.cameraTilt,
-        bearingEnabled: true,
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
       );
       return;
     }
 
     setAutoFollowEnabled(false);
-<<<<<<< HEAD
     final pts = _fitPointsForMode(includeAllStops: true);
     _dbg('[FOCUS_FULL_TRIP] points=${pts.length}');
     // Ensure route init is kicked before fitting (safe no-op if already initialized).
@@ -1193,19 +1121,10 @@ class RideMapController {
   }
 
   List<LatLng> _fitPointsForMode({required bool includeAllStops}) {
-=======
-    final pts = _fitPointsForMode();
-    _dbg('[FOCUS_FULL_TRIP] points=${pts.length}');
-    await fitFullTrip(padding: _fullTripPaddingPx(), clampMinZoom: false);
-  }
-
-  List<LatLng> _fitPointsForMode() {
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
     final pts = <LatLng>[];
     final pose = _vehicleAnim.pose.value;
     if (pose != null) pts.add(pose.position);
 
-<<<<<<< HEAD
     // For user-initiated full-fit, always include pickup + drop so the full trip
     // is visible even during pickup leg.
     if (includeAllStops) {
@@ -1226,19 +1145,6 @@ class RideMapController {
     pts.addAll(_routeFull);
     // Include preview pickup->drop route if available (pickup leg full-trip view).
     pts.addAll(_previewPickupToDrop);
-=======
-    // Smart fit: only include the active leg for the current screen mode.
-    if (_mode == RideMapMode.pickupNavigation) {
-      if (_pickup != null) pts.add(_pickup!);
-    } else if (_mode == RideMapMode.dropNavigation) {
-      if (_drop != null) pts.add(_drop!);
-    } else {
-      if (_pickup != null) pts.add(_pickup!);
-      if (_drop != null) pts.add(_drop!);
-    }
-    // Include active route points (already the current leg).
-    pts.addAll(_routeFull);
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
 
     // Remove duplicates (very close points).
     final unique = <LatLng>[];
@@ -1249,7 +1155,6 @@ class RideMapController {
     return unique;
   }
 
-<<<<<<< HEAD
   String _previewSigFor(LatLng pickup, LatLng drop) {
     return 'p:${pickup.latitude.toStringAsFixed(5)},${pickup.longitude.toStringAsFixed(5)}|'
         'd:${drop.latitude.toStringAsFixed(5)},${drop.longitude.toStringAsFixed(5)}|'
@@ -1318,9 +1223,6 @@ class RideMapController {
 
     overlayPolylines.value = next;
   }
-
-=======
->>>>>>> 5b8c64352e5179daf82cf1a7b3e226e1ccc51b81
   Future<void> fitCameraToRouteOnce({
     required List<LatLng> routePoints,
     required LatLng driverLocation,

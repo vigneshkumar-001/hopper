@@ -121,7 +121,7 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
   final List<DemandOpportunity> _opportunities = const [
     DemandOpportunity(
       id: 'op_1',
-      title: 'Express Delivery • Groceries',
+      title: 'Express Delivery - Groceries',
       location: LatLng(12.9716, 77.5946),
       distanceKm: 2.3,
       earningsLabel: '₹320',
@@ -129,7 +129,7 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
     ),
     DemandOpportunity(
       id: 'op_2',
-      title: 'AC Repair • Quick Service',
+      title: 'AC Repair - Quick Service',
       location: LatLng(12.9782, 77.6070),
       distanceKm: 3.8,
       earningsLabel: '₹750',
@@ -137,7 +137,7 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
     ),
     DemandOpportunity(
       id: 'op_3',
-      title: 'Part-time Shift • 2 hours',
+      title: 'Part-time Shift - 2 hours',
       location: LatLng(12.9650, 77.5865),
       distanceKm: 1.6,
       earningsLabel: '₹500',
@@ -145,7 +145,7 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
     ),
     DemandOpportunity(
       id: 'op_4',
-      title: 'Errand • Documents Pickup',
+      title: 'Errand - Documents Pickup',
       location: LatLng(12.9620, 77.6008),
       distanceKm: 4.1,
       earningsLabel: '₹280',
@@ -823,7 +823,7 @@ class _OpportunityBottomSheet extends StatelessWidget {
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
-                                              '${op.distanceKm.toStringAsFixed(1)} km • ${_categoryLabel(op.category)}',
+                                              '${op.distanceKm.toStringAsFixed(1)} km - ${_categoryLabel(op.category)}',
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(

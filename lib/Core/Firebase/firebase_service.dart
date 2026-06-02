@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -10,10 +11,68 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Presentation/Authentication/controller/otp_controller.dart';
 
+final FlutterLocalNotificationsPlugin _bgLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
+bool _bgLocalNotificationsInitialized = false;
+
+Future<void> _ensureBgLocalNotificationsInitialized() async {
+  if (_bgLocalNotificationsInitialized) return;
+
+  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const iosInit = DarwinInitializationSettings();
+
+  try {
+    await _bgLocalNotificationsPlugin.initialize(
+      const InitializationSettings(android: androidInit, iOS: iosInit, macOS: iosInit),
+    );
+  } catch (_) {
+    // Best-effort; never throw in background isolate.
+  }
+
+  _bgLocalNotificationsInitialized = true;
+}
+
+Future<void> _showBgLocalNotification(RemoteMessage message) async {
+  await _ensureBgLocalNotificationsInitialized();
+
+  final data = message.data;
+  final notification = message.notification;
+  final title = (notification?.title ?? data['title'] ?? 'Notification').toString();
+  final body = (notification?.body ?? data['body'] ?? '').toString();
+
+  if (title.isEmpty && body.isEmpty && data.isEmpty) return;
+
+  const androidDetails = AndroidNotificationDetails(
+    'flutter_notification',
+    'flutter_notification_title',
+    channelDescription: 'Channel for high priority notifications',
+    importance: Importance.max,
+    priority: Priority.high,
+    playSound: true,
+  );
+  const iosDetails = DarwinNotificationDetails(
+    presentAlert: true,
+    presentBadge: true,
+    presentSound: true,
+  );
+
+  try {
+    await _bgLocalNotificationsPlugin.show(
+      Random().nextInt(1 << 31),
+      title,
+      body,
+      const NotificationDetails(android: androidDetails, iOS: iosDetails),
+    );
+  } catch (_) {
+    // ignore
+  }
+}
+
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     await Firebase.initializeApp();
+    await _showBgLocalNotification(message);
   } catch (e) {
     // Never crash background isolate.
     CommonLogger.log.w('FCM [BG] Firebase init failed: $e');
@@ -40,6 +99,8 @@ class FirebaseService {
   String? get fcmToken => _fcmToken;
 
   bool _tokenRefreshAttached = false;
+  Timer? _tokenRetryTimer;
+  int _tokenRetryCount = 0;
 
   Future<void> initializeFirebase() async {
     // Handler also registered in main, but safe to keep.
@@ -75,6 +136,15 @@ class FirebaseService {
     } catch (e) {
       CommonLogger.log.w('Notification channel create failed: $e');
     }
+
+    // iOS: ensure foreground notifications can be presented.
+    try {
+      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    } catch (_) {}
 
     await _requestNotificationPermission();
   }
@@ -115,6 +185,9 @@ class FirebaseService {
     if (forceRefresh || _fcmToken == null || _fcmToken!.isEmpty) {
       _fcmToken = await _getFCMTokenWithRetry();
       if (_fcmToken != null && _fcmToken!.isNotEmpty) {
+        _tokenRetryCount = 0;
+        _tokenRetryTimer?.cancel();
+        _tokenRetryTimer = null;
         try {
           await prefs.setString('fcmToken', _fcmToken!);
         } catch (_) {}
@@ -127,6 +200,7 @@ class FirebaseService {
         }
       } else {
         CommonLogger.log.w('FCM token not available now (will retry later)');
+        _scheduleTokenRetry();
       }
     } else {
       CommonLogger.log.d('FCM token loaded from cache (${_fcmToken!.length} chars)');
@@ -143,6 +217,9 @@ class FirebaseService {
     try {
       FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
         _fcmToken = newToken;
+        _tokenRetryCount = 0;
+        _tokenRetryTimer?.cancel();
+        _tokenRetryTimer = null;
         CommonLogger.log.d('FCM token refreshed (${newToken.length} chars)');
         try {
           await prefs.setString('fcmToken', newToken);
@@ -156,6 +233,22 @@ class FirebaseService {
     } catch (e) {
       CommonLogger.log.w('onTokenRefresh listen failed: $e');
     }
+  }
+
+  void _scheduleTokenRetry() {
+    if (_tokenRetryTimer != null) return;
+    if (_tokenRetryCount >= 3) return;
+    _tokenRetryCount++;
+
+    final delay = Duration(seconds: 20 * _tokenRetryCount);
+    _tokenRetryTimer = Timer(delay, () async {
+      _tokenRetryTimer = null;
+      try {
+        await fetchFCMTokenIfNeeded(forceRefresh: true);
+      } catch (e) {
+        CommonLogger.log.w('FCM retry failed: $e');
+      }
+    });
   }
 
   Future<String?> _getFCMTokenWithRetry({int retries = 5}) async {
@@ -241,4 +334,3 @@ class FirebaseService {
     } catch (_) {}
   }
 }
-
