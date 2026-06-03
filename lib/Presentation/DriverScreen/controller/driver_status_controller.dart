@@ -24,6 +24,7 @@ class DriverStatusController extends GetxController {
   RxBool isLoading = false.obs;
   final RxBool isToggleLoading = false.obs;
   final RxBool isBookingAcceptLoading = false.obs;
+  final RxBool isBookingRejectLoading = false.obs;
   var serviceType = ''.obs;
   final RxBool isStopNewRequests = false.obs;
   final RxString arrivedLoadingBookingId = ''.obs;
@@ -157,6 +158,7 @@ class DriverStatusController extends GetxController {
     isToggleLoading.value = false;
     isLoading.value = false;
     isBookingAcceptLoading.value = false;
+    isBookingRejectLoading.value = false;
     isStopNewRequests.value = false;
     arrivedLoadingBookingId.value = '';
 
@@ -466,6 +468,35 @@ class DriverStatusController extends GetxController {
     } catch (_) {
       isLoading.value = false;
       return (success: false, message: 'Something went wrong');
+    }
+  }
+
+  Future<String?> bookingReject({required String bookingId}) async {
+    isBookingRejectLoading.value = true;
+    try {
+      final results = await apiDataSource.bookingAccept(
+        bookingId: bookingId,
+        status: 'REJECT',
+      );
+
+      return results.fold(
+        (failure) {
+          CustomSnackBar.showError(failure.message);
+          isBookingRejectLoading.value = false;
+          return '';
+        },
+        (response) {
+          CommonLogger.log.i(
+            '🚫 Booking rejected for bookingId=$bookingId response=${response.message}',
+          );
+          isBookingRejectLoading.value = false;
+          return 'success';
+        },
+      );
+    } catch (e) {
+      isBookingRejectLoading.value = false;
+      CommonLogger.log.e('bookingReject failed: $e');
+      return '';
     }
   }
 

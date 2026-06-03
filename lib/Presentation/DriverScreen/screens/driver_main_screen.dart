@@ -102,7 +102,8 @@ class _DriverMainScreenState extends State<DriverMainScreen>
               // Always render the map immediately (even before location/serviceType),
               // so the screen never looks blank. We only overlay a loader while
               // data/location are warming up.
-              final showLoader = !c.ready.value || !c.statusController.hasServiceType;
+              final showLoader =
+                  !c.ready.value || !c.statusController.hasServiceType;
               if (showLoader) {
                 return Stack(
                   children: [
@@ -110,7 +111,8 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                       key: const ValueKey<String>('driver_map_bootstrap'),
                       controller: c.rideMap,
                       initialPosition:
-                          c.currentPosition.value ?? const LatLng(9.914, 78.097),
+                          c.currentPosition.value ??
+                          const LatLng(9.914, 78.097),
                       fitToBounds: false,
                       mapStyle: c.mapStyle,
                       myLocationEnabled: false,
@@ -503,7 +505,8 @@ class _GlassHeader extends StatelessWidget {
               final serviceType = statusController.serviceType.value.trim();
               final hasServiceType = serviceType.isNotEmpty;
               final isCar = serviceType.toLowerCase() == 'car';
-              final vehicleAsset = isCar ? AppImages.offlineCar : AppImages.bike;
+              final vehicleAsset =
+                  isCar ? AppImages.offlineCar : AppImages.bike;
 
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
@@ -1243,7 +1246,8 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                                   child: Row(
                                                     children: [
                                                       Icon(
-                                                        Icons.trending_up_rounded,
+                                                        Icons
+                                                            .trending_up_rounded,
                                                         size: 18,
                                                         color: cs.primary,
                                                       ),
@@ -1253,7 +1257,8 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                                           'Demand Opportunity',
                                                           maxLines: 1,
                                                           overflow:
-                                                              TextOverflow.ellipsis,
+                                                              TextOverflow
+                                                                  .ellipsis,
                                                           style: TextStyle(
                                                             fontSize: 15,
                                                             fontWeight:
@@ -2229,7 +2234,10 @@ class _CarBookingCardUI extends StatelessWidget {
                 vertical: 10,
               ),
               child: Obx(() {
-                final isLoading = statusController.isBookingAcceptLoading.value;
+                final isAcceptLoading =
+                    statusController.isBookingAcceptLoading.value;
+                final isRejectLoading =
+                    statusController.isBookingRejectLoading.value;
                 return Row(
                   children: [
                     Expanded(
@@ -2237,24 +2245,32 @@ class _CarBookingCardUI extends StatelessWidget {
                         borderRadius: 10,
                         buttonColor: AppColors.red,
                         onTap:
-                            isLoading
+                            isAcceptLoading || isRejectLoading
                                 ? null
-                                : () {
+                                : () async {
                                   HapticFeedback.selectionClick();
                                   final id = data['bookingId']?.toString();
-                                  if (id != null) {
-                                    Get.find<DriverAnalyticsController>()
-                                        .trackDecline(bookingId: id);
-                                    bookingController.markHandled(id);
-                                  } else {
+                                  if (id == null || id.isEmpty) {
                                     Get.find<DriverAnalyticsController>()
                                         .trackDecline();
                                     bookingController.clear();
+                                    return;
+                                  }
+                                  final result = await statusController
+                                      .bookingReject(bookingId: id);
+                                  if (result == 'success') {
+                                    Get.find<DriverAnalyticsController>()
+                                        .trackDecline(bookingId: id);
+                                    bookingController.markHandled(id);
                                   }
                                 },
                         text:
-                            isLoading
-                                ? const Text('Decline')
+                            isRejectLoading
+                                ? SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: AppLoader.circularLoader(),
+                                )
                                 : const Text('Decline'),
                       ),
                     ),
@@ -2265,7 +2281,7 @@ class _CarBookingCardUI extends StatelessWidget {
                         borderRadius: 10,
                         buttonColor: AppColors.drkGreen,
                         onTap:
-                            isLoading
+                            isAcceptLoading || isRejectLoading
                                 ? null
                                 : () async {
                                   HapticFeedback.mediumImpact();
@@ -2326,7 +2342,7 @@ class _CarBookingCardUI extends StatelessWidget {
                                   }
                                 },
                         text:
-                            isLoading
+                            isAcceptLoading
                                 ? SizedBox(
                                   height: 20,
                                   width: 20,
@@ -2470,7 +2486,12 @@ class _TodayActivityParcel extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth;
-        final horizontalPad = w < 360 ? 14.0 : w < 420 ? 18.0 : 22.0;
+        final horizontalPad =
+            w < 360
+                ? 14.0
+                : w < 420
+                ? 18.0
+                : 22.0;
         final verticalPad = w < 360 ? 12.0 : 14.0;
         final gap = w < 360 ? 10.0 : 16.0;
         final iconPx = w < 360 ? 16.0 : 17.0;

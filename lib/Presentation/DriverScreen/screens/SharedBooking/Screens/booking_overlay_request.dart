@@ -283,17 +283,45 @@ class _BookingOverlayRequestState extends State<BookingOverlayRequest> {
                         children: [
                           // DECLINE
                           Expanded(
-                            child: Buttons.button(
-                              borderRadius: 10,
-                              buttonColor: AppColors.red,
-                              onTap: () {
-                                HapticFeedback.selectionClick();
-                                Get.find<DriverAnalyticsController>()
-                                    .trackDecline(bookingId: bookingId);
-                                bookingController.markHandled(bookingId);
-                              },
-                              text: const Text('Decline'),
-                            ),
+                            child: Obx(() {
+                              final isRejectLoading =
+                                  statusController.isBookingRejectLoading.value;
+                              final isAcceptLoading =
+                                  statusController.isBookingAcceptLoading.value;
+                              return Buttons.button(
+                                borderRadius: 10,
+                                buttonColor: AppColors.red,
+                                onTap:
+                                    isRejectLoading || isAcceptLoading
+                                        ? null
+                                        : () async {
+                                          HapticFeedback.selectionClick();
+                                          final result = await statusController
+                                              .bookingReject(
+                                                bookingId: bookingId,
+                                              );
+                                          if (result == 'success') {
+                                            Get.find<
+                                                  DriverAnalyticsController
+                                                >()
+                                                .trackDecline(
+                                                  bookingId: bookingId,
+                                                );
+                                            bookingController.markHandled(
+                                              bookingId,
+                                            );
+                                          }
+                                        },
+                                text:
+                                    isRejectLoading
+                                        ? SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: AppLoader.circularLoader(),
+                                        )
+                                        : const Text('Decline'),
+                              );
+                            }),
                           ),
                           const SizedBox(width: 20),
 
@@ -635,37 +663,70 @@ class BookingOverlayRequest extends StatelessWidget {
                             children: [
                               // DECLINE
                               Expanded(
-                                child: Buttons.button(
-                                  borderRadius: 10,
-                                  buttonColor: AppColors.red,
-                                  onTap:
-                                      statusController.isBookingAcceptLoading.value
-                                          ? null
-                                          : () {
-                                        final id = data['bookingId']?.toString();
-                                        Get.find<DriverAnalyticsController>().trackDecline(bookingId: id);
-                                        if (id != null) {
-                                          bookingController.markHandled(id);   // ✅ no more popup for this id
-                                        } else {
-                                          bookingController.clear();
-                                        }
-
-                                        // Just hide popup (you can also call API for REJECT here)
-                                        //     bookingController.clear();
-                                          },
-                                  text: const Text('Decline'),
-                                ),
+                                child: Obx(() {
+                                  final isRejectLoading =
+                                      statusController
+                                          .isBookingRejectLoading
+                                          .value;
+                                  final isAcceptLoading =
+                                      statusController
+                                          .isBookingAcceptLoading
+                                          .value;
+                                  return Buttons.button(
+                                    borderRadius: 10,
+                                    buttonColor: AppColors.red,
+                                    onTap:
+                                        isAcceptLoading || isRejectLoading
+                                            ? null
+                                            : () async {
+                                              final id =
+                                                  data['bookingId']?.toString();
+                                              if (id == null || id.isEmpty) {
+                                                bookingController.clear();
+                                                return;
+                                              }
+                                              final result =
+                                                  await statusController
+                                                      .bookingReject(
+                                                        bookingId: id,
+                                                      );
+                                              if (result == 'success') {
+                                                Get.find<
+                                                      DriverAnalyticsController
+                                                    >()
+                                                    .trackDecline(
+                                                      bookingId: id,
+                                                    );
+                                                bookingController.markHandled(
+                                                  id,
+                                                );
+                                              }
+                                            },
+                                    text:
+                                        isRejectLoading
+                                            ? SizedBox(
+                                              height: 20,
+                                              width: 20,
+                                              child: AppLoader.circularLoader(),
+                                            )
+                                            : const Text('Decline'),
+                                  );
+                                }),
                               ),
                               const SizedBox(width: 20),
 
                               // ACCEPT
                               Obx(() {
+                                final isAcceptLoading =
+                                    statusController.isBookingAcceptLoading.value;
+                                final isRejectLoading =
+                                    statusController.isBookingRejectLoading.value;
                                 return Expanded(
                                   child: Buttons.button(
                                     borderRadius: 10,
                                     buttonColor: AppColors.drkGreen,
                                     onTap:
-                                        statusController.isBookingAcceptLoading.value
+                                        isAcceptLoading || isRejectLoading
                                             ? null
                                             : () async {
                                               try {
@@ -715,7 +776,7 @@ class BookingOverlayRequest extends StatelessWidget {
                                               }
                                             },
                                     text:
-                                        statusController.isBookingAcceptLoading.value
+                                        isAcceptLoading
                                             ? SizedBox(
                                               height: 20,
                                               width: 20,
