@@ -28,7 +28,12 @@ import '../models/chat_response.dart';
 
 class ChatScreen extends StatefulWidget {
   final String bookingId;
-  const ChatScreen({super.key, required this.bookingId});
+  final String initialPhone;
+  const ChatScreen({
+    super.key,
+    required this.bookingId,
+    this.initialPhone = '',
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -191,6 +196,10 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    final seedPhone = CallLauncher.sanitizePhone(widget.initialPhone);
+    if (seedPhone.isNotEmpty) {
+      chatController.customerPhone.value = seedPhone;
+    }
     _initializeSocketAndData();
     _loadHistory();
     _initRecorder();
@@ -529,16 +538,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   padding: const EdgeInsets.all(8.0),
                   child: InkWell(
                     onTap: () async {
-                      final phone = chatController.customerPhone.value.trim();
-                      if (phone.isEmpty) {
-                        Get.snackbar(
-                          'Call',
-                          'Customer phone not available',
-                          backgroundColor: Colors.black87,
-                          colorText: Colors.white,
-                        );
-                        return;
-                      }
+                      final phone =
+                          chatController.customerPhone.value.trim().isNotEmpty
+                              ? chatController.customerPhone.value.trim()
+                              : widget.initialPhone.trim();
                       await CallLauncher.openDialer(
                         phone: phone,
                         context: context,

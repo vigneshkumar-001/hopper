@@ -703,6 +703,8 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                                           builder:
                                               (_) => ChatScreen(
                                                 bookingId: widget.bookingId,
+                                                initialPhone:
+                                                    c.customerPhone.value,
                                               ),
                                         ),
                                       );
@@ -855,7 +857,11 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => ChatScreen(bookingId: bookingId),
+              builder:
+                  (_) => ChatScreen(
+                    bookingId: bookingId,
+                    initialPhone: c.customerPhone.value,
+                  ),
             ),
           );
         },

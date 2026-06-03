@@ -14,6 +14,7 @@ import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:hopper/Core/Constants/log.dart';
+import 'package:hopper/Core/Firebase/firebase_service.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
@@ -134,6 +135,7 @@ class DriverMainController extends GetxController
   String? _lastResumedBookingId;
   String? _lastDismissedBookingId;
   bool _appInForeground = true;
+  bool _restoringPendingBookingRequest = false;
 
   final Rxn<Map<String, dynamic>> activeBookingData =
       Rxn<Map<String, dynamic>>();
@@ -488,10 +490,21 @@ class DriverMainController extends GetxController
     }
   }
 
+  String _preferredAddress(
+    Map<String, dynamic> data, {
+    required List<String> keys,
+  }) {
+    for (final key in keys) {
+      final value = (data[key] ?? '').toString().trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
   // ---------------- countdown ----------------
-  void startCountdown() {
+  void startCountdown([int? secondsOverride]) {
     countdownTimer?.cancel();
-    remainingSeconds.value = BookingRequestController.requestPopupSeconds;
+    remainingSeconds.value = _normalizeRequestCountdown(secondsOverride);
 
     countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (_disposed || isClosed) return;
@@ -503,6 +516,159 @@ class DriverMainController extends GetxController
         bookingController.clear();
       }
     });
+  }
+
+  int _normalizeRequestCountdown(int? seconds) {
+    final fallback = BookingRequestController.requestPopupSeconds;
+    final value = seconds ?? fallback;
+    if (value <= 0) return fallback;
+    return value > fallback ? fallback : value;
+  }
+
+  int? _remainingSecondsFromPayload(Map<String, dynamic> data) {
+    final raw = data['remainingSeconds'] ?? data['remainingTimeInSeconds'];
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
+  Future<void> _showBookingRequestPopup({
+    required Map<String, dynamic> booking,
+    int? remainingSecondsOverride,
+  }) async {
+    final pickup = booking['pickupLocation'];
+    final drop = booking['dropLocation'];
+
+    double? pickupLat;
+    double? pickupLng;
+    double? dropLat;
+    double? dropLng;
+
+    if (pickup is Map) {
+      pickupLat = (pickup['latitude'] as num?)?.toDouble();
+      pickupLng = (pickup['longitude'] as num?)?.toDouble();
+    }
+    if (drop is Map) {
+      dropLat = (drop['latitude'] as num?)?.toDouble();
+      dropLng = (drop['longitude'] as num?)?.toDouble();
+    }
+
+    final pickupAddressText = _preferredAddress(
+      booking,
+      keys: const ['pickupAddress', 'pickupLocationAddress'],
+    );
+    final dropAddressText = _preferredAddress(
+      booking,
+      keys: const ['dropAddress', 'dropLocationAddress'],
+    );
+
+    final pickupAddr =
+        pickupAddressText.isNotEmpty
+            ? pickupAddressText
+            : (pickupLat != null && pickupLng != null
+                ? await getAddressFromLatLng(pickupLat, pickupLng)
+                : 'Location not available');
+    final dropAddr =
+        dropAddressText.isNotEmpty
+            ? dropAddressText
+            : (dropLat != null && dropLng != null
+                ? await getAddressFromLatLng(dropLat, dropLng)
+                : 'Location not available');
+
+    if (_disposed || isClosed) return;
+
+    final countdown = _normalizeRequestCountdown(remainingSecondsOverride);
+    bookingController.showRequest(
+      rawData: booking,
+      pickupAddress: pickupAddr,
+      dropAddress: dropAddr,
+      remainingSeconds: countdown,
+    );
+    startCountdown(countdown);
+  }
+
+  Future<void> restorePendingBookingRequestFromNotification({
+    bool force = false,
+  }) async {
+    if (_disposed || isClosed) return;
+    if (_restoringPendingBookingRequest) return;
+    if (!force && bookingController.bookingRequestData.value != null) return;
+
+    _restoringPendingBookingRequest = true;
+    Map<String, dynamic>? queuedPayload;
+    try {
+      queuedPayload =
+          await FirebaseService.consumeQueuedBookingRequestNotification();
+      if (queuedPayload == null || queuedPayload.isEmpty) return;
+
+      final route = (queuedPayload['screen'] ?? '').toString().trim();
+      final type = (queuedPayload['type'] ?? '').toString().trim();
+      final bookingId = (queuedPayload['bookingId'] ?? '').toString().trim();
+
+      CommonLogger.log.i(
+        'Restore booking request from notification route=$route '
+        'type=$type bookingId=$bookingId payload=$queuedPayload',
+      );
+
+      if (bookingId.isEmpty) {
+        CommonLogger.log.w(
+          'Skipping booking-request restore because bookingId is empty',
+        );
+        return;
+      }
+
+      final result = await _apiDataSource.getPendingBookingRequest(
+        bookingId: bookingId,
+      );
+      if (_disposed || isClosed) return;
+
+      await result.fold((failure) async {
+        CommonLogger.log.w(
+          'Pending booking request restore failed for $bookingId: '
+          '${failure.message}',
+        );
+        if (queuedPayload != null) {
+          await FirebaseService.restoreQueuedBookingRequestNotification(
+            queuedPayload!,
+          );
+        }
+      }, (response) async {
+        if (!response.success || !response.hasPendingBookingRequest) {
+          CommonLogger.log.i(
+            'Pending booking request no longer valid for $bookingId '
+            'success=${response.success} '
+            'hasPending=${response.hasPendingBookingRequest}',
+          );
+          return;
+        }
+
+        final booking = response.data;
+        if (booking == null || booking.isEmpty) {
+          CommonLogger.log.w(
+            'Pending booking request restore returned empty data for $bookingId',
+          );
+          return;
+        }
+
+        final apiBookingId = (booking['bookingId'] ?? bookingId)
+            .toString()
+            .trim();
+        if (apiBookingId.isEmpty) return;
+        if (apiBookingId == bookingController.lastHandledBookingId.value) {
+          CommonLogger.log.i(
+            'Skipping restored popup because booking already handled: '
+            '$apiBookingId',
+          );
+          return;
+        }
+
+        await _showBookingRequestPopup(
+          booking: booking,
+          remainingSecondsOverride: _remainingSecondsFromPayload(booking),
+        );
+      });
+    } finally {
+      _restoringPendingBookingRequest = false;
+    }
   }
 
   // ---------------- camera follow ----------------
@@ -1435,8 +1601,22 @@ class DriverMainController extends GetxController
           return;
         }
 
-        final pickupAddr = await getAddressFromLatLng(fromLat, fromLng);
-        final dropAddr = await getAddressFromLatLng(toLat, toLng);
+        final pickupAddressText = _preferredAddress(
+          booking,
+          keys: const ['pickupAddress', 'pickupLocationAddress'],
+        );
+        final dropAddressText = _preferredAddress(
+          booking,
+          keys: const ['dropAddress', 'dropLocationAddress'],
+        );
+        final pickupAddr =
+            pickupAddressText.isNotEmpty
+                ? pickupAddressText
+                : await getAddressFromLatLng(fromLat, fromLng);
+        final dropAddr =
+            dropAddressText.isNotEmpty
+                ? dropAddressText
+                : await getAddressFromLatLng(toLat, toLng);
 
         if (_disposed || isClosed) return;
 
@@ -1468,8 +1648,22 @@ class DriverMainController extends GetxController
         return;
       }
 
-      final pickupAddr = await getAddressFromLatLng(pickupLat, pickupLng);
-      final dropAddr = await getAddressFromLatLng(dropLat, dropLng);
+      final pickupAddressText = _preferredAddress(
+        payload,
+        keys: const ['pickupAddress', 'pickupLocationAddress'],
+      );
+      final dropAddressText = _preferredAddress(
+        payload,
+        keys: const ['dropAddress', 'dropLocationAddress'],
+      );
+      final pickupAddr =
+          pickupAddressText.isNotEmpty
+              ? pickupAddressText
+              : await getAddressFromLatLng(pickupLat, pickupLng);
+      final dropAddr =
+          dropAddressText.isNotEmpty
+              ? dropAddressText
+              : await getAddressFromLatLng(dropLat, dropLng);
 
       if (_disposed || isClosed) return;
 
@@ -2189,6 +2383,8 @@ class DriverMainController extends GetxController
       requestDemandOpportunities(reason: 'app_resumed');
     }
 
+    unawaited(restorePendingBookingRequestFromNotification(force: true));
+
     // Update home stats when returning from other screens / background.
     unawaited(refreshHomeStats());
   }
@@ -2502,6 +2698,7 @@ class DriverMainController extends GetxController
       _listenSharedToggle();
       await initSocketAndLocation();
       await checkAndResumeActiveBooking();
+      await restorePendingBookingRequestFromNotification();
     } catch (e) {
       CommonLogger.log.e("prepare error: $e");
       ready.value = true;

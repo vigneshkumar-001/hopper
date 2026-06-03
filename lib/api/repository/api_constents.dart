@@ -75,6 +75,8 @@ class ApiConstents {
   static String get driverStatus => _u('/users/status');
   static String get driverActiveBooking => _u('/users/active-booking');
   static String get sharedDriverActiveBooking => _u('/users/active-booking');
+  static String pendingBookingRequest({required String bookingId}) =>
+      _u('/users/pending-booking-request?bookingId=$bookingId');
   // static String get sharedDriverActiveBooking => _u('/shared/driver/active-booking');
 
   // Demand opportunities

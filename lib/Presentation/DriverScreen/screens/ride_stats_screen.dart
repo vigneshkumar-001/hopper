@@ -416,6 +416,8 @@ class RideStatsScreen extends StatelessWidget {
                                           builder:
                                               (_) => ChatScreen(
                                                 bookingId: bookingId,
+                                                initialPhone:
+                                                    c.customerPhone.value,
                                               ),
                                         ),
                                       );

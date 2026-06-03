@@ -23,6 +23,7 @@ class BookingRequestController extends GetxController {
     required Map<String, dynamic> rawData,
     required String pickupAddress,
     required String dropAddress,
+    int? remainingSeconds,
   }) {
     final data = Map<String, dynamic>.from(rawData);
     data['pickupAddress'] = pickupAddress;
@@ -46,7 +47,13 @@ class BookingRequestController extends GetxController {
     _lastShownBookingId = incomingId;
     _lastShownAt = now;
     Get.find<DriverAnalyticsController>().trackOffer();
-    _startTimer(requestPopupSeconds);
+    _startTimer(_normalizedCountdown(remainingSeconds));
+  }
+
+  int _normalizedCountdown(int? seconds) {
+    final value = seconds ?? requestPopupSeconds;
+    if (value <= 0) return requestPopupSeconds;
+    return value > requestPopupSeconds ? requestPopupSeconds : value;
   }
 
   void _startTimer(int seconds) {

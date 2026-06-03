@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'Core/Constants/log.dart';
 import 'Core/Firebase/firebase_service.dart';
 import 'Core/Services/driver_background_location_service.dart';
+import 'Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'splash_screen.dart';
 import 'utils/init_Controller.dart';
 import 'utils/map/route_info.dart';
@@ -75,11 +76,17 @@ Future<void> _initFcmSafely() async {
 
     firebaseService.listenToMessages(
       onMessage: (msg) {
-        CommonLogger.log.i('📩 [FG] ${msg.messageId}');
+        _logFcmMessage('FG', msg);
         firebaseService.showNotification(msg);
       },
       onMessageOpenedApp: (msg) {
-        CommonLogger.log.i('📬 [OPENED] ${msg.messageId}');
+        _logFcmMessage('OPENED', msg);
+        if (Get.isRegistered<DriverMainController>()) {
+          unawaited(
+            Get.find<DriverMainController>()
+                .restorePendingBookingRequestFromNotification(force: true),
+          );
+        }
       },
     );
 
@@ -89,6 +96,13 @@ Future<void> _initFcmSafely() async {
     CommonLogger.log.e("❌ FCM init failed: $e");
     CommonLogger.log.e("STACK: $st");
   }
+}
+
+void _logFcmMessage(String phase, RemoteMessage msg) {
+  CommonLogger.log.i(
+    '📩 [$phase] messageId=${msg.messageId} data=${msg.data} '
+    'title=${msg.notification?.title} body=${msg.notification?.body}',
+  );
 }
 
 class MyApp extends StatelessWidget {

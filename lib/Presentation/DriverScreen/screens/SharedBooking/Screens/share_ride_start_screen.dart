@@ -565,6 +565,17 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     }
   }
 
+  String _preferredAddress(
+    Map<String, dynamic> data, {
+    required List<String> keys,
+  }) {
+    for (final key in keys) {
+      final value = (data[key] ?? '').toString().trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
   LatLng _destinationForTarget(SharedRiderItem rider) {
     return rider.stage == SharedRiderStage.waitingPickup
         ? rider.pickupLatLng
@@ -881,14 +892,28 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       final drop = data['dropLocation'];
       if (pickup == null || drop == null) return;
 
-      final pickupAddr = await getAddressFromLatLng(
-        _safeNum(pickup['latitude']) ?? 0,
-        _safeNum(pickup['longitude']) ?? 0,
+      final pickupAddressText = _preferredAddress(
+        data,
+        keys: const ['pickupAddress', 'pickupLocationAddress'],
       );
-      final dropAddr = await getAddressFromLatLng(
-        _safeNum(drop['latitude']) ?? 0,
-        _safeNum(drop['longitude']) ?? 0,
+      final dropAddressText = _preferredAddress(
+        data,
+        keys: const ['dropAddress', 'dropLocationAddress'],
       );
+      final pickupAddr =
+          pickupAddressText.isNotEmpty
+              ? pickupAddressText
+              : await getAddressFromLatLng(
+                _safeNum(pickup['latitude']) ?? 0,
+                _safeNum(pickup['longitude']) ?? 0,
+              );
+      final dropAddr =
+          dropAddressText.isNotEmpty
+              ? dropAddressText
+              : await getAddressFromLatLng(
+                _safeNum(drop['latitude']) ?? 0,
+                _safeNum(drop['longitude']) ?? 0,
+              );
 
       if (!mounted || _isDisposing) return;
       bookingController.showRequest(
@@ -1474,7 +1499,11 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => ChatScreen(bookingId: active.bookingId),
+                      builder:
+                          (_) => ChatScreen(
+                            bookingId: active.bookingId,
+                            initialPhone: active.phone,
+                          ),
                     ),
                   );
                 },

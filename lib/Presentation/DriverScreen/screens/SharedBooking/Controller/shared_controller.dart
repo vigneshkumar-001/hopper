@@ -148,8 +148,24 @@ class SharedController extends GetxController {
       final toLat = (customerLoc['toLatitude'] as num).toDouble();
       final toLng = (customerLoc['toLongitude'] as num).toDouble();
 
-      final pickupAddr = await _getAddressFromLatLng(fromLat, fromLng);
-      final dropoffAddr = await _getAddressFromLatLng(toLat, toLng);
+      final pickupAddr =
+          (data['pickupLocationAddress'] ?? data['pickupAddress'] ?? '')
+                  .toString()
+                  .trim()
+                  .isNotEmpty
+          ? (data['pickupLocationAddress'] ?? data['pickupAddress'] ?? '')
+              .toString()
+              .trim()
+          : await _getAddressFromLatLng(fromLat, fromLng);
+      final dropoffAddr =
+          (data['dropLocationAddress'] ?? data['dropoffAddress'] ?? data['dropAddress'] ?? '')
+                  .toString()
+                  .trim()
+                  .isNotEmpty
+          ? (data['dropLocationAddress'] ?? data['dropoffAddress'] ?? data['dropAddress'] ?? '')
+              .toString()
+              .trim()
+          : await _getAddressFromLatLng(toLat, toLng);
 
       final normalized = Map<String, dynamic>.from(data);
       normalized['pickupAddress'] = pickupAddr;

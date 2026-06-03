@@ -16,6 +16,15 @@ class ChatController extends GetxController {
   final RxString customerImage = ''.obs;
   final RxString customerPhone = ''.obs;
   final RxString driverImage = ''.obs;    // full URL or ''
+
+  void _showMessage(BuildContext context, String message) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> fetchChatHistory({
     required String bookingId,
     required String pickupLongitude,
@@ -34,7 +43,7 @@ class ChatController extends GetxController {
       results.fold(
             (failure) {
           isLoading.value = false;
-          Get.snackbar('Error', failure.message);
+          _showMessage(context, failure.message);
         },
             (response) {
           isLoading.value = false;
@@ -69,7 +78,7 @@ class ChatController extends GetxController {
       );
     } catch (_) {
       isLoading.value = false;
-      Get.snackbar('Error', 'An unexpected error occurred');
+      _showMessage(context, 'An unexpected error occurred');
     }
   }
 }

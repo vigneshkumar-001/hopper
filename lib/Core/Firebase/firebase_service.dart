@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -15,6 +17,90 @@ final FlutterLocalNotificationsPlugin _bgLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 bool _bgLocalNotificationsInitialized = false;
 
+const String _defaultChannelId = 'flutter_notification';
+const String _defaultChannelName = 'General Notifications';
+const String _bookingRequestChannelId = 'hopper_booking_request_alerts_v3';
+const String _bookingRequestChannelName = 'Booking Request Alerts';
+const String _bookingRequestSoundName = 'booking_request_alert';
+const String _pendingBookingRequestPayloadKey =
+    'pending_booking_request_notification_payload_v1';
+final Int64List _bookingVibrationPattern = Int64List.fromList(<int>[
+  0,
+  350,
+  220,
+  450,
+  220,
+  350,
+]);
+
+bool _isBookingRequestData(Map<String, dynamic> data) {
+  final type = (data['type'] ?? '').toString().trim().toLowerCase();
+  final screen = (data['screen'] ?? '').toString().trim().toLowerCase();
+  if (type == 'booking_request' ||
+      type == 'ride_request' ||
+      type == 'shared_ride_request' ||
+      type == 'parcel_request') {
+    return true;
+  }
+  return screen == 'booking_request';
+}
+
+String _notificationPayload(RemoteMessage message) {
+  final payload = <String, dynamic>{
+    'data': Map<String, dynamic>.from(message.data),
+    'title': (message.notification?.title ?? message.data['title'] ?? '')
+        .toString(),
+    'body': (message.notification?.body ?? message.data['body'] ?? '')
+        .toString(),
+  };
+  return jsonEncode(payload);
+}
+
+AndroidNotificationDetails _androidDetailsFor(Map<String, dynamic> data) {
+  final isBookingRequest = _isBookingRequestData(data);
+  if (isBookingRequest) {
+    return AndroidNotificationDetails(
+      _bookingRequestChannelId,
+      _bookingRequestChannelName,
+      channelDescription: 'Urgent alerts for incoming booking requests',
+      importance: Importance.max,
+      priority: Priority.max,
+      category: AndroidNotificationCategory.call,
+      ticker: 'New booking request',
+      visibility: NotificationVisibility.public,
+      enableVibration: true,
+      vibrationPattern: _bookingVibrationPattern,
+      playSound: true,
+      sound: const RawResourceAndroidNotificationSound(
+        _bookingRequestSoundName,
+      ),
+      audioAttributesUsage: AudioAttributesUsage.alarm,
+      fullScreenIntent: false,
+    );
+  }
+
+  return const AndroidNotificationDetails(
+    _defaultChannelId,
+    _defaultChannelName,
+    channelDescription: 'Channel for general high priority notifications',
+    importance: Importance.max,
+    priority: Priority.high,
+    playSound: true,
+  );
+}
+
+DarwinNotificationDetails _darwinDetailsFor(Map<String, dynamic> data) {
+  final isBookingRequest = _isBookingRequestData(data);
+    return DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      sound: isBookingRequest ? 'booking_request_alert.wav' : null,
+      interruptionLevel:
+          isBookingRequest ? InterruptionLevel.timeSensitive : null,
+    );
+}
+
 Future<void> _ensureBgLocalNotificationsInitialized() async {
   if (_bgLocalNotificationsInitialized) return;
 
@@ -25,6 +111,37 @@ Future<void> _ensureBgLocalNotificationsInitialized() async {
     await _bgLocalNotificationsPlugin.initialize(
       const InitializationSettings(android: androidInit, iOS: iosInit, macOS: iosInit),
     );
+    await _bgLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _defaultChannelId,
+            _defaultChannelName,
+            description: 'Channel for general high priority notifications',
+            importance: Importance.high,
+          ),
+        );
+    await _bgLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(
+          AndroidNotificationChannel(
+            _bookingRequestChannelId,
+            _bookingRequestChannelName,
+            description: 'Urgent alerts for incoming booking requests',
+            importance: Importance.max,
+            playSound: true,
+            sound: const RawResourceAndroidNotificationSound(
+              _bookingRequestSoundName,
+            ),
+            enableVibration: true,
+            vibrationPattern: _bookingVibrationPattern,
+            audioAttributesUsage: AudioAttributesUsage.alarm,
+          ),
+        );
   } catch (_) {
     // Best-effort; never throw in background isolate.
   }
@@ -42,26 +159,16 @@ Future<void> _showBgLocalNotification(RemoteMessage message) async {
 
   if (title.isEmpty && body.isEmpty && data.isEmpty) return;
 
-  const androidDetails = AndroidNotificationDetails(
-    'flutter_notification',
-    'flutter_notification_title',
-    channelDescription: 'Channel for high priority notifications',
-    importance: Importance.max,
-    priority: Priority.high,
-    playSound: true,
-  );
-  const iosDetails = DarwinNotificationDetails(
-    presentAlert: true,
-    presentBadge: true,
-    presentSound: true,
-  );
+  final androidDetails = _androidDetailsFor(data);
+  final iosDetails = _darwinDetailsFor(data);
 
   try {
     await _bgLocalNotificationsPlugin.show(
       Random().nextInt(1 << 31),
       title,
       body,
-      const NotificationDetails(android: androidDetails, iOS: iosDetails),
+      NotificationDetails(android: androidDetails, iOS: iosDetails),
+      payload: _notificationPayload(message),
     );
   } catch (_) {
     // ignore
@@ -77,7 +184,10 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     // Never crash background isolate.
     CommonLogger.log.w('FCM [BG] Firebase init failed: $e');
   }
-  CommonLogger.log.d('FCM [BG] message received: ${message.messageId}');
+  CommonLogger.log.d(
+    'FCM [BG] message received: ${message.messageId} data=${message.data} '
+    'title=${message.notification?.title} body=${message.notification?.body}',
+  );
 }
 
 class FirebaseService {
@@ -89,11 +199,26 @@ class FirebaseService {
       Get.isRegistered<OtpController>() ? Get.find<OtpController>() : Get.put(OtpController());
 
   final AndroidNotificationChannel channel = const AndroidNotificationChannel(
-    'flutter_notification',
-    'flutter_notification_title',
-    description: 'Channel for high priority notifications',
+    _defaultChannelId,
+    _defaultChannelName,
+    description: 'Channel for general high priority notifications',
     importance: Importance.high,
   );
+
+  final AndroidNotificationChannel bookingRequestChannel =
+      AndroidNotificationChannel(
+        _bookingRequestChannelId,
+        _bookingRequestChannelName,
+        description: 'Urgent alerts for incoming booking requests',
+        importance: Importance.max,
+        playSound: true,
+        sound: const RawResourceAndroidNotificationSound(
+          _bookingRequestSoundName,
+        ),
+        enableVibration: true,
+        vibrationPattern: _bookingVibrationPattern,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+      );
 
   String? _fcmToken;
   String? get fcmToken => _fcmToken;
@@ -101,6 +226,52 @@ class FirebaseService {
   bool _tokenRefreshAttached = false;
   Timer? _tokenRetryTimer;
   int _tokenRetryCount = 0;
+
+  static Future<void> queueBookingRequestNotification(
+    Map<String, dynamic> data,
+  ) async {
+    final sanitized = Map<String, dynamic>.from(data);
+    if (!_isBookingRequestData(sanitized)) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _pendingBookingRequestPayloadKey,
+        jsonEncode(sanitized),
+      );
+      CommonLogger.log.i(
+        'Queued booking request notification payload: $sanitized',
+      );
+    } catch (e) {
+      CommonLogger.log.w('Failed to queue booking request payload: $e');
+    }
+  }
+
+  static Future<void> restoreQueuedBookingRequestNotification(
+    Map<String, dynamic> data,
+  ) async {
+    await queueBookingRequestNotification(data);
+  }
+
+  static Future<Map<String, dynamic>?> consumeQueuedBookingRequestNotification()
+  async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_pendingBookingRequestPayloadKey);
+      if (raw == null || raw.trim().isEmpty) return null;
+      await prefs.remove(_pendingBookingRequestPayloadKey);
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        final data = Map<String, dynamic>.from(decoded);
+        CommonLogger.log.i(
+          'Consumed queued booking request notification payload: $data',
+        );
+        return data;
+      }
+    } catch (e) {
+      CommonLogger.log.w('Failed to consume booking request payload: $e');
+    }
+    return null;
+  }
 
   Future<void> initializeFirebase() async {
     // Handler also registered in main, but safe to keep.
@@ -121,10 +292,19 @@ class FirebaseService {
         onDidReceiveNotificationResponse: (response) {
           final payload = response.payload;
           if (payload != null && payload.isNotEmpty) {
-            _handleNotificationTap(payload);
+            _handleNotificationTapPayload(payload);
           }
         },
       );
+      final launchDetails =
+          await flutterLocalNotificationsPlugin
+              .getNotificationAppLaunchDetails();
+      final launchPayload =
+          launchDetails?.notificationResponse?.payload ?? '';
+      if (launchDetails?.didNotificationLaunchApp == true &&
+          launchPayload.isNotEmpty) {
+        _handleNotificationTapPayload(launchPayload);
+      }
     } catch (e) {
       CommonLogger.log.w('Local notifications init failed: $e');
     }
@@ -133,6 +313,11 @@ class FirebaseService {
       await flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(channel);
+      await flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.createNotificationChannel(bookingRequestChannel);
     } catch (e) {
       CommonLogger.log.w('Notification channel create failed: $e');
     }
@@ -275,22 +460,29 @@ class FirebaseService {
 
   Future<void> showNotification(RemoteMessage message) async {
     try {
-      final androidDetails = AndroidNotificationDetails(
-        channel.id,
-        channel.name,
-        channelDescription: channel.description,
-        importance: Importance.max,
-        priority: Priority.high,
+      final androidDetails = _androidDetailsFor(message.data);
+      final iosDetails = _darwinDetailsFor(message.data);
+      final notificationDetails = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+      final bookingId = (message.data['bookingId'] ?? '').toString();
+      final notificationId =
+          int.tryParse(bookingId.replaceAll(RegExp(r'[^0-9]'), '')) ??
+          Random().nextInt(1 << 31);
+      CommonLogger.log.i(
+        'Showing local notification id=$notificationId '
+        'channel=${_isBookingRequestData(message.data) ? _bookingRequestChannelId : _defaultChannelId} '
+        'bookingId=$bookingId sound=${_isBookingRequestData(message.data) ? _bookingRequestSoundName : 'default'}',
       );
 
-      final notificationDetails = NotificationDetails(android: androidDetails);
-
       await flutterLocalNotificationsPlugin.show(
-        0,
-        message.notification?.title ?? 'Notification',
-        message.notification?.body ?? '',
+        notificationId,
+        (message.notification?.title ?? message.data['title'] ?? 'Notification')
+            .toString(),
+        (message.notification?.body ?? message.data['body'] ?? '').toString(),
         notificationDetails,
-        payload: message.data['screen']?.toString() ?? '',
+        payload: _notificationPayload(message),
       );
     } catch (e) {
       CommonLogger.log.w('showNotification failed: $e');
@@ -306,12 +498,12 @@ class FirebaseService {
         onMessage(msg);
       });
       FirebaseMessaging.onMessageOpenedApp.listen((msg) {
-        _handleNotificationTap(msg.data['screen']?.toString());
+        _handleNotificationTapData(msg.data);
         onMessageOpenedApp(msg);
       });
       FirebaseMessaging.instance.getInitialMessage().then((msg) {
         if (msg != null) {
-          _handleNotificationTap(msg.data['screen']?.toString());
+          _handleNotificationTapData(msg.data);
           onMessageOpenedApp(msg);
         }
       });
@@ -320,15 +512,58 @@ class FirebaseService {
     }
   }
 
-  void _handleNotificationTap(String? route) {
-    if (route == null || route.isEmpty) return;
+  void _handleNotificationTapPayload(String payload) {
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is Map) {
+        final root = Map<String, dynamic>.from(decoded);
+        final nested = root['data'];
+        if (nested is Map) {
+          final merged = Map<String, dynamic>.from(nested);
+          if (!merged.containsKey('title') && root['title'] != null) {
+            merged['title'] = root['title'];
+          }
+          if (!merged.containsKey('body') && root['body'] != null) {
+            merged['body'] = root['body'];
+          }
+          _handleNotificationTapData(merged);
+          return;
+        }
+        _handleNotificationTapData(root);
+        return;
+      }
+    } catch (_) {}
+    _handleNotificationTapData(<String, dynamic>{
+      'screen': payload,
+    });
+  }
+
+  void _handleNotificationTapData(Map<String, dynamic> data) {
+    final fallbackRoute =
+        _isBookingRequestData(data) ? 'booking_request' : '';
+    final route = ((data['screen'] ?? '').toString().trim().isNotEmpty
+            ? data['screen']
+            : fallbackRoute)
+        .toString();
+    final type = (data['type'] ?? '').toString();
+    final bookingId = (data['bookingId'] ?? '').toString();
+    if (route.isEmpty) return;
     try {
       switch (route) {
         case 'attendance':
           Get.toNamed('/attendance');
           break;
+        case 'booking_request':
+          unawaited(queueBookingRequestNotification(data));
+          CommonLogger.log.i(
+            'Booking request notification opened type=$type bookingId=$bookingId '
+            'payload=$data',
+          );
+          break;
         default:
-          CommonLogger.log.i('Unknown route: $route');
+          CommonLogger.log.i(
+            'Unknown route: $route type=$type bookingId=$bookingId',
+          );
           break;
       }
     } catch (_) {}

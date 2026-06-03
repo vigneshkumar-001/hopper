@@ -22,18 +22,21 @@ class BookingAcceptedData {
   final String bookingId;
   final String driverId;
   final String status;
+  final String nextDriverId;
 
   BookingAcceptedData({
     required this.bookingId,
     required this.driverId,
     required this.status,
+    required this.nextDriverId,
   });
 
   factory BookingAcceptedData.fromJson(Map<String, dynamic> json) {
     return BookingAcceptedData(
-      bookingId: json['bookingId'],
-      driverId: json['driverId'],
-      status: json['status'],
+      bookingId: (json['bookingId'] ?? '').toString(),
+      driverId: (json['driverId'] ?? '').toString(),
+      status: (json['status'] ?? '').toString(),
+      nextDriverId: (json['nextDriverId'] ?? '').toString(),
     );
   }
 }

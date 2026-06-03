@@ -36,6 +36,7 @@ import '../../Presentation/Drawer/model/shared_booking_response.dart';
 import '../../Presentation/Drawer/model/wallet_history_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/booking_accept_model.dart';
 import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_response.dart';
+import 'package:hopper/Presentation/DriverScreen/models/pending_booking_request_response.dart';
 import '../../Presentation/DriverScreen/models/cash_collected_response.dart';
 import '../../Presentation/DriverScreen/models/chat_history_response.dart';
 import '../../Presentation/DriverScreen/models/driver_online_status_model.dart';
@@ -1369,6 +1370,36 @@ class ApiDataSource extends BaseApiDataSource {
         return Left(ServerFailure(response.data['message'] ?? "Unknown error"));
       } else {
         return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  Future<Either<Failure, PendingBookingRequestResponse>>
+  getPendingBookingRequest({required String bookingId}) async {
+    try {
+      final url = ApiConstents.pendingBookingRequest(bookingId: bookingId);
+      final response = await Request.sendGetRequest(url, {}, 'GET', true);
+
+      if (response is Response && response.statusCode == 200) {
+        final body =
+            response.data is Map<String, dynamic>
+                ? response.data as Map<String, dynamic>
+                : <String, dynamic>{};
+        return Right(PendingBookingRequestResponse.fromJson(body));
+      } else if (response is Response) {
+        final message =
+            response.data is Map<String, dynamic>
+                ? (response.data['message'] ??
+                        response.data['error'] ??
+                        'Unable to restore booking request')
+                    .toString()
+                : 'Unable to restore booking request';
+        return Left(ServerFailure(message));
+      } else {
+        return Left(ServerFailure('Unexpected error'));
       }
     } catch (e) {
       CommonLogger.log.e(e);

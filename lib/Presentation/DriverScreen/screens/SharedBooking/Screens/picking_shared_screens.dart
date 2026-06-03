@@ -1242,7 +1242,10 @@ class _PickingCustomerSharedScreenState
                     bgColor: _C.blueLight,
                     onTap:
                         () => Get.to(
-                          () => ChatScreen(bookingId: rider.bookingId),
+                          () => ChatScreen(
+                            bookingId: rider.bookingId,
+                            initialPhone: rider.phone,
+                          ),
                         ),
                   ),
                 ],
