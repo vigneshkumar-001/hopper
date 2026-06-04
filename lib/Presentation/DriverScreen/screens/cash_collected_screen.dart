@@ -149,6 +149,42 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
         : const Color(0xFFD93025);
   }
 
+  Widget _buildPaymentInfoTile({
+    required IconData icon,
+    required String title,
+    required Widget trailing,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFD0D5DD),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Align(alignment: Alignment.centerRight, child: trailing),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAvatar(String imageUrl) {
     if (imageUrl.isEmpty) {
       return Container(
@@ -320,84 +356,52 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                         ),
                                       ),
                                     ),
-                                    child: Column(
+                                   child: Column(
                                       children: [
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.payments_outlined,
+                                        _buildPaymentInfoTile(
+                                          icon: Icons.payments_outlined,
+                                          title: 'Payment type',
+                                          trailing: Text(
+                                            paymentType.isEmpty
+                                                ? 'Cash'
+                                                : paymentType,
+                                            style: const TextStyle(
                                               color: Colors.white,
-                                              size: 18,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w700,
                                             ),
-                                            const SizedBox(width: 10),
-                                            const Expanded(
-                                              child: Text(
-                                                'Payment type',
-                                                style: TextStyle(
-                                                  color: Color(0xFFD0D5DD),
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 14),
+                                        _buildPaymentInfoTile(
+                                          icon: Icons.verified_outlined,
+                                          title: 'Payment status',
+                                          trailing: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 7,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: _paymentStatusColor(
+                                                paymentStatus,
+                                              ).withValues(alpha: 0.18),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: Text(
+                                              paymentStatus.isEmpty
+                                                  ? 'Pending'
+                                                  : paymentStatus,
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                color: _paymentStatusColor(
+                                                  paymentStatus,
                                                 ),
-                                              ),
-                                            ),
-                                            Text(
-                                              paymentType.isEmpty
-                                                  ? 'Cash'
-                                                  : paymentType,
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 14,
+                                                fontSize: 12,
                                                 fontWeight: FontWeight.w700,
                                               ),
                                             ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 14),
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.verified_outlined,
-                                              color: Colors.white,
-                                              size: 18,
-                                            ),
-                                            const SizedBox(width: 10),
-                                            const Expanded(
-                                              child: Text(
-                                                'Payment status',
-                                                style: TextStyle(
-                                                  color: Color(0xFFD0D5DD),
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
-                                            ),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 10,
-                                                    vertical: 6,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: _paymentStatusColor(
-                                                  paymentStatus,
-                                                ).withValues(alpha: 0.18),
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
-                                              ),
-                                              child: Text(
-                                                paymentStatus.isEmpty
-                                                    ? 'Pending'
-                                                    : paymentStatus,
-                                                style: TextStyle(
-                                                  color: _paymentStatusColor(
-                                                    paymentStatus,
-                                                  ),
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
+                                          ),
                                         ),
                                       ],
                                     ),

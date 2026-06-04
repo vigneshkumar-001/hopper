@@ -69,6 +69,10 @@ class RideStatsScreen extends StatelessWidget {
             ? Get.find<ApiConfigController>().socketUrl
             : ApiConfigController.singleSocket;
 
+    await _navigationService.markExternalNavigationReturnPending(
+      source: 'single_drop_google_maps',
+    );
+
     // Hand-off before launching external Google Maps (single socket session).
     if (Get.isRegistered<DriverMainController>()) {
       await Get.find<DriverMainController>().onAppPaused();

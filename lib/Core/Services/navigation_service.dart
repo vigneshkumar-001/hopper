@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class NavigationService {
@@ -9,8 +10,64 @@ class NavigationService {
   factory NavigationService() => _instance;
   NavigationService._internal();
 
+  static const String _navReturnPendingKey = 'nav_return_pending';
+  static const String _navReturnSetAtKey = 'nav_return_set_at_ms';
+  static const String _navReturnSourceKey = 'nav_return_source';
+
   static const MethodChannel _channel =
       MethodChannel('hopper/navigation_intents');
+
+  Future<void> markExternalNavigationReturnPending({
+    String source = 'trip_navigation',
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_navReturnPendingKey, true);
+      await prefs.setInt(
+        _navReturnSetAtKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+      await prefs.setString(_navReturnSourceKey, source);
+    } catch (_) {}
+  }
+
+  Future<bool> consumeExternalNavigationReturnPending({
+    Duration maxAge = const Duration(hours: 6),
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = await hasExternalNavigationReturnPending(maxAge: maxAge);
+      await clearExternalNavigationReturnPending();
+      return pending;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> hasExternalNavigationReturnPending({
+    Duration maxAge = const Duration(hours: 6),
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = prefs.getBool(_navReturnPendingKey) ?? false;
+      final setAtMs = prefs.getInt(_navReturnSetAtKey) ?? 0;
+      if (!pending || setAtMs <= 0) return false;
+      final setAt = DateTime.fromMillisecondsSinceEpoch(setAtMs);
+      if (DateTime.now().difference(setAt) > maxAge) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> clearExternalNavigationReturnPending() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_navReturnPendingKey);
+      await prefs.remove(_navReturnSetAtKey);
+      await prefs.remove(_navReturnSourceKey);
+    } catch (_) {}
+  }
 
   /// Request the required location permissions for background tracking.
   ///

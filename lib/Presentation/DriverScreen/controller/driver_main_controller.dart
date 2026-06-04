@@ -24,6 +24,7 @@ import 'package:hopper/utils/websocket/socket_io_client.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 import '../../../api/repository/api_config_controller.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
+import 'package:hopper/Core/Services/navigation_service.dart';
 import 'package:hopper/utils/map/map_motion_profile.dart';
 import 'package:hopper/utils/map/app_map_style.dart';
 import 'package:hopper/utils/map/vehicle_marker_icon.dart';
@@ -1971,6 +1972,9 @@ class DriverMainController extends GetxController
     if (_disposed || isClosed) return;
     if (_checkingActiveBooking) return;
 
+    final shouldAutoResumeFromExternalNav =
+        await NavigationService().hasExternalNavigationReturnPending();
+
     final now = DateTime.now();
     final last = _lastActiveBookingCheckAt;
     if (!force &&
@@ -1993,6 +1997,9 @@ class DriverMainController extends GetxController
           _lastDismissedBookingId = null;
           showActiveBookingCard.value = false;
           socketService.clearAllBookingRooms();
+          if (shouldAutoResumeFromExternalNav) {
+            await NavigationService().clearExternalNavigationReturnPending();
+          }
           return;
         }
         final data = response.data;
@@ -2000,6 +2007,9 @@ class DriverMainController extends GetxController
           activeBookingData.value = null;
           showActiveBookingCard.value = false;
           socketService.clearAllBookingRooms();
+          if (shouldAutoResumeFromExternalNav) {
+            await NavigationService().clearExternalNavigationReturnPending();
+          }
           return;
         }
 
@@ -2061,6 +2071,9 @@ class DriverMainController extends GetxController
           _lastDismissedBookingId = null;
           showActiveBookingCard.value = false;
           socketService.clearAllBookingRooms();
+          if (shouldAutoResumeFromExternalNav) {
+            await NavigationService().clearExternalNavigationReturnPending();
+          }
           return;
         }
 
@@ -2083,6 +2096,14 @@ class DriverMainController extends GetxController
           showActiveBookingCard.value = false;
         } else {
           showActiveBookingCard.value = true;
+        }
+
+        if (shouldAutoResumeFromExternalNav) {
+          await NavigationService().clearExternalNavigationReturnPending();
+          Future<void>.delayed(const Duration(milliseconds: 120), () async {
+            if (_disposed || isClosed) return;
+            await resumeActiveBooking();
+          });
         }
       });
     } finally {

@@ -65,7 +65,7 @@ class OtpController extends GetxController {
 
           if (formStatus == 3) {
             await prefs.setBool("isVerified", true);
-            Get.off(() => DriverMainScreen());
+            Get.offAll(() => DriverMainScreen());
             unawaited(controller.getDriverStatus());
           } else if (formStatus == 2) {
             await prefs.setBool("isVerified", true);
@@ -76,9 +76,9 @@ class OtpController extends GetxController {
             );
             unawaited(chooseCtrl.getUserDetails());
           } else if (formStatus == 1 && userStatus == 'new') {
-            Get.off(() => TermsScreen());
+            Get.offAll(() => TermsScreen());
           } else if (formStatus == 1 && userStatus == 'exist') {
-            Get.off(() => const PostOtpRoutingScreen());
+            Get.offAll(() => const PostOtpRoutingScreen());
           } else {
             CommonLogger.log.i('Basic Info');
           }

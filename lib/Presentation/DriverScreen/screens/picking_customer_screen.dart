@@ -175,6 +175,10 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
             ? Get.find<ApiConfigController>().socketUrl
             : ApiConfigController.singleSocket;
 
+    await _navigationService.markExternalNavigationReturnPending(
+      source: 'single_pickup_google_maps',
+    );
+
     // Hand-off before launching external Google Maps (single socket session).
     if (Get.isRegistered<DriverMainController>()) {
       await Get.find<DriverMainController>().onAppPaused();
