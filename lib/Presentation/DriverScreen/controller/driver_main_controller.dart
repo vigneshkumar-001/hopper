@@ -36,6 +36,7 @@ import 'package:hopper/Presentation/DriverScreen/screens/background_service.dart
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/demand_opportunities_models.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/picking_shared_screens.dart';
@@ -94,6 +95,9 @@ class DriverMainController extends GetxController
   Timer? emitTimer;
   Timer? heartbeatTimer;
   Map<String, dynamic>? latestLocationPayload;
+  // Last GPS heading captured while actually moving. Reused when stopped so the
+  // emitted bearing doesn't jump to random values (customer car won't spin).
+  double _lastEmitBearing = 0.0;
   String? _lastSentLocationTimestamp;
   DateTime? _lastLocationEmitAt;
   DateTime? _lastMovedAt;
@@ -169,7 +173,10 @@ class DriverMainController extends GetxController
   // Demand marker style toggle (kept mutable to avoid constant-folding)
   bool useDefaultDemandMarker = false;
 
-  static const Duration _activeTripFastEmitInterval = Duration(seconds: 3);
+  // Active trip: emit ~1s so the customer map glides like Uber/Ola (was 3s,
+  // which made the customer marker jump between updates). Idle/online intervals
+  // below stay larger to protect battery + data when there's no live ride.
+  static const Duration _activeTripFastEmitInterval = Duration(seconds: 1);
   static const Duration _onlineMovingEmitInterval = Duration(seconds: 5);
   static const Duration _onlineSlowEmitInterval = Duration(seconds: 8);
   static const Duration _movementIdleCutoff = Duration(seconds: 20);
@@ -924,6 +931,15 @@ class DriverMainController extends GetxController
       await statusController.weeklyChallenges();
     } catch (_) {}
 
+    try {
+      if (Get.isRegistered<RideHistoryController>()) {
+        await Get.find<RideHistoryController>().customerWalletHistory(
+          isRefresh: true,
+          showErrors: false,
+        );
+      }
+    } catch (_) {}
+
     final type = statusController.serviceType.value.trim().toLowerCase();
     try {
       if (type == 'car') {
@@ -1347,7 +1363,9 @@ class DriverMainController extends GetxController
     locationSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 8,
+        // 8 -> 5: produce GPS fixes a bit more often (esp. in slow traffic) so
+        // the ~1s active-trip emit actually has fresh positions to send.
+        distanceFilter: 5,
       ),
     ).listen((pos) {
       if (_disposed || isClosed) return;
@@ -1424,6 +1442,13 @@ class DriverMainController extends GetxController
         }
       }
 
+      // Bearing: trust GPS heading only while moving, and remember it. When
+      // stopped (<1 m/s) GPS heading is random, so reuse the last good bearing.
+      final headingValid = pos.heading.isFinite && pos.heading >= 0;
+      if (speedMs >= 1.0 && headingValid) {
+        _lastEmitBearing = pos.heading;
+      }
+
       final bookingIdForPayload = _resolveBookingIdForLocationPayload();
       latestLocationPayload = {
         'userId': driverId,
@@ -1432,11 +1457,13 @@ class DriverMainController extends GetxController
         'longitude': current.longitude,
         'lat': current.latitude,
         'lng': current.longitude,
-        'bearing': pos.heading.isFinite ? pos.heading : 0.0,
+        'bearing': _lastEmitBearing,
         'speed': speedMs.isFinite ? speedMs : 0.0,
         'accuracy': accuracyM.isFinite ? accuracyM : null,
         if (bookingIdForPayload != null) 'bookingId': bookingIdForPayload,
-        'timestamp': now.toIso8601String(),
+        // DEVICE GPS fix time in UTC (not local send-time) so the customer can
+        // order/interpolate points correctly.
+        'timestamp': pos.timestamp.toUtc().toIso8601String(),
       };
 
       updateCarMarker(
@@ -1451,7 +1478,9 @@ class DriverMainController extends GetxController
     if (_disposed || isClosed) return;
     if (token != _emitLoopToken) return;
 
-    final localEmitTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    // Check every 1s so an active trip can emit at ~1s. Idle/online emits stay
+    // throttled by _preferredLocationEmitInterval (5–8s), so battery is safe.
+    final localEmitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_disposed || isClosed) return;
       if (token != _emitLoopToken) return;
       if (!statusController.isOnline.value) return;

@@ -71,7 +71,10 @@ class RideHistoryController extends GetxController {
     }
   }
 
-  Future<void> customerWalletHistory({bool isRefresh = false}) async {
+  Future<void> customerWalletHistory({
+    bool isRefresh = false,
+    bool showErrors = true,
+  }) async {
 
     if (isMoreLoading.value || isLoading.value) return;
 
@@ -90,7 +93,9 @@ class RideHistoryController extends GetxController {
 
       results.fold(
             (failure) {
-          CustomSnackBar.showError(failure.message);
+          if (showErrors) {
+            CustomSnackBar.showError(failure.message);
+          }
         },
             (response) {
           final newItems = response.transactions;

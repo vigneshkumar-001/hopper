@@ -200,7 +200,10 @@ void onStart(ServiceInstance service) async {
   const double maxAccuracyM = 25.0;
   const double stationaryJumpM = 30.0;
   const double jumpAcceptAccuracyM = 12.0;
-  const Duration minEmitInterval = Duration(seconds: 3);
+  // Background (driver navigating in Google Maps): emit ~1s so the customer map
+  // keeps gliding, same as foreground. The movement/jitter filters below still
+  // stop emits while the driver is actually stationary, protecting battery.
+  const Duration minEmitInterval = Duration(seconds: 1);
 
   double? lastLat;
   double? lastLng;
@@ -322,7 +325,8 @@ void onStart(ServiceInstance service) async {
   positionSub = Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 8,
+      // 8 -> 5: more frequent fixes in slow traffic so the ~1s emit has fresh data.
+      distanceFilter: 5,
     ),
   ).listen((position) {
     if (driverId == null || driverId!.trim().isEmpty) return;
@@ -376,7 +380,8 @@ void onStart(ServiceInstance service) async {
       'accuracy': position.accuracy,
       if (currentBookingId != null) 'bookingId': currentBookingId,
       if (currentBookingId != null) 'rideId': currentBookingId,
-      'timestamp': now.toIso8601String(),
+      // Device GPS fix time in UTC (not local send-time) for correct ordering.
+      'timestamp': position.timestamp.toUtc().toIso8601String(),
     };
     if (!socket.connected) {
       _pendingEvent = 'updateLocation';

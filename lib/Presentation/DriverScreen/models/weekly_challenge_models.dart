@@ -16,10 +16,25 @@ class WeeklyChallengeModels {
 
 class WeeklyActivityData {
   final int goal;
-  final int reward;
+  final double reward;
   final int totalTrips;
-  final int progressPercent;
+  final double progressPercent;
   final String endsOn;
+  final String challengeStatus;
+  final String headline;
+  final String subtext;
+  final String badgeText;
+  final String highlightTone;
+  final String progressText;
+  final int remainingTrips;
+  final bool rewardCredited;
+  final String rewardCreditedAt;
+  final double rewardCreditedAmount;
+  final String rewardReference;
+  final bool challengeActive;
+  final bool challengeCompleted;
+  final String rewardDisplayAmount;
+  final String weekStart;
 
   WeeklyActivityData({
     required this.goal,
@@ -27,15 +42,46 @@ class WeeklyActivityData {
     required this.totalTrips,
     required this.progressPercent,
     required this.endsOn,
+    required this.challengeStatus,
+    required this.headline,
+    required this.subtext,
+    required this.badgeText,
+    required this.highlightTone,
+    required this.progressText,
+    required this.remainingTrips,
+    required this.rewardCredited,
+    required this.rewardCreditedAt,
+    required this.rewardCreditedAmount,
+    required this.rewardReference,
+    required this.challengeActive,
+    required this.challengeCompleted,
+    required this.rewardDisplayAmount,
+    required this.weekStart,
   });
 
   factory WeeklyActivityData.fromJson(Map<String, dynamic> json) {
     return WeeklyActivityData(
       goal: (json['goal'] as num?)?.toInt() ?? 0,
-      reward: (json['reward'] as num?)?.toInt() ?? 0,
+      reward: (json['reward'] as num?)?.toDouble() ?? 0.0,
       totalTrips: (json['totalTrips'] as num?)?.toInt() ?? 0,
-      progressPercent: (json['progressPercent'] as num?)?.toInt() ?? 0,
+      progressPercent: (json['progressPercent'] as num?)?.toDouble() ?? 0.0,
       endsOn: (json['endsOn'] ?? '').toString(),
+      challengeStatus: (json['status'] ?? '').toString(),
+      headline: (json['headline'] ?? '').toString(),
+      subtext: (json['subtext'] ?? '').toString(),
+      badgeText: (json['badgeText'] ?? '').toString(),
+      highlightTone: (json['highlightTone'] ?? '').toString(),
+      progressText: (json['progressText'] ?? '').toString(),
+      remainingTrips: (json['remainingTrips'] as num?)?.toInt() ?? 0,
+      rewardCredited: json['rewardCredited'] == true,
+      rewardCreditedAt: (json['rewardCreditedAt'] ?? '').toString(),
+      rewardCreditedAmount:
+          (json['rewardCreditedAmount'] as num?)?.toDouble() ?? 0.0,
+      rewardReference: (json['rewardReference'] ?? '').toString(),
+      challengeActive: json['challengeActive'] == true,
+      challengeCompleted: json['challengeCompleted'] == true,
+      rewardDisplayAmount: (json['rewardDisplayAmount'] ?? '').toString(),
+      weekStart: (json['weekStart'] ?? '').toString(),
     );
   }
 
@@ -45,5 +91,20 @@ class WeeklyActivityData {
     'totalTrips': totalTrips,
     'progressPercent': progressPercent,
     'endsOn': endsOn,
+    'status': challengeStatus,
+    'headline': headline,
+    'subtext': subtext,
+    'badgeText': badgeText,
+    'highlightTone': highlightTone,
+    'progressText': progressText,
+    'remainingTrips': remainingTrips,
+    'rewardCredited': rewardCredited,
+    'rewardCreditedAt': rewardCreditedAt,
+    'rewardCreditedAmount': rewardCreditedAmount,
+    'rewardReference': rewardReference,
+    'challengeActive': challengeActive,
+    'challengeCompleted': challengeCompleted,
+    'rewardDisplayAmount': rewardDisplayAmount,
+    'weekStart': weekStart,
   };
 }

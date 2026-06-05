@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
@@ -12,11 +12,11 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
-import 'package:hopper/Core/Utility/date_time_converter.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/ride_map/ride_map_view.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
+import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
 import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/models/demand_opportunities_models.dart';
@@ -42,7 +42,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // âœ… create once (or reuse if already exists)
+    // Ã¢Å“â€¦ create once (or reuse if already exists)
     if (Get.isRegistered<DriverMainController>()) {
       c = Get.find<DriverMainController>();
     } else {
@@ -148,7 +148,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                   Expanded(
                     child: Stack(
                       children: [
-                        // âœ… Map rebuilt only by GetBuilder(id: 'map')
+                        // Ã¢Å“â€¦ Map rebuilt only by GetBuilder(id: 'map')
                         GetBuilder<DriverMainController>(
                           id: 'map',
                           builder: (_) {
@@ -460,7 +460,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
 }
 
 // ==========================================================
-// âœ… Glass Header widget (same UI)
+// Ã¢Å“â€¦ Glass Header widget (same UI)
 // ==========================================================
 class _GlassHeader extends StatelessWidget {
   const _GlassHeader({
@@ -1093,6 +1093,10 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                 onRefresh: () async {
                   await Get.find<ChooseServiceController>().getUserDetails();
                   await widget.statusController.weeklyChallenges();
+                  await Get.find<RideHistoryController>().customerWalletHistory(
+                    isRefresh: true,
+                    showErrors: false,
+                  );
                   final main = Get.find<DriverMainController>();
                   main.requestDemandOpportunities(reason: 'pull_to_refresh');
                   await main.fetchDemandOpportunities(silent: true);
@@ -1913,26 +1917,26 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                 final progressPercent =
                                     isCar
                                         ? (weeklyData?.progressPercent ?? 0)
-                                            .toDouble()
                                         : (parcelWeekly?.progressPercent ??
                                             0.0);
 
                                 DateTime? endsOn;
-                                if (isCar) {
-                                  endsOn = DateAndTimeConvert.tryParseFlexible(
-                                    (weeklyData?.endsOn ?? '').toString(),
-                                  );
-                                } else {
+                                if (!isCar) {
                                   endsOn = parcelWeekly?.endsOn;
-                                }
-                                if (endsOn != null &&
-                                    endsOn.millisecondsSinceEpoch == 0) {
-                                  endsOn = null;
+                                  if (endsOn != null &&
+                                      endsOn.millisecondsSinceEpoch == 0) {
+                                    endsOn = null;
+                                  }
                                 }
                                 final endsLabel =
-                                    endsOn == null
-                                        ? 'Ends on -'
-                                        : 'Ends on ${DateFormat('EEEE').format(endsOn)}';
+                                    isCar
+                                        ? ((weeklyData?.endsOn ?? '').trim()
+                                                    .isNotEmpty
+                                                ? 'Ends on ${weeklyData!.endsOn}'
+                                                : 'Ends on -')
+                                        : (endsOn == null
+                                            ? 'Ends on -'
+                                            : 'Ends on ${DateFormat('EEEE').format(endsOn)}');
 
                                 final hasWeeklyData =
                                     isCar
@@ -1943,6 +1947,108 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                   0.0,
                                   1.0,
                                 );
+
+                                final challengeStatus =
+                                    (weeklyData?.challengeStatus ?? '')
+                                        .trim()
+                                        .toUpperCase();
+                                final rewardCredited =
+                                    isCar && (weeklyData?.rewardCredited ?? false);
+                                final showCreditedState =
+                                    rewardCredited || challengeStatus == 'PAID';
+                                final isAchievedState =
+                                    !showCreditedState &&
+                                    challengeStatus == 'ACHIEVED';
+                                final isInactiveState =
+                                    isCar && challengeStatus == 'INACTIVE';
+
+                                final accentColor =
+                                    showCreditedState
+                                        ? const Color(0xFF15803D)
+                                        : isAchievedState
+                                        ? const Color(0xFF16A34A)
+                                        : isInactiveState
+                                        ? Colors.grey
+                                        : getTextColor(color: AppColors.drkGreen);
+                                final badgeBackground =
+                                    showCreditedState
+                                        ? const Color(0xFFE8F8EE)
+                                        : isAchievedState
+                                        ? const Color(0xFFEFFBF3)
+                                        : isInactiveState
+                                        ? const Color(0xFFF2F4F7)
+                                        : const Color(0xFFEFF9F2);
+                                final cardBackground =
+                                    showCreditedState
+                                        ? const Color(0xFFF5FFF7)
+                                        : isAchievedState
+                                        ? const Color(0xFFF7FFF9)
+                                        : isInactiveState
+                                        ? const Color(0xFFF8F8F8)
+                                        : Colors.white;
+
+                                String formatAmount(double value) {
+                                  if (value == value.roundToDouble()) {
+                                    return value.toStringAsFixed(0);
+                                  }
+                                  return value.toStringAsFixed(2);
+                                }
+
+                                final rewardAmountLabel =
+                                    (weeklyData?.rewardDisplayAmount ?? '')
+                                            .trim()
+                                            .isNotEmpty
+                                        ? weeklyData!.rewardDisplayAmount
+                                        : formatAmount(
+                                          showCreditedState
+                                              ? (weeklyData?.rewardCreditedAmount ??
+                                                  0.0)
+                                              : (weeklyData?.reward ?? 0.0),
+                                        );
+                                final headline =
+                                    isCar
+                                        ? ((weeklyData?.headline ?? '').trim()
+                                                    .isNotEmpty
+                                                ? weeklyData!.headline
+                                                : showCreditedState
+                                                ? 'Weekly reward credited'
+                                                : isAchievedState
+                                                ? 'Weekly challenge achieved'
+                                                : isInactiveState
+                                                ? 'Weekly challenge inactive'
+                                                : 'Complete $goal trips and get \u20A6$rewardAmountLabel extra')
+                                        : 'Complete $goal trips and get $reward extra';
+                                final subtext =
+                                    isCar
+                                        ? ((weeklyData?.subtext ?? '').trim()
+                                                    .isNotEmpty
+                                                ? weeklyData!.subtext
+                                                : showCreditedState
+                                                ? '\u20A6$rewardAmountLabel has been added to your wallet.'
+                                                : isInactiveState
+                                                ? 'Your weekly challenge will appear here once it becomes active.'
+                                                : 'Keep going to unlock your weekly reward.')
+                                        : '$totalTrips trips done out of $goal';
+                                final badgeText =
+                                    isCar
+                                        ? ((weeklyData?.badgeText ?? '').trim()
+                                                    .isNotEmpty
+                                                ? weeklyData!.badgeText
+                                                : showCreditedState
+                                                ? 'Reward Added'
+                                                : isAchievedState
+                                                ? 'Challenge Achieved'
+                                                : isInactiveState
+                                                ? 'Inactive'
+                                                : 'In Progress')
+                                        : 'In Progress';
+                                final progressLine =
+                                    isCar
+                                        ? ((weeklyData?.progressText ?? '').trim()
+                                                    .isNotEmpty
+                                                ? weeklyData!.progressText
+                                                : '$totalTrips trips done out of $goal')
+                                        : '$totalTrips trips done out of $goal';
 
                                 Widget progressWidget;
                                 if (!hasWeeklyData) {
@@ -1984,46 +2090,96 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                       ),
                                     ),
                                     circularStrokeCap: CircularStrokeCap.round,
-                                    backgroundColor: AppColors.drkGreen
-                                        .withOpacity(0.1),
-                                    progressColor: getTextColor(
-                                      color: AppColors.drkGreen,
-                                    ),
+                                    backgroundColor: accentColor.withOpacity(0.12),
+                                    progressColor: accentColor,
                                   );
                                 }
 
-                                return Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          CustomTextfield.textWithStylesSmall(
-                                            endsLabel,
-                                            colors: AppColors.grey,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          const SizedBox(height: 5),
-                                          CustomTextfield.textWithStyles600(
-                                            'Complete $goal trips and get $reward extra',
-                                            fontSize: 17,
-                                          ),
-                                          const SizedBox(height: 5),
-                                          CustomTextfield.textWithStylesSmall(
-                                            colors: getTextColor(
-                                              color: AppColors.drkGreen,
-                                            ),
-                                            '$totalTrips trips done out of $goal',
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ],
-                                      ),
+                                return Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: cardBackground,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: accentColor.withOpacity(0.10),
                                     ),
-                                    const SizedBox(width: 15),
-                                    progressWidget,
-                                  ],
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child:
+                                                      CustomTextfield.textWithStylesSmall(
+                                                        endsLabel,
+                                                        colors: AppColors.grey,
+                                                        fontWeight: FontWeight.w500,
+                                                      ),
+                                                ),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                        vertical: 6,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: badgeBackground,
+                                                    borderRadius:
+                                                        BorderRadius.circular(999),
+                                                  ),
+                                                  child: Text(
+                                                    badgeText,
+                                                    style: TextStyle(
+                                                      color: accentColor,
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            CustomTextfield.textWithStyles600(
+                                              headline,
+                                              fontSize: 17,
+                                              color: accentColor,
+                                            ),
+                                            const SizedBox(height: 6),
+                                            CustomTextfield.textWithStylesSmall(
+                                              subtext,
+                                              colors: Colors.black87,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            if (showCreditedState)
+                                              Text(
+                                                '+\u20A6$rewardAmountLabel',
+                                                style: TextStyle(
+                                                  color: accentColor,
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            if (showCreditedState)
+                                              const SizedBox(height: 8),
+                                            CustomTextfield.textWithStylesSmall(
+                                              progressLine,
+                                              colors: accentColor,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 15),
+                                      progressWidget,
+                                    ],
+                                  ),
                                 );
                               }),
                             ),
@@ -2079,7 +2235,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
 }
 
 /// ==========================================================
-/// âœ… CAR Booking Card UI (kept, only safe null guards)
+/// Ã¢Å“â€¦ CAR Booking Card UI (kept, only safe null guards)
 /// ==========================================================
 class _CarBookingCardUI extends StatelessWidget {
   const _CarBookingCardUI({
@@ -2923,7 +3079,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //     _locationSub = Geolocator.getPositionStream(
 //       locationSettings: const LocationSettings(
 //         accuracy: LocationAccuracy.high,
-//         distanceFilter: 8, // âœ… smoother & less spam than 0/5
+//         distanceFilter: 8, // Ã¢Å“â€¦ smoother & less spam than 0/5
 //       ),
 //     ).listen((pos) {
 //       _latestLocationPayload = {
@@ -3075,7 +3231,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //
 //     _animCtrl = AnimationController(
 //       vsync: this,
-//       duration: const Duration(milliseconds: 650), // âœ… smoother
+//       duration: const Duration(milliseconds: 650), // Ã¢Å“â€¦ smoother
 //     );
 //
 //     _anim = CurvedAnimation(parent: _animCtrl!, curve: Curves.easeOutCubic)
@@ -3170,7 +3326,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                         Expanded(
 //                           child: Stack(
 //                             children: [
-//                               // âœ… Map NEVER depends on Obx => no rebuild => smooth
+//                               // Ã¢Å“â€¦ Map NEVER depends on Obx => no rebuild => smooth
 //                               RepaintBoundary(
 //                                 child: GoogleMap(
 //                                   mapType: MapType.normal,
@@ -3199,7 +3355,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                                       _carMarker != null ? {_carMarker!} : {},
 //
 //                                   onCameraMoveStarted: () {
-//                                     // âœ… stop follow when user touches map
+//                                     // Ã¢Å“â€¦ stop follow when user touches map
 //                                     followDriver.value = false;
 //                                   },
 //
@@ -3220,7 +3376,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                                 ),
 //                               ),
 //
-//                               // âœ… Follow button (Uber)
+//                               // Ã¢Å“â€¦ Follow button (Uber)
 //                               Positioned(
 //                                 top: 190,
 //                                 right: 12,
@@ -3242,7 +3398,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                                 }),
 //                               ),
 //
-//                               // âœ… Bottom sheet only rebuilds on online / service type etc
+//                               // Ã¢Å“â€¦ Bottom sheet only rebuilds on online / service type etc
 //                               Obx(() {
 //                                 final isOnline =
 //                                     statusController.isOnline.value;
@@ -3276,7 +3432,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // // ==========================================================
-// // âœ… Glass Header widget (UI polish)
+// // Ã¢Å“â€¦ Glass Header widget (UI polish)
 // // ==========================================================
 // class _GlassHeader extends StatelessWidget {
 //   const _GlassHeader({
@@ -3427,7 +3583,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //   final DraggableScrollableController _sheetCtrl =
 //       DraggableScrollableController();
 //
-//   // âœ… Uber-like snap points (collapsed, mid, full)
+//   // Ã¢Å“â€¦ Uber-like snap points (collapsed, mid, full)
 //   static const List<double> _snaps = [0.22, 0.65, 0.98];
 //
 //   double _currentSize = _snaps[1];
@@ -3484,7 +3640,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //
 //   @override
 //   Widget build(BuildContext context) {
-//     // âœ… IMPORTANT: read serviceType inside Obx, otherwise it wonâ€™t update instantly
+//     // Ã¢Å“â€¦ IMPORTANT: read serviceType inside Obx, otherwise it wonÃ¢â‚¬â„¢t update instantly
 //     return Obx(() {
 //       final serviceType = widget.statusController.serviceType.value;
 //
@@ -3492,7 +3648,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //         onNotification: (n) {
 //           _currentSize = n.extent;
 //
-//           // âœ… Snap when user stops dragging (debounced)
+//           // Ã¢Å“â€¦ Snap when user stops dragging (debounced)
 //           if (n.extent <= _snaps.last && n.extent >= _snaps.first) {
 //             _scheduleSnap();
 //           }
@@ -3549,7 +3705,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                     const SizedBox(height: 10),
 //
 //                     // =========================
-//                     // âœ… Booking Request Area
+//                     // Ã¢Å“â€¦ Booking Request Area
 //                     // =========================
 //                     if (serviceType == 'Car') ...[
 //                       Center(
@@ -3671,7 +3827,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                     ],
 //
 //                     // =========================
-//                     // âœ… Offline banner (keep)
+//                     // Ã¢Å“â€¦ Offline banner (keep)
 //                     // =========================
 //                     Obx(() {
 //                       if (widget.statusController.isOnline.value)
@@ -3701,7 +3857,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                     const SizedBox(height: 18),
 //
 //                     // =========================
-//                     // âœ… Weekly + Today (FULL)
+//                     // Ã¢Å“â€¦ Weekly + Today (FULL)
 //                     // =========================
 //                     Padding(
 //                       padding: const EdgeInsets.symmetric(horizontal: 17),
@@ -3715,7 +3871,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                           ),
 //                           const SizedBox(height: 10),
 //
-//                           // âœ… Weekly widget (FULL)
+//                           // Ã¢Å“â€¦ Weekly widget (FULL)
 //                           Container(
 //                             decoration: BoxDecoration(
 //                               borderRadius: BorderRadius.circular(12),
@@ -3795,7 +3951,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //
 //                           const SizedBox(height: 18),
 //
-//                           // âœ… Today Activity (FULL)
+//                           // Ã¢Å“â€¦ Today Activity (FULL)
 //                           CustomTextfield.textWithStyles700(
 //                             "Today's Activity",
 //                             fontSize: 16,
@@ -3827,7 +3983,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// âœ… CAR Booking Card UI (your UI, optimized)
+// /// Ã¢Å“â€¦ CAR Booking Card UI (your UI, optimized)
 // /// ==========================================================
 // class _CarBookingCardUI extends StatelessWidget {
 //   const _CarBookingCardUI({
@@ -4074,7 +4230,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// âœ… Parcel card - keep same UI (if you want different, modify here)
+// /// Ã¢Å“â€¦ Parcel card - keep same UI (if you want different, modify here)
 // /// ==========================================================
 // class _ParcelBookingCardUI extends StatelessWidget {
 //   const _ParcelBookingCardUI({
@@ -4111,7 +4267,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// âœ… Today Activity - CAR
+// /// Ã¢Å“â€¦ Today Activity - CAR
 // /// ==========================================================
 // class _TodayActivityCar extends StatelessWidget {
 //   const _TodayActivityCar({required this.statusController});
@@ -4195,7 +4351,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// âœ… Today Activity - PARCEL
+// /// Ã¢Å“â€¦ Today Activity - PARCEL
 // /// ==========================================================
 // class _TodayActivityParcel extends StatelessWidget {
 //   const _TodayActivityParcel({required this.statusController});
@@ -4324,3 +4480,4 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 //
+

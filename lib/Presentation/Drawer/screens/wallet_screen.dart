@@ -20,9 +20,10 @@ class WalletScreen extends StatefulWidget {
 }
 
 class _WalletScreenState extends State<WalletScreen> {
-  final RideHistoryController walletController = Get.put(
-    RideHistoryController(),
-  );
+  final RideHistoryController walletController =
+      Get.isRegistered<RideHistoryController>()
+          ? Get.find<RideHistoryController>()
+          : Get.put(RideHistoryController());
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _withdrawAmountController =
       TextEditingController();
@@ -522,8 +523,12 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   String _getImageByType(Transaction tx) {
+    final type = (tx.type ?? '').trim().toUpperCase();
     final normalized = (tx.imageType ?? '').trim().toLowerCase();
     final bookingType = (tx.booking?.bookingType ?? '').trim().toLowerCase();
+    if (type == 'WEEKLY_CHALLENGE_BONUS') {
+      return AppImages.currencyRound;
+    }
     switch (normalized) {
       case "Refund":
       case "refund":
