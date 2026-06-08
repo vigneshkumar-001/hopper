@@ -105,6 +105,23 @@ class NavigationService {
     return true;
   }
 
+  /// Whether background ("Allow all the time") location is already granted.
+  Future<bool> hasAlwaysLocation() async {
+    try {
+      final p = await Geolocator.checkPermission();
+      return p == LocationPermission.always;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Open the OS app-settings page so the driver can pick "Allow all the time".
+  Future<void> openLocationAppSettings() async {
+    try {
+      await openAppSettings(); // from permission_handler
+    } catch (_) {}
+  }
+
   /// Open Google Maps turn-by-turn navigation to [destLat],[destLng].
   /// Prefers native Google Maps app, falls back to a Maps URL.
   Future<void> openGoogleMapsNavigation({

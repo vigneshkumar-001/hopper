@@ -78,6 +78,12 @@ class RideStatsController extends GetxController
   StreamSubscription<dynamic>? _bgLocationSub;
   Worker? _paymentStatusWorker;
   bool _trackingStopped = false;
+  bool _hasLiveSocketDriverLocation = false;
+  bool _isSimulatedSocketTrip = false;
+  DateTime _lastAcceptedSocketDriverTsUtc =
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+  LatLng? _lastAcceptedSocketDriverPos;
+  String _latestSocketRideStatus = '';
 
   // Reach-destination detection (GPS-first, socket fallback).
   bool _reachedDropGps = false;
@@ -258,6 +264,7 @@ class RideStatsController extends GetxController
           FlutterBackgroundService().on('locationUpdate').listen((data) {
         if (isClosed || data == null) return;
         if (data is! Map) return;
+        if (_shouldRenderSocketDriverLocationDirectly()) return;
 
         final lat = (data['lat'] as num?)?.toDouble();
         final lng = (data['lng'] as num?)?.toDouble();
@@ -345,6 +352,120 @@ class RideStatsController extends GetxController
     return _latLngFrom(data[latKey], data[lngKey]);
   }
 
+  DateTime _parseSocketTimestampUtc(dynamic raw) {
+    final parsed = raw == null ? null : DateTime.tryParse(raw.toString());
+    final nowUtc = DateTime.now().toUtc();
+    if (parsed == null) return nowUtc;
+    final utc = parsed.toUtc();
+    if (utc.isAfter(nowUtc.add(const Duration(seconds: 12)))) {
+      return nowUtc;
+    }
+    return utc;
+  }
+
+  bool _isStartedOrLaterStatus(String status) {
+    final normalized = status.trim().toUpperCase();
+    return normalized == 'STARTED' ||
+        normalized == 'IN_PROGRESS' ||
+        normalized == 'ONGOING' ||
+        normalized == 'REACHED_DESTINATION' ||
+        normalized == 'COMPLETED' ||
+        normalized == 'ENDED';
+  }
+
+  bool _shouldRenderSocketDriverLocationDirectly() {
+    return _isSimulatedSocketTrip &&
+        _hasLiveSocketDriverLocation &&
+        _isStartedOrLaterStatus(_latestSocketRideStatus);
+  }
+
+  void _ingestSocketDriverLocation(Map<String, dynamic> payload) {
+    final bookingFromPayload =
+        (payload['bookingId'] ?? payload['booking'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+    if (bookingFromPayload.isNotEmpty &&
+        bookingFromPayload != bookingId.trim().toLowerCase()) {
+      return;
+    }
+
+    final latestStatus =
+        (payload['latestStatus'] ?? payload['status'] ?? '')
+            .toString()
+            .trim()
+            .toUpperCase();
+    if (latestStatus.isNotEmpty) {
+      _latestSocketRideStatus = latestStatus;
+    }
+
+    final pos =
+        _extractLatLng(payload, latKey: 'latitude', lngKey: 'longitude') ??
+        _extractLatLng(payload, latKey: 'lat', lngKey: 'lng') ??
+        _extractNestedLatLng(payload, 'driverLocation') ??
+        (() {
+          final raw = payload['basePayload'];
+          if (raw is! Map) return null;
+          final base = Map<String, dynamic>.from(raw as Map);
+          return _extractNestedLatLng(base, 'driverLocation') ??
+              _extractLatLng(base, latKey: 'latitude', lngKey: 'longitude');
+        })();
+    if (pos == null) return;
+
+    final tsUtc = _parseSocketTimestampUtc(
+      payload['timestamp'] ?? payload['ts'] ?? payload['time'],
+    );
+    if (tsUtc.isBefore(_lastAcceptedSocketDriverTsUtc)) {
+      return;
+    }
+
+    final samePoint =
+        _lastAcceptedSocketDriverPos != null &&
+        Geolocator.distanceBetween(
+              _lastAcceptedSocketDriverPos!.latitude,
+              _lastAcceptedSocketDriverPos!.longitude,
+              pos.latitude,
+              pos.longitude,
+            ) <
+            0.8;
+    if (samePoint && !tsUtc.isAfter(_lastAcceptedSocketDriverTsUtc)) {
+      return;
+    }
+
+    final isSimulated =
+        payload['simulated'] == true ||
+        (payload['source'] ?? '').toString().trim().toLowerCase() ==
+            'ride-simulator';
+
+    _hasLiveSocketDriverLocation = true;
+    _isSimulatedSocketTrip = isSimulated;
+    _lastAcceptedSocketDriverTsUtc = tsUtc;
+    _lastAcceptedSocketDriverPos = pos;
+    driverLocation.value = pos;
+    _lastDriverPosition = pos;
+
+    final speed = _asDouble(payload['speed']);
+    final bearing =
+        _asDouble(payload['bearing'] ?? payload['heading'] ?? payload['rotation']);
+    final accuracy = _asDouble(payload['accuracy']);
+
+    rideMap.updateVehicleLocation(
+      pos,
+      source: 'socket',
+      speedMetersPerSecond: speed,
+      headingDeg: bearing,
+      accuracyMeters: accuracy,
+      timestamp: isSimulated ? DateTime.now() : tsUtc,
+    );
+
+    _updateReachedDestinationByDistance(pos);
+
+    if (polylinePoints.isEmpty) {
+      _setDirectFallbackRoute(pos);
+      unawaited(refreshRouteFrom(pos));
+    }
+  }
+
   LatLng? _extractNestedLatLng(
     Map<String, dynamic> data,
     String key, {
@@ -427,7 +548,7 @@ class RideStatsController extends GetxController
       // If snapshot already contains real driverLocation, show vehicle marker
       // immediately (do not wait for a later driver-location tick).
       final driverRaw = payload['driverLocation'] ?? joined['driverLocation'];
-      if (driverRaw is Map) {
+      if (driverRaw is Map && !_hasLiveSocketDriverLocation) {
         final dm = Map<String, dynamic>.from(driverRaw as Map);
         double? asDouble(dynamic v) {
           if (v is num) return v.toDouble();
@@ -526,6 +647,14 @@ class RideStatsController extends GetxController
   }
 
   Future<void> _primeDriverLocationAndRoute() async {
+    if (_shouldRenderSocketDriverLocationDirectly()) {
+      final from = driverLocation.value ?? _lastDriverPosition;
+      if (from != null) {
+        _setDirectFallbackRoute(from);
+        await refreshRouteFrom(from);
+      }
+      return;
+    }
     try {
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -740,6 +869,7 @@ class RideStatsController extends GetxController
       if (dropMin != null) {
         Get.find<DriverAnalyticsController>().setSlaFromEtaMinutes(dropMin);
       }
+      _ingestSocketDriverLocation(payload);
 
       // âœ… Fallback: if server is already sending drop-distance updates, use them
       // to toggle the Complete Ride UI even if the explicit `driver-reached-destination`
@@ -863,6 +993,9 @@ class RideStatsController extends GetxController
         distanceFilter: 5,
       ),
     ).listen((Position position) async {
+      if (_shouldRenderSocketDriverLocationDirectly()) {
+        return;
+      }
       final current = LatLng(position.latitude, position.longitude);
 
       final acc = (position.accuracy.isFinite) ? position.accuracy : 9999.0;

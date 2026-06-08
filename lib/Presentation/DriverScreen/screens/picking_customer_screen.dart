@@ -191,21 +191,27 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
     );
     _backgroundServiceActive = true;
 
+    _showNavigationTrackingMessage('pickup');
+
     await _navigationService.openGoogleMapsNavigation(
       destLat: widget.pickupLocation.latitude,
       destLng: widget.pickupLocation.longitude,
       destinationLabel: 'Pickup Location',
     );
+  }
 
+  void _showNavigationTrackingMessage(String destinationName) {
+    Get.closeCurrentSnackbar();
     Get.snackbar(
-      '',
-      'Location sharing active. Tap notification to return to app',
+      'Navigation Started',
+      'Navigating to $destinationName. Please keep location access on so your live position keeps updating in background for the customer.',
       snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.black87,
+      backgroundColor: const Color(0xFF111827),
       colorText: Colors.white,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(seconds: 5),
       margin: const EdgeInsets.all(16),
-      borderRadius: 8,
+      borderRadius: 12,
+      icon: const Icon(Icons.my_location_rounded, color: Colors.white),
     );
   }
 

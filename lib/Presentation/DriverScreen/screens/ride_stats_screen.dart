@@ -23,6 +23,7 @@ import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:hopper/utils/ride_map/ride_map_view.dart';
 import 'package:hopper/utils/ride_map/ride_map_controller.dart';
 import 'package:hopper/utils/phone/call_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../controller/ride_starts_controller.dart';
 import 'cash_collected_screen.dart';
@@ -42,14 +43,15 @@ class RideStatsScreen extends StatelessWidget {
   });
 
   Future<void> _onNavigatePressed(RideStatsController c) async {
+    // First-time, friendly explanation BEFORE the system permission popup, so the
+    // driver understands to pick "Allow all the time" (background location is what
+    // keeps the customer's live tracking working while Google Maps is open).
+    await _maybeShowLocationPrimer();
+
     final ok = await _navigationService.requestPermissions();
     if (!ok) {
-      Get.snackbar(
-        'Permission Required',
-        'Please allow background location for tracking',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
+      // Friendly guidance instead of a scary red error.
+      await _showAllowAllTimeDialog();
       return;
     }
 
@@ -88,21 +90,136 @@ class RideStatsScreen extends StatelessWidget {
         c.adjustedDropLocation.value ?? c.bookingToLocation.value;
     if (dest == null) return;
 
+    _showNavigationTrackingMessage('drop');
+
     await _navigationService.openGoogleMapsNavigation(
       destLat: dest.latitude,
       destLng: dest.longitude,
       destinationLabel: 'Drop Location',
     );
+  }
 
+  static const String _locationPrimerShownKey =
+      'driver_nav_location_primer_shown';
+
+  /// Show a one-time, friendly explanation before the OS permission popup.
+  Future<void> _maybeShowLocationPrimer() async {
+    try {
+      // Skip entirely if "Allow all the time" is already granted.
+      if (await _navigationService.hasAlwaysLocation()) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_locationPrimerShownKey) ?? false) return;
+
+      await Get.dialog(
+        AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          title: Row(
+            children: const [
+              Icon(Icons.my_location_rounded, color: Color(0xFF1A73E8)),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Keep your live location on',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'When you start navigation, Hoppr opens Google Maps and keeps running '
+            'in the background.\n\n'
+            'So the customer can see your live location during the trip, please '
+            'choose "Allow all the time" on the next screen.',
+            style: TextStyle(fontSize: 14, height: 1.4),
+          ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A73E8),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () => Get.back(),
+                child: const Text(
+                  'Continue',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        barrierDismissible: false,
+      );
+
+      await prefs.setBool(_locationPrimerShownKey, true);
+    } catch (_) {}
+  }
+
+  /// Friendly dialog when "Allow all the time" wasn't granted, with a shortcut
+  /// to the app settings (instead of a scary red error toast).
+  Future<void> _showAllowAllTimeDialog() async {
+    await Get.dialog(
+      AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text(
+          'Allow location "All the time"',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+        content: const Text(
+          'Hoppr needs "Allow all the time" location so the customer can see '
+          'your live position while you navigate in Google Maps.\n\n'
+          'Open Settings → Permissions → Location and choose '
+          '"Allow all the time".',
+          style: TextStyle(fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Not now', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1A73E8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () async {
+              Get.back();
+              await _navigationService.openLocationAppSettings();
+            },
+            child: const Text(
+              'Open Settings',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showNavigationTrackingMessage(String destinationName) {
+    Get.closeCurrentSnackbar();
     Get.snackbar(
-      '',
-      'Location sharing active. Tap notification to return to app',
+      'Navigation Started',
+      'Navigating to $destinationName. Please keep location access on so your live position keeps updating in background for the customer.',
       snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.black87,
+      backgroundColor: const Color(0xFF111827),
       colorText: Colors.white,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(seconds: 5),
       margin: const EdgeInsets.all(16),
-      borderRadius: 8,
+      borderRadius: 12,
+      icon: const Icon(Icons.my_location_rounded, color: Colors.white),
     );
   }
 
@@ -207,11 +324,8 @@ class RideStatsScreen extends StatelessWidget {
                   right: 10,
                   child: Column(
                     children: [
-                      NavigateToDestinationButton(
-                        onTap: () => _onNavigatePressed(c),
-                        label: 'To Drop',
-                      ),
-                      const SizedBox(height: 10),
+                      // "Navigate to Drop" moved into the bottom sheet (full-width
+                      // button) so it's always visible and easy to tap.
                       ValueListenableBuilder<MapFocusMode>(
                         valueListenable: c.rideMap.focusMode,
                         builder: (context, mode, _) {
@@ -283,6 +397,38 @@ class RideStatsScreen extends StatelessWidget {
                           const SizedBox(height: 14),
 
                           if (!completed) ...[
+                            // Full-width navigate button (rectangle, like the
+                            // Arrived/Complete action but in navigation blue).
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 2, 16, 14),
+                              child: SizedBox(
+                                width: double.infinity,
+                                height: 52,
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _onNavigatePressed(c),
+                                  icon: const Icon(
+                                    Icons.navigation_rounded,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                  label: const Text(
+                                    'Navigate to Drop',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF1A73E8),
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                             Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,

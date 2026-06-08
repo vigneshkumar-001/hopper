@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
@@ -12,11 +12,11 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
-import 'package:hopper/Core/Utility/date_time_converter.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/ride_map/ride_map_view.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
+import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
 import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/models/demand_opportunities_models.dart';
@@ -42,7 +42,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // âœ… create once (or reuse if already exists)
+    // Ã¢Å“â€¦ create once (or reuse if already exists)
     if (Get.isRegistered<DriverMainController>()) {
       c = Get.find<DriverMainController>();
     } else {
@@ -148,7 +148,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                   Expanded(
                     child: Stack(
                       children: [
-                        // âœ… Map rebuilt only by GetBuilder(id: 'map')
+                        // Ã¢Å“â€¦ Map rebuilt only by GetBuilder(id: 'map')
                         GetBuilder<DriverMainController>(
                           id: 'map',
                           builder: (_) {
@@ -460,7 +460,7 @@ class _DriverMainScreenState extends State<DriverMainScreen>
 }
 
 // ==========================================================
-// âœ… Glass Header widget (same UI)
+// Ã¢Å“â€¦ Glass Header widget (same UI)
 // ==========================================================
 class _GlassHeader extends StatelessWidget {
   const _GlassHeader({
@@ -1093,6 +1093,10 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                 onRefresh: () async {
                   await Get.find<ChooseServiceController>().getUserDetails();
                   await widget.statusController.weeklyChallenges();
+                  await Get.find<RideHistoryController>().customerWalletHistory(
+                    isRefresh: true,
+                    showErrors: false,
+                  );
                   final main = Get.find<DriverMainController>();
                   main.requestDemandOpportunities(reason: 'pull_to_refresh');
                   await main.fetchDemandOpportunities(silent: true);
@@ -1868,17 +1872,9 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                           const SizedBox(height: 10),
 
                           Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: AppColors.commonBlack.withOpacity(0.08),
-                              ),
-                            ),
+                            decoration: const BoxDecoration(),
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 15,
-                                vertical: 20,
-                              ),
+                              padding: EdgeInsets.zero,
                               child: Obx(() {
                                 if (!widget.statusController.hasServiceType) {
                                   return const Center(
@@ -1913,26 +1909,26 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                 final progressPercent =
                                     isCar
                                         ? (weeklyData?.progressPercent ?? 0)
-                                            .toDouble()
                                         : (parcelWeekly?.progressPercent ??
                                             0.0);
 
                                 DateTime? endsOn;
-                                if (isCar) {
-                                  endsOn = DateAndTimeConvert.tryParseFlexible(
-                                    (weeklyData?.endsOn ?? '').toString(),
-                                  );
-                                } else {
+                                if (!isCar) {
                                   endsOn = parcelWeekly?.endsOn;
-                                }
-                                if (endsOn != null &&
-                                    endsOn.millisecondsSinceEpoch == 0) {
-                                  endsOn = null;
+                                  if (endsOn != null &&
+                                      endsOn.millisecondsSinceEpoch == 0) {
+                                    endsOn = null;
+                                  }
                                 }
                                 final endsLabel =
-                                    endsOn == null
-                                        ? 'Ends on -'
-                                        : 'Ends on ${DateFormat('EEEE').format(endsOn)}';
+                                    isCar
+                                        ? ((weeklyData?.endsOn ?? '').trim()
+                                                    .isNotEmpty
+                                                ? 'Ends on ${weeklyData!.endsOn}'
+                                                : 'Ends on -')
+                                        : (endsOn == null
+                                            ? 'Ends on -'
+                                            : 'Ends on ${DateFormat('EEEE').format(endsOn)}');
 
                                 final hasWeeklyData =
                                     isCar
@@ -1943,6 +1939,91 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                   0.0,
                                   1.0,
                                 );
+
+                                final challengeStatus =
+                                    (weeklyData?.challengeStatus ?? '')
+                                        .trim()
+                                        .toUpperCase();
+                                final rewardCredited =
+                                    isCar && (weeklyData?.rewardCredited ?? false);
+                                final showCreditedState =
+                                    rewardCredited || challengeStatus == 'PAID';
+                                final isAchievedState =
+                                    !showCreditedState &&
+                                    challengeStatus == 'ACHIEVED';
+                                final isInactiveState =
+                                    isCar && challengeStatus == 'INACTIVE';
+
+                                final accentColor =
+                                    showCreditedState
+                                        ? const Color(0xFF15803D)
+                                        : isAchievedState
+                                        ? const Color(0xFF16A34A)
+                                        : isInactiveState
+                                        ? Colors.grey
+                                        : getTextColor(color: AppColors.drkGreen);
+                                String formatAmount(double value) {
+                                  if (value == value.roundToDouble()) {
+                                    return value.toStringAsFixed(0);
+                                  }
+                                  return value.toStringAsFixed(2);
+                                }
+
+                                final rewardAmountLabel =
+                                    (weeklyData?.rewardDisplayAmount ?? '')
+                                            .trim()
+                                            .isNotEmpty
+                                        ? weeklyData!.rewardDisplayAmount
+                                        : formatAmount(
+                                          showCreditedState
+                                              ? (weeklyData?.rewardCreditedAmount ??
+                                                  0.0)
+                                              : (weeklyData?.reward ?? 0.0),
+                                        );
+                                final headline =
+                                    isCar
+                                        ? ((weeklyData?.headline ?? '').trim()
+                                                    .isNotEmpty
+                                                ? weeklyData!.headline
+                                                : showCreditedState
+                                                ? 'Weekly reward credited'
+                                                : isAchievedState
+                                                ? 'Weekly challenge achieved'
+                                                : isInactiveState
+                                                ? 'Weekly challenge inactive'
+                                                : 'Complete $goal trips and get \u20A6$rewardAmountLabel extra')
+                                        : 'Complete $goal trips and get $reward extra';
+                                final subtext =
+                                    isCar
+                                        ? ((weeklyData?.subtext ?? '').trim()
+                                                    .isNotEmpty
+                                                ? weeklyData!.subtext
+                                                : showCreditedState
+                                                ? '\u20A6$rewardAmountLabel has been added to your wallet.'
+                                                : isInactiveState
+                                                ? 'Your weekly challenge will appear here once it becomes active.'
+                                                : 'Keep going to unlock your weekly reward.')
+                                        : '$totalTrips trips done out of $goal';
+                                final badgeText =
+                                    isCar
+                                        ? ((weeklyData?.badgeText ?? '').trim()
+                                                    .isNotEmpty
+                                                ? weeklyData!.badgeText
+                                                : showCreditedState
+                                                ? 'Reward Added'
+                                                : isAchievedState
+                                                ? 'Challenge Achieved'
+                                                : isInactiveState
+                                                ? 'Inactive'
+                                                : 'In Progress')
+                                        : 'In Progress';
+                                final progressLine =
+                                    isCar
+                                        ? ((weeklyData?.progressText ?? '').trim()
+                                                    .isNotEmpty
+                                                ? weeklyData!.progressText
+                                                : '$totalTrips trips done out of $goal')
+                                        : '$totalTrips trips done out of $goal';
 
                                 Widget progressWidget;
                                 if (!hasWeeklyData) {
@@ -1984,46 +2065,248 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                       ),
                                     ),
                                     circularStrokeCap: CircularStrokeCap.round,
-                                    backgroundColor: AppColors.drkGreen
-                                        .withOpacity(0.1),
-                                    progressColor: getTextColor(
-                                      color: AppColors.drkGreen,
-                                    ),
+                                    backgroundColor: accentColor.withOpacity(0.12),
+                                    progressColor: accentColor,
                                   );
                                 }
 
-                                return Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                final int remaining =
+                                    (goal - totalTrips) < 0
+                                        ? 0
+                                        : (goal - totalTrips);
+                                final bool done =
+                                    showCreditedState || isAchievedState;
+                                final List<Color> gradColors =
+                                    isInactiveState
+                                        ? const [
+                                          Color(0xFF64748B),
+                                          Color(0xFF94A3B8),
+                                        ]
+                                        : done
+                                        ? const [
+                                          Color(0xFF0F7A3D),
+                                          Color(0xFF22C55E),
+                                        ]
+                                        : const [
+                                          Color(0xFF0B6B45),
+                                          Color(0xFF16A34A),
+                                        ];
+
+                                return Container(
+                                  padding: const EdgeInsets.all(18),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: gradColors,
+                                    ),
+                                    borderRadius: BorderRadius.circular(22),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: gradColors.last.withOpacity(0.35),
+                                        blurRadius: 18,
+                                        offset: const Offset(0, 10),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
                                         children: [
-                                          CustomTextfield.textWithStylesSmall(
-                                            endsLabel,
-                                            colors: AppColors.grey,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          const SizedBox(height: 5),
-                                          CustomTextfield.textWithStyles600(
-                                            'Complete $goal trips and get $reward extra',
-                                            fontSize: 17,
-                                          ),
-                                          const SizedBox(height: 5),
-                                          CustomTextfield.textWithStylesSmall(
-                                            colors: getTextColor(
-                                              color: AppColors.drkGreen,
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 5,
                                             ),
-                                            '$totalTrips trips done out of $goal',
-                                            fontWeight: FontWeight.w500,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withOpacity(
+                                                0.20,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  done
+                                                      ? Icons.check_circle_rounded
+                                                      : Icons.bolt_rounded,
+                                                  size: 13,
+                                                  color: Colors.white,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  badgeText,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 10.5,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          Icon(
+                                            Icons.schedule_rounded,
+                                            size: 13,
+                                            color: Colors.white.withOpacity(
+                                              0.85,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Flexible(
+                                            child: Text(
+                                              endsLabel,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: Colors.white.withOpacity(
+                                                  0.85,
+                                                ),
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
                                           ),
                                         ],
                                       ),
-                                    ),
-                                    const SizedBox(width: 15),
-                                    progressWidget,
-                                  ],
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Container(
+                                                      height: 40,
+                                                      width: 40,
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.white
+                                                            .withOpacity(0.18),
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                      child: const Icon(
+                                                        Icons
+                                                            .card_giftcard_rounded,
+                                                        color: Colors.white,
+                                                        size: 22,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 10),
+                                                    Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          done
+                                                              ? 'Reward earned'
+                                                              : 'Weekly reward',
+                                                          style: TextStyle(
+                                                            color: Colors.white
+                                                                .withOpacity(
+                                                                  0.85,
+                                                                ),
+                                                            fontSize: 11.5,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          '\u20A6$rewardAmountLabel',
+                                                          style: const TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 24,
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            height: 1.05,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 12),
+                                                Text(
+                                                  headline,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 14.5,
+                                                    fontWeight: FontWeight.w700,
+                                                    height: 1.2,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  subtext,
+                                                  style: TextStyle(
+                                                    color: Colors.white
+                                                        .withOpacity(0.82),
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w500,
+                                                    height: 1.25,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Container(
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: const BoxDecoration(
+                                              color: Colors.white,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: progressWidget,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 14),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 9,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.14),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              done
+                                                  ? Icons.emoji_events_rounded
+                                                  : Icons
+                                                      .local_fire_department_rounded,
+                                              size: 16,
+                                              color: Colors.white,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                done || remaining <= 0
+                                                    ? progressLine
+                                                    : '$totalTrips/$goal trips \u00B7 $remaining more to unlock!',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 );
                               }),
                             ),
@@ -2079,7 +2362,7 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
 }
 
 /// ==========================================================
-/// âœ… CAR Booking Card UI (kept, only safe null guards)
+/// Ã¢Å“â€¦ CAR Booking Card UI (kept, only safe null guards)
 /// ==========================================================
 class _CarBookingCardUI extends StatelessWidget {
   const _CarBookingCardUI({
@@ -2923,7 +3206,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //     _locationSub = Geolocator.getPositionStream(
 //       locationSettings: const LocationSettings(
 //         accuracy: LocationAccuracy.high,
-//         distanceFilter: 8, // âœ… smoother & less spam than 0/5
+//         distanceFilter: 8, // Ã¢Å“â€¦ smoother & less spam than 0/5
 //       ),
 //     ).listen((pos) {
 //       _latestLocationPayload = {
@@ -3075,7 +3358,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //
 //     _animCtrl = AnimationController(
 //       vsync: this,
-//       duration: const Duration(milliseconds: 650), // âœ… smoother
+//       duration: const Duration(milliseconds: 650), // Ã¢Å“â€¦ smoother
 //     );
 //
 //     _anim = CurvedAnimation(parent: _animCtrl!, curve: Curves.easeOutCubic)
@@ -3170,7 +3453,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                         Expanded(
 //                           child: Stack(
 //                             children: [
-//                               // âœ… Map NEVER depends on Obx => no rebuild => smooth
+//                               // Ã¢Å“â€¦ Map NEVER depends on Obx => no rebuild => smooth
 //                               RepaintBoundary(
 //                                 child: GoogleMap(
 //                                   mapType: MapType.normal,
@@ -3199,7 +3482,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                                       _carMarker != null ? {_carMarker!} : {},
 //
 //                                   onCameraMoveStarted: () {
-//                                     // âœ… stop follow when user touches map
+//                                     // Ã¢Å“â€¦ stop follow when user touches map
 //                                     followDriver.value = false;
 //                                   },
 //
@@ -3220,7 +3503,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                                 ),
 //                               ),
 //
-//                               // âœ… Follow button (Uber)
+//                               // Ã¢Å“â€¦ Follow button (Uber)
 //                               Positioned(
 //                                 top: 190,
 //                                 right: 12,
@@ -3242,7 +3525,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                                 }),
 //                               ),
 //
-//                               // âœ… Bottom sheet only rebuilds on online / service type etc
+//                               // Ã¢Å“â€¦ Bottom sheet only rebuilds on online / service type etc
 //                               Obx(() {
 //                                 final isOnline =
 //                                     statusController.isOnline.value;
@@ -3276,7 +3559,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // // ==========================================================
-// // âœ… Glass Header widget (UI polish)
+// // Ã¢Å“â€¦ Glass Header widget (UI polish)
 // // ==========================================================
 // class _GlassHeader extends StatelessWidget {
 //   const _GlassHeader({
@@ -3427,7 +3710,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //   final DraggableScrollableController _sheetCtrl =
 //       DraggableScrollableController();
 //
-//   // âœ… Uber-like snap points (collapsed, mid, full)
+//   // Ã¢Å“â€¦ Uber-like snap points (collapsed, mid, full)
 //   static const List<double> _snaps = [0.22, 0.65, 0.98];
 //
 //   double _currentSize = _snaps[1];
@@ -3484,7 +3767,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //
 //   @override
 //   Widget build(BuildContext context) {
-//     // âœ… IMPORTANT: read serviceType inside Obx, otherwise it wonâ€™t update instantly
+//     // Ã¢Å“â€¦ IMPORTANT: read serviceType inside Obx, otherwise it wonÃ¢â‚¬â„¢t update instantly
 //     return Obx(() {
 //       final serviceType = widget.statusController.serviceType.value;
 //
@@ -3492,7 +3775,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //         onNotification: (n) {
 //           _currentSize = n.extent;
 //
-//           // âœ… Snap when user stops dragging (debounced)
+//           // Ã¢Å“â€¦ Snap when user stops dragging (debounced)
 //           if (n.extent <= _snaps.last && n.extent >= _snaps.first) {
 //             _scheduleSnap();
 //           }
@@ -3549,7 +3832,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                     const SizedBox(height: 10),
 //
 //                     // =========================
-//                     // âœ… Booking Request Area
+//                     // Ã¢Å“â€¦ Booking Request Area
 //                     // =========================
 //                     if (serviceType == 'Car') ...[
 //                       Center(
@@ -3671,7 +3954,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                     ],
 //
 //                     // =========================
-//                     // âœ… Offline banner (keep)
+//                     // Ã¢Å“â€¦ Offline banner (keep)
 //                     // =========================
 //                     Obx(() {
 //                       if (widget.statusController.isOnline.value)
@@ -3701,7 +3984,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                     const SizedBox(height: 18),
 //
 //                     // =========================
-//                     // âœ… Weekly + Today (FULL)
+//                     // Ã¢Å“â€¦ Weekly + Today (FULL)
 //                     // =========================
 //                     Padding(
 //                       padding: const EdgeInsets.symmetric(horizontal: 17),
@@ -3715,7 +3998,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //                           ),
 //                           const SizedBox(height: 10),
 //
-//                           // âœ… Weekly widget (FULL)
+//                           // Ã¢Å“â€¦ Weekly widget (FULL)
 //                           Container(
 //                             decoration: BoxDecoration(
 //                               borderRadius: BorderRadius.circular(12),
@@ -3795,7 +4078,7 @@ class _TodayActivityParcel extends StatelessWidget {
 //
 //                           const SizedBox(height: 18),
 //
-//                           // âœ… Today Activity (FULL)
+//                           // Ã¢Å“â€¦ Today Activity (FULL)
 //                           CustomTextfield.textWithStyles700(
 //                             "Today's Activity",
 //                             fontSize: 16,
@@ -3827,7 +4110,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// âœ… CAR Booking Card UI (your UI, optimized)
+// /// Ã¢Å“â€¦ CAR Booking Card UI (your UI, optimized)
 // /// ==========================================================
 // class _CarBookingCardUI extends StatelessWidget {
 //   const _CarBookingCardUI({
@@ -4074,7 +4357,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// âœ… Parcel card - keep same UI (if you want different, modify here)
+// /// Ã¢Å“â€¦ Parcel card - keep same UI (if you want different, modify here)
 // /// ==========================================================
 // class _ParcelBookingCardUI extends StatelessWidget {
 //   const _ParcelBookingCardUI({
@@ -4111,7 +4394,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// âœ… Today Activity - CAR
+// /// Ã¢Å“â€¦ Today Activity - CAR
 // /// ==========================================================
 // class _TodayActivityCar extends StatelessWidget {
 //   const _TodayActivityCar({required this.statusController});
@@ -4195,7 +4478,7 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 // /// ==========================================================
-// /// âœ… Today Activity - PARCEL
+// /// Ã¢Å“â€¦ Today Activity - PARCEL
 // /// ==========================================================
 // class _TodayActivityParcel extends StatelessWidget {
 //   const _TodayActivityParcel({required this.statusController});
@@ -4324,3 +4607,4 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 //
+

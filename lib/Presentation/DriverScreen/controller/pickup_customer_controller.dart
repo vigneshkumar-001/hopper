@@ -264,6 +264,7 @@ class PickingCustomerController extends GetxController {
     try {
       socketService.socket.off('joined-booking');
       socketService.socket.off('driver-location');
+      socketService.socket.off('driver-arrived');
       socketService.socket.off('driver-cancelled');
       socketService.socket.off('customer-cancelled');
     } catch (_) {}
@@ -451,6 +452,34 @@ class PickingCustomerController extends GetxController {
       driverStatusController.setLastDriverLocationAtFrom(
         payload['timestamp'] ?? payload['ts'] ?? payload['time'],
       );
+    });
+
+    socketService.on('driver-arrived', (data) {
+      if (data == null || data is! Map) return;
+      final payload = Map<String, dynamic>.from(data as Map);
+      final eventBookingId = (payload['bookingId'] ?? '').toString().trim();
+      if (eventBookingId.isNotEmpty && eventBookingId != bookingId) return;
+      if (!arrivedAtPickup.value || _driverReachedGps || driverReached.value) {
+        return;
+      }
+
+      final status = payload['status'];
+      final arrivedFlag = payload['arrived'];
+      final ok =
+          status == true ||
+          status?.toString().toLowerCase() == 'true' ||
+          arrivedFlag == true ||
+          arrivedFlag?.toString().toLowerCase() == 'true';
+      if (!ok) return;
+
+      _lastSocketFixAt = DateTime.now();
+      if (!_driverReachedSocket) {
+        _driverReachedSocket = true;
+        CommonLogger.log.i(
+          'Auto driverReached TRUE (driver-arrived socket fallback after GPS priority) bookingId=$bookingId',
+        );
+      }
+      _recomputeDriverReached();
     });
 
     socketService.on('driver-cancelled', (data) {
