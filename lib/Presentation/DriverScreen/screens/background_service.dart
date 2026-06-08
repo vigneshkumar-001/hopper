@@ -466,7 +466,9 @@ void onStart(ServiceInstance service) async {
         'accuracy': position.accuracy,
         if (currentBookingId != null) 'bookingId': currentBookingId,
         if (currentBookingId != null) 'rideId': currentBookingId,
-        'timestamp': now.toIso8601String(),
+        // Device GPS fix time in UTC (consistent with the stream emit) so the
+        // customer's strict ordering doesn't drop these as "out of order".
+        'timestamp': position.timestamp.toUtc().toIso8601String(),
       };
 
       if (!socket.connected) {

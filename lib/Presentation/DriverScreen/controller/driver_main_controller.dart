@@ -1554,7 +1554,9 @@ class DriverMainController extends GetxController
         if (bookingIdForPayload != null) 'bookingId': bookingIdForPayload,
         if (pos != null) 'latitude': pos.latitude,
         if (pos != null) 'longitude': pos.longitude,
-        'timestamp': now.toIso8601String(),
+        // UTC (consistent with updateLocation). Local time here made the
+        // customer's strict ordering drop points when the source flipped.
+        'timestamp': now.toUtc().toIso8601String(),
       };
       _lastHeartbeatEmitAt = now;
       socketService.emit('driver-heartbeat', hb);

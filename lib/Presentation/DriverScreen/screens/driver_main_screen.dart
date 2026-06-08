@@ -1872,17 +1872,9 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                           const SizedBox(height: 10),
 
                           Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: AppColors.commonBlack.withOpacity(0.08),
-                              ),
-                            ),
+                            decoration: const BoxDecoration(),
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 15,
-                                vertical: 20,
-                              ),
+                              padding: EdgeInsets.zero,
                               child: Obx(() {
                                 if (!widget.statusController.hasServiceType) {
                                   return const Center(
@@ -1970,23 +1962,6 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                         : isInactiveState
                                         ? Colors.grey
                                         : getTextColor(color: AppColors.drkGreen);
-                                final badgeBackground =
-                                    showCreditedState
-                                        ? const Color(0xFFE8F8EE)
-                                        : isAchievedState
-                                        ? const Color(0xFFEFFBF3)
-                                        : isInactiveState
-                                        ? const Color(0xFFF2F4F7)
-                                        : const Color(0xFFEFF9F2);
-                                final cardBackground =
-                                    showCreditedState
-                                        ? const Color(0xFFF5FFF7)
-                                        : isAchievedState
-                                        ? const Color(0xFFF7FFF9)
-                                        : isInactiveState
-                                        ? const Color(0xFFF8F8F8)
-                                        : Colors.white;
-
                                 String formatAmount(double value) {
                                   if (value == value.roundToDouble()) {
                                     return value.toStringAsFixed(0);
@@ -2095,89 +2070,241 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                   );
                                 }
 
+                                final int remaining =
+                                    (goal - totalTrips) < 0
+                                        ? 0
+                                        : (goal - totalTrips);
+                                final bool done =
+                                    showCreditedState || isAchievedState;
+                                final List<Color> gradColors =
+                                    isInactiveState
+                                        ? const [
+                                          Color(0xFF64748B),
+                                          Color(0xFF94A3B8),
+                                        ]
+                                        : done
+                                        ? const [
+                                          Color(0xFF0F7A3D),
+                                          Color(0xFF22C55E),
+                                        ]
+                                        : const [
+                                          Color(0xFF0B6B45),
+                                          Color(0xFF16A34A),
+                                        ];
+
                                 return Container(
-                                  padding: const EdgeInsets.all(16),
+                                  padding: const EdgeInsets.all(18),
                                   decoration: BoxDecoration(
-                                    color: cardBackground,
-                                    borderRadius: BorderRadius.circular(18),
-                                    border: Border.all(
-                                      color: accentColor.withOpacity(0.10),
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: gradColors,
                                     ),
+                                    borderRadius: BorderRadius.circular(22),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: gradColors.last.withOpacity(0.35),
+                                        blurRadius: 18,
+                                        offset: const Offset(0, 10),
+                                      ),
+                                    ],
                                   ),
-                                  child: Row(
+                                  child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withOpacity(
+                                                0.20,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                Expanded(
-                                                  child:
-                                                      CustomTextfield.textWithStylesSmall(
-                                                        endsLabel,
-                                                        colors: AppColors.grey,
-                                                        fontWeight: FontWeight.w500,
-                                                      ),
+                                                Icon(
+                                                  done
+                                                      ? Icons.check_circle_rounded
+                                                      : Icons.bolt_rounded,
+                                                  size: 13,
+                                                  color: Colors.white,
                                                 ),
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 10,
-                                                        vertical: 6,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: badgeBackground,
-                                                    borderRadius:
-                                                        BorderRadius.circular(999),
-                                                  ),
-                                                  child: Text(
-                                                    badgeText,
-                                                    style: TextStyle(
-                                                      color: accentColor,
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.w700,
-                                                    ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  badgeText,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 10.5,
+                                                    fontWeight: FontWeight.w700,
                                                   ),
                                                 ),
                                               ],
                                             ),
-                                            const SizedBox(height: 8),
-                                            CustomTextfield.textWithStyles600(
-                                              headline,
-                                              fontSize: 17,
-                                              color: accentColor,
+                                          ),
+                                          const Spacer(),
+                                          Icon(
+                                            Icons.schedule_rounded,
+                                            size: 13,
+                                            color: Colors.white.withOpacity(
+                                              0.85,
                                             ),
-                                            const SizedBox(height: 6),
-                                            CustomTextfield.textWithStylesSmall(
-                                              subtext,
-                                              colors: Colors.black87,
-                                              fontWeight: FontWeight.w500,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Flexible(
+                                            child: Text(
+                                              endsLabel,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: Colors.white.withOpacity(
+                                                  0.85,
+                                                ),
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w500,
+                                              ),
                                             ),
-                                            const SizedBox(height: 8),
-                                            if (showCreditedState)
-                                              Text(
-                                                '+\u20A6$rewardAmountLabel',
-                                                style: TextStyle(
-                                                  color: accentColor,
-                                                  fontSize: 20,
-                                                  fontWeight: FontWeight.w800,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Container(
+                                                      height: 40,
+                                                      width: 40,
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.white
+                                                            .withOpacity(0.18),
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                      child: const Icon(
+                                                        Icons
+                                                            .card_giftcard_rounded,
+                                                        color: Colors.white,
+                                                        size: 22,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 10),
+                                                    Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          done
+                                                              ? 'Reward earned'
+                                                              : 'Weekly reward',
+                                                          style: TextStyle(
+                                                            color: Colors.white
+                                                                .withOpacity(
+                                                                  0.85,
+                                                                ),
+                                                            fontSize: 11.5,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          '\u20A6$rewardAmountLabel',
+                                                          style: const TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 24,
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            height: 1.05,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 12),
+                                                Text(
+                                                  headline,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 14.5,
+                                                    fontWeight: FontWeight.w700,
+                                                    height: 1.2,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  subtext,
+                                                  style: TextStyle(
+                                                    color: Colors.white
+                                                        .withOpacity(0.82),
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w500,
+                                                    height: 1.25,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Container(
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: const BoxDecoration(
+                                              color: Colors.white,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: progressWidget,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 14),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 9,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.14),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              done
+                                                  ? Icons.emoji_events_rounded
+                                                  : Icons
+                                                      .local_fire_department_rounded,
+                                              size: 16,
+                                              color: Colors.white,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                done || remaining <= 0
+                                                    ? progressLine
+                                                    : '$totalTrips/$goal trips \u00B7 $remaining more to unlock!',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
                                                 ),
                                               ),
-                                            if (showCreditedState)
-                                              const SizedBox(height: 8),
-                                            CustomTextfield.textWithStylesSmall(
-                                              progressLine,
-                                              colors: accentColor,
-                                              fontWeight: FontWeight.w600,
                                             ),
                                           ],
                                         ),
                                       ),
-                                      const SizedBox(width: 15),
-                                      progressWidget,
                                     ],
                                   ),
                                 );
