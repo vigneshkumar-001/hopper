@@ -18,7 +18,7 @@ class ApiConstents {
   );
   static String googleMapApiKey = const String.fromEnvironment(
     'GOOGLE_MAPS_API_KEY',
-    defaultValue: 'AIzaSyCvU6g43_aujUMDTTHpCtg1wkHszDhdC28',
+    defaultValue: 'AIzaSyBFNOIc2cmuwprJvcKcU6R7Inq2m8bt5Ig',
   );
   // static String baseUrl12 =
   //     'https://hoppr-face-two-dbe557472d7f.herokuapp.com/api';

@@ -13,7 +13,7 @@ import UserNotifications
   ) -> Bool {
 
     // Initialize Google Maps
-    GMSServices.provideAPIKey("AIzaSyCvU6g43_aujUMDTTHpCtg1wkHszDhdC28") // Replace with your key
+    GMSServices.provideAPIKey("AIzaSyBFNOIc2cmuwprJvcKcU6R7Inq2m8bt5Ig") // Replace with your key
 
     // Initialize Firebase
     if FirebaseApp.app() == nil {

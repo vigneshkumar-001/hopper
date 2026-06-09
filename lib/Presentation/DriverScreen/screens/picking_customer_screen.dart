@@ -310,11 +310,6 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                     right: 12,
                     child: Column(
                       children: [
-                      NavigateToDestinationButton(
-                        onTap: _onNavigatePressed,
-                        label: 'To Pickup',
-                      ),
-                      const SizedBox(height: 10),
                       ValueListenableBuilder<MapFocusMode>(
                         valueListenable: c.rideMap.focusMode,
                         builder: (context, mode, _) {
@@ -435,6 +430,51 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                                 ),
                               ),
                               const SizedBox(height: 10),
+
+                              // Navigate to Pickup — moved from the map into the
+                              // sheet (first item), same pattern as the Drop
+                              // screen's "Navigate to Drop" button.
+                              if (c.arrivedAtPickup.value) ...[
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    2,
+                                    16,
+                                    12,
+                                  ),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    height: 52,
+                                    child: ElevatedButton.icon(
+                                      onPressed: _onNavigatePressed,
+                                      icon: const Icon(
+                                        Icons.navigation_rounded,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      label: const Text(
+                                        'Navigate to Pickup',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xFF1A73E8,
+                                        ),
+                                        elevation: 0,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
 
                               // âœ… TOP ROW: Call (left) + Duration (center) + Chat (right)
                               // âœ… SUBTITLE: Customer name (below duration)
