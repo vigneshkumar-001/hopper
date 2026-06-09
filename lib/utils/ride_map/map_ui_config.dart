@@ -7,10 +7,11 @@ import 'package:flutter/material.dart';
 class MapUiConfig {
   // Marker logical sizes (device-independent logical pixels).
   // Bitmaps are generated at `size * devicePixelRatio` and cached.
-  // Tuned smaller for production (Ola/Uber-like).
-  // More compact vehicle markers (closer to Ola/Uber in-app size).
-  static const double carMarkerSize = 20.0;
-  static const double bikeMarkerSize = 18.0;
+  // Vehicle marker logical size (the canvas also reserves a margin for the soft
+  // drop-shadow, so the visible car is ~80% of this). Sized for a clear,
+  // premium Uber/Ola-like presence instead of a tiny blob.
+  static const double carMarkerSize = 28.0;
+  static const double bikeMarkerSize = 25.0;
   static const double pickupMarkerSize = 32.0;
   static const double dropMarkerSize = 32.0;
 

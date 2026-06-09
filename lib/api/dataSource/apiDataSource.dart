@@ -10,6 +10,7 @@ import 'package:hopper/Presentation/Authentication/models/otp_response.dart';
 import 'package:hopper/Presentation/Drawer/model/add_wallet_response.dart';
 import 'package:hopper/Presentation/Drawer/model/driver_earnings_response.dart';
 import 'package:hopper/Presentation/Drawer/model/withdraw_request_response.dart';
+import 'package:hopper/Presentation/Drawer/model/bank_details_models.dart';
 import 'package:hopper/Presentation/DriverScreen/models/get_driver_status.dart';
 import 'package:hopper/Presentation/DriverScreen/models/stop_request_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
@@ -1880,7 +1881,9 @@ class ApiDataSource extends BaseApiDataSource {
 
       dynamic response = await Request.sendRequest(url, payload, 'POST', false);
 
-      if (response is Response && response.statusCode == 200) {
+      // Backend returns 201 (Created) on success — accept 200 and 201.
+      if (response is Response &&
+          (response.statusCode == 200 || response.statusCode == 201)) {
         if (response.data is Map && response.data['success'] == true) {
           return Right(
             WithdrawRequestResponse.fromJson(
@@ -1896,6 +1899,68 @@ class ApiDataSource extends BaseApiDataSource {
           );
         }
         return Left(ServerFailure('Withdrawal failed'));
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(
+            (response.data is Map
+                    ? (response.data['message'] ?? 'Unexpected error')
+                    : 'Unexpected error')
+                .toString(),
+          ),
+        );
+      }
+      return Left(ServerFailure('Unexpected error'));
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  /// Save / update the driver's withdraw bank details.
+  /// POST /users/update-driver-withdraw-payments-details
+  Future<Either<Failure, BankDetailsResponse>>
+      updateDriverWithdrawPaymentDetails({
+    required String accountHolderName,
+    required String bankName,
+    required String bankCode,
+    required String accountNumber,
+    String branchName = '',
+    String swiftCode = '',
+    String image = '',
+  }) async {
+    try {
+      final url = ApiConstents.updateWithdrawPaymentDetails;
+      final payload = {
+        'accountHolderName': accountHolderName,
+        'bankName': bankName,
+        'bankCode': bankCode,
+        'accountNumber': accountNumber,
+        'branchName': branchName,
+        'swiftCode': swiftCode,
+        'image': image,
+      };
+
+      dynamic response = await Request.sendRequest(url, payload, 'POST', false);
+
+      // Backend returns 201 (create) or 200 (update) on success.
+      if (response is Response &&
+          (response.statusCode == 200 || response.statusCode == 201)) {
+        if (response.data is Map && response.data['success'] == true) {
+          return Right(
+            BankDetailsResponse.fromJson(
+              Map<String, dynamic>.from(response.data as Map),
+            ),
+          );
+        }
+        if (response.data is Map) {
+          return Left(
+            ServerFailure(
+              (response.data['message'] ?? 'Failed to save bank details')
+                  .toString(),
+            ),
+          );
+        }
+        return Left(ServerFailure('Failed to save bank details'));
       } else if (response is Response) {
         return Left(
           ServerFailure(

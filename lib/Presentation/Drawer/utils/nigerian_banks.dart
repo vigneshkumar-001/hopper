@@ -1,0 +1,40 @@
+import '../model/bank_details_models.dart';
+
+/// Static fallback list of major Nigerian banks with their NIP / transfer codes
+/// (the same `code` values Paystack's bank list returns). Used when the live
+/// list can't be fetched, so the bank picker always works offline.
+const List<NigerianBank> kNigerianBanksStatic = <NigerianBank>[
+  NigerianBank(name: 'Access Bank', code: '044'),
+  NigerianBank(name: 'Access Bank (Diamond)', code: '063'),
+  NigerianBank(name: 'Citibank Nigeria', code: '023'),
+  NigerianBank(name: 'Ecobank Nigeria', code: '050'),
+  NigerianBank(name: 'Fidelity Bank', code: '070'),
+  NigerianBank(name: 'First Bank of Nigeria', code: '011'),
+  NigerianBank(name: 'First City Monument Bank (FCMB)', code: '214'),
+  NigerianBank(name: 'Globus Bank', code: '00103'),
+  NigerianBank(name: 'Guaranty Trust Bank (GTBank)', code: '058'),
+  NigerianBank(name: 'Heritage Bank', code: '030'),
+  NigerianBank(name: 'Jaiz Bank', code: '301'),
+  NigerianBank(name: 'Keystone Bank', code: '082'),
+  NigerianBank(name: 'Kuda Bank', code: '50211'),
+  NigerianBank(name: 'Lotus Bank', code: '303'),
+  NigerianBank(name: 'Moniepoint MFB', code: '50515'),
+  NigerianBank(name: 'OPay', code: '999992'),
+  NigerianBank(name: 'PalmPay', code: '999991'),
+  NigerianBank(name: 'Parallex Bank', code: '104'),
+  NigerianBank(name: 'Polaris Bank', code: '076'),
+  NigerianBank(name: 'PremiumTrust Bank', code: '105'),
+  NigerianBank(name: 'Providus Bank', code: '101'),
+  NigerianBank(name: 'Stanbic IBTC Bank', code: '221'),
+  NigerianBank(name: 'Standard Chartered Bank', code: '068'),
+  NigerianBank(name: 'Sterling Bank', code: '232'),
+  NigerianBank(name: 'SunTrust Bank', code: '100'),
+  NigerianBank(name: 'TAJ Bank', code: '302'),
+  NigerianBank(name: 'Titan Trust Bank', code: '102'),
+  NigerianBank(name: 'Union Bank of Nigeria', code: '032'),
+  NigerianBank(name: 'United Bank For Africa (UBA)', code: '033'),
+  NigerianBank(name: 'Unity Bank', code: '215'),
+  NigerianBank(name: 'VFD Microfinance Bank', code: '566'),
+  NigerianBank(name: 'Wema Bank', code: '035'),
+  NigerianBank(name: 'Zenith Bank', code: '057'),
+];

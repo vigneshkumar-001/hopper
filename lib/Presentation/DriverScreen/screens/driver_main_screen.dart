@@ -1898,10 +1898,6 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                     isCar
                                         ? (weeklyData?.goal ?? 0)
                                         : (parcelWeekly?.goal ?? 0);
-                                final reward =
-                                    isCar
-                                        ? (weeklyData?.reward ?? 0)
-                                        : (parcelWeekly?.reward ?? 0);
                                 final totalTrips =
                                     isCar
                                         ? (weeklyData?.totalTrips ?? 0)
@@ -1930,11 +1926,6 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                             ? 'Ends on -'
                                             : 'Ends on ${DateFormat('EEEE').format(endsOn)}');
 
-                                final hasWeeklyData =
-                                    isCar
-                                        ? weeklyData != null
-                                        : parcelWeekly != null;
-
                                 final progress = (progressPercent / 100).clamp(
                                   0.0,
                                   1.0,
@@ -1954,14 +1945,6 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                 final isInactiveState =
                                     isCar && challengeStatus == 'INACTIVE';
 
-                                final accentColor =
-                                    showCreditedState
-                                        ? const Color(0xFF15803D)
-                                        : isAchievedState
-                                        ? const Color(0xFF16A34A)
-                                        : isInactiveState
-                                        ? Colors.grey
-                                        : getTextColor(color: AppColors.drkGreen);
                                 String formatAmount(double value) {
                                   if (value == value.roundToDouble()) {
                                     return value.toStringAsFixed(0);
@@ -1980,19 +1963,6 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                                   0.0)
                                               : (weeklyData?.reward ?? 0.0),
                                         );
-                                final headline =
-                                    isCar
-                                        ? ((weeklyData?.headline ?? '').trim()
-                                                    .isNotEmpty
-                                                ? weeklyData!.headline
-                                                : showCreditedState
-                                                ? 'Weekly reward credited'
-                                                : isAchievedState
-                                                ? 'Weekly challenge achieved'
-                                                : isInactiveState
-                                                ? 'Weekly challenge inactive'
-                                                : 'Complete $goal trips and get \u20A6$rewardAmountLabel extra')
-                                        : 'Complete $goal trips and get $reward extra';
                                 final subtext =
                                     isCar
                                         ? ((weeklyData?.subtext ?? '').trim()
@@ -2025,87 +1995,71 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                                 : '$totalTrips trips done out of $goal')
                                         : '$totalTrips trips done out of $goal';
 
-                                Widget progressWidget;
-                                if (!hasWeeklyData) {
-                                  progressWidget =
-                                      const CupertinoActivityIndicator(
-                                        radius: 16,
-                                      );
-                                } else if (defaultTargetPlatform ==
-                                    TargetPlatform.iOS) {
-                                  progressWidget = SizedBox(
-                                    width: 92,
-                                    height: 92,
-                                    child: Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                        CupertinoActivityIndicator.partiallyRevealed(
-                                          radius: 22,
-                                          progress: progress,
-                                        ),
-                                        Text(
-                                          "${progressPercent.round()}%",
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                } else {
-                                  progressWidget = CircularPercentIndicator(
-                                    radius: 45.0,
-                                    lineWidth: 10.0,
-                                    animation: true,
-                                    percent: progress,
-                                    center: Text(
-                                      "${progressPercent.round()}%",
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    circularStrokeCap: CircularStrokeCap.round,
-                                    backgroundColor: accentColor.withOpacity(0.12),
-                                    progressColor: accentColor,
-                                  );
-                                }
-
                                 final int remaining =
                                     (goal - totalTrips) < 0
                                         ? 0
                                         : (goal - totalTrips);
                                 final bool done =
                                     showCreditedState || isAchievedState;
-                                final List<Color> gradColors =
-                                    isInactiveState
-                                        ? const [
-                                          Color(0xFF64748B),
-                                          Color(0xFF94A3B8),
-                                        ]
-                                        : done
-                                        ? const [
-                                          Color(0xFF0F7A3D),
-                                          Color(0xFF22C55E),
-                                        ]
-                                        : const [
-                                          Color(0xFF0B6B45),
-                                          Color(0xFF16A34A),
-                                        ];
+                                final List<int> milestones = [
+                                  (goal * 0.25).ceil(),
+                                  (goal * 0.5).ceil(),
+                                  (goal * 0.75).ceil(),
+                                  goal,
+                                ];
+                                final Color cAccent = isInactiveState
+                                    ? const Color(0xFF94A3B8)
+                                    : done
+                                        ? const Color(0xFF16A34A)
+                                        : const Color(0xFFE0561E);
+                                final Color cSoft = isInactiveState
+                                    ? const Color(0xFFEEF1F5)
+                                    : done
+                                        ? const Color(0xFFE7F6EC)
+                                        : const Color(0xFFFBEAE1);
+                                const Color cInk = Color(0xFF1A1A1A);
+                                const Color cMuted = Color(0xFF6B7280);
+
+                                Widget milestoneNode(int value, bool reached) {
+                                  return Container(
+                                    width: 30,
+                                    height: 30,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: reached ? cAccent : Colors.white,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: reached
+                                            ? cAccent
+                                            : cAccent.withOpacity(0.40),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '$value',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        color: reached ? Colors.white : cAccent,
+                                      ),
+                                    ),
+                                  );
+                                }
 
                                 return Container(
                                   padding: const EdgeInsets.all(18),
                                   decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: gradColors,
-                                    ),
+                                    color: Colors.white,
                                     borderRadius: BorderRadius.circular(22),
+                                    border: Border.all(
+                                      color: cAccent.withOpacity(0.35),
+                                      width: 1.3,
+                                    ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: gradColors.last.withOpacity(0.35),
+                                        color: Colors.black.withOpacity(0.05),
                                         blurRadius: 18,
-                                        offset: const Offset(0, 10),
+                                        offset: const Offset(0, 8),
                                       ),
                                     ],
                                   ),
@@ -2116,32 +2070,31 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                         children: [
                                           Container(
                                             padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 5,
+                                              horizontal: 11,
+                                              vertical: 6,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: Colors.white.withOpacity(
-                                                0.20,
-                                              ),
+                                              color: cSoft,
                                               borderRadius:
                                                   BorderRadius.circular(999),
                                             ),
                                             child: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                Icon(
-                                                  done
-                                                      ? Icons.check_circle_rounded
-                                                      : Icons.bolt_rounded,
-                                                  size: 13,
-                                                  color: Colors.white,
+                                                Container(
+                                                  width: 7,
+                                                  height: 7,
+                                                  decoration: BoxDecoration(
+                                                    color: cAccent,
+                                                    shape: BoxShape.circle,
+                                                  ),
                                                 ),
-                                                const SizedBox(width: 4),
+                                                const SizedBox(width: 6),
                                                 Text(
                                                   badgeText,
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 10.5,
+                                                  style: TextStyle(
+                                                    color: cAccent,
+                                                    fontSize: 11.5,
                                                     fontWeight: FontWeight.w700,
                                                   ),
                                                 ),
@@ -2149,24 +2102,20 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                             ),
                                           ),
                                           const Spacer(),
-                                          Icon(
+                                          const Icon(
                                             Icons.schedule_rounded,
-                                            size: 13,
-                                            color: Colors.white.withOpacity(
-                                              0.85,
-                                            ),
+                                            size: 14,
+                                            color: cMuted,
                                           ),
-                                          const SizedBox(width: 4),
+                                          const SizedBox(width: 5),
                                           Flexible(
                                             child: Text(
                                               endsLabel,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: Colors.white.withOpacity(
-                                                  0.85,
-                                                ),
-                                                fontSize: 11,
+                                              style: const TextStyle(
+                                                color: cMuted,
+                                                fontSize: 12,
                                                 fontWeight: FontWeight.w500,
                                               ),
                                             ),
@@ -2175,80 +2124,42 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                       ),
                                       const SizedBox(height: 16),
                                       Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
                                         children: [
                                           Expanded(
                                             child: Column(
                                               crossAxisAlignment:
                                                   CrossAxisAlignment.start,
                                               children: [
-                                                Row(
-                                                  children: [
-                                                    Container(
-                                                      height: 40,
-                                                      width: 40,
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.white
-                                                            .withOpacity(0.18),
-                                                        shape: BoxShape.circle,
-                                                      ),
-                                                      child: const Icon(
-                                                        Icons
-                                                            .card_giftcard_rounded,
-                                                        color: Colors.white,
-                                                        size: 22,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 10),
-                                                    Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment
-                                                              .start,
-                                                      children: [
-                                                        Text(
-                                                          done
-                                                              ? 'Reward earned'
-                                                              : 'Weekly reward',
-                                                          style: TextStyle(
-                                                            color: Colors.white
-                                                                .withOpacity(
-                                                                  0.85,
-                                                                ),
-                                                            fontSize: 11.5,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                          ),
-                                                        ),
-                                                        Text(
-                                                          '\u20A6$rewardAmountLabel',
-                                                          style: const TextStyle(
-                                                            color: Colors.white,
-                                                            fontSize: 24,
-                                                            fontWeight:
-                                                                FontWeight.w800,
-                                                            height: 1.05,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 12),
                                                 Text(
-                                                  headline,
+                                                  done
+                                                      ? 'Reward earned'
+                                                      : 'Weekly reward',
                                                   style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 14.5,
-                                                    fontWeight: FontWeight.w700,
-                                                    height: 1.2,
+                                                    color: cMuted,
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
-                                                const SizedBox(height: 4),
+                                                const SizedBox(height: 2),
                                                 Text(
-                                                  subtext,
-                                                  style: TextStyle(
-                                                    color: Colors.white
-                                                        .withOpacity(0.82),
-                                                    fontSize: 12,
+                                                  '\u20A6$rewardAmountLabel',
+                                                  style: const TextStyle(
+                                                    color: cInk,
+                                                    fontSize: 30,
+                                                    fontWeight: FontWeight.w800,
+                                                    height: 1.05,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 6),
+                                                Text(
+                                                  done
+                                                      ? subtext
+                                                      : 'Complete $goal trips to unlock',
+                                                  style: const TextStyle(
+                                                    color: cMuted,
+                                                    fontSize: 13,
                                                     fontWeight: FontWeight.w500,
                                                     height: 1.25,
                                                   ),
@@ -2256,54 +2167,122 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                               ],
                                             ),
                                           ),
-                                          const SizedBox(width: 12),
-                                          Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: const BoxDecoration(
-                                              color: Colors.white,
-                                              shape: BoxShape.circle,
+                                          const SizedBox(width: 14),
+                                          CircularPercentIndicator(
+                                            radius: 40.0,
+                                            lineWidth: 9.0,
+                                            animation: true,
+                                            percent: progress,
+                                            center: Text(
+                                              '${progressPercent.round()}%',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 15,
+                                                color: cAccent,
+                                              ),
                                             ),
-                                            child: progressWidget,
+                                            circularStrokeCap:
+                                                CircularStrokeCap.round,
+                                            backgroundColor: cSoft,
+                                            progressColor: cAccent,
                                           ),
                                         ],
                                       ),
-                                      const SizedBox(height: 14),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 9,
+                                      const SizedBox(height: 20),
+                                      if (goal >= 2)
+                                        LayoutBuilder(
+                                          builder: (ctx, cons) {
+                                            final w = cons.maxWidth;
+                                            const r = 15.0;
+                                            final span = w - 2 * r;
+                                            final cxs = List.generate(
+                                              4,
+                                              (i) => r + span * (i / 3),
+                                            );
+                                            return SizedBox(
+                                              height: 30,
+                                              child: Stack(
+                                                children: [
+                                                  Positioned(
+                                                    left: cxs.first,
+                                                    top: 13,
+                                                    child: Container(
+                                                      width: span,
+                                                      height: 4,
+                                                      decoration: BoxDecoration(
+                                                        color: cSoft,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              99,
+                                                            ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  Positioned(
+                                                    left: cxs.first,
+                                                    top: 13,
+                                                    child: Container(
+                                                      width:
+                                                          span *
+                                                          progress.clamp(
+                                                            0.0,
+                                                            1.0,
+                                                          ),
+                                                      height: 4,
+                                                      decoration: BoxDecoration(
+                                                        color: cAccent,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              99,
+                                                            ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  ...List.generate(4, (i) {
+                                                    return Positioned(
+                                                      left: cxs[i] - r,
+                                                      top: 0,
+                                                      child: milestoneNode(
+                                                        milestones[i],
+                                                        totalTrips >=
+                                                            milestones[i],
+                                                      ),
+                                                    );
+                                                  }),
+                                                ],
+                                              ),
+                                            );
+                                          },
                                         ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.14),
-                                          borderRadius: BorderRadius.circular(
-                                            12,
+                                      const SizedBox(height: 16),
+                                      Divider(
+                                        height: 1,
+                                        color: Colors.grey.shade200,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            done
+                                                ? Icons.emoji_events_rounded
+                                                : Icons.directions_car_rounded,
+                                            size: 16,
+                                            color: cAccent,
                                           ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              done
-                                                  ? Icons.emoji_events_rounded
-                                                  : Icons
-                                                      .local_fire_department_rounded,
-                                              size: 16,
-                                              color: Colors.white,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                done || remaining <= 0
-                                                    ? progressLine
-                                                    : '$totalTrips/$goal trips \u00B7 $remaining more to unlock!',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              done || remaining <= 0
+                                                  ? progressLine
+                                                  : '$totalTrips / $goal trips done \u00B7 $remaining more to unlock',
+                                              style: const TextStyle(
+                                                color: cInk,
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
                                               ),
                                             ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),

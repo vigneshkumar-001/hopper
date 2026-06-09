@@ -94,10 +94,16 @@ Future<void> ensureDriverTrackingServiceRunning({
             >();
     final enabled = await android?.areNotificationsEnabled();
     if (enabled == false) {
+      // Do NOT bail out. The foreground-service notification channel already
+      // exists (created above), so the location FGS can still start — Android
+      // just hides its notification when POST_NOTIFICATIONS is denied. Blocking
+      // here left customers with a frozen driver marker the moment the driver
+      // opened Google Maps (app backgrounded), because neither the background
+      // service NOR the (now-disconnected) foreground socket was emitting.
       CommonLogger.log.w(
-        '🚫 [BG_SERVICE] Notifications disabled; not starting tracking service',
+        '⚠️ [BG_SERVICE] Notifications disabled — starting FGS anyway '
+        '(tracking notification hidden; driver location still emits).',
       );
-      return;
     }
   } catch (_) {}
 

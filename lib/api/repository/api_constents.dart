@@ -66,6 +66,8 @@ class ApiConstents {
   static String get rideHistory => _u('/users/ride-history');
   static String get addToWallet => _u('/users/add-to-wallet');
   static String get withdrawRequest => _u('/users/withdraw/request');
+  static String get updateWithdrawPaymentDetails =>
+      _u('/users/update-driver-withdraw-payments-details');
   static String get fcmToken => _u('/users/update-fcm-token');
   static String get checkPaymentType => _u('/users/check-payment-type');
   static String get cashCollectedStatus => _u('/cashonhand/byuser/orders');

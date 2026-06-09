@@ -1488,6 +1488,18 @@ class RideMapController {
     if (_disposed) return;
     final next = <Polyline>{};
 
+    // Anchor the active route to the live car so the polyline always visually
+    // emanates from the vehicle (Uber/Ola feel). Bridge only a SMALL gap so an
+    // off-route / simulator divergence never draws a long line across the map.
+    List<LatLng> activeRemaining = _remaining;
+    final liveCar = _lastSnappedForBearing;
+    if (liveCar != null && _remaining.length >= 2) {
+      final gap = _distanceMeters(liveCar, _remaining.first);
+      if (gap > 1.0 && gap <= 80.0) {
+        activeRemaining = <LatLng>[liveCar, ..._remaining];
+      }
+    }
+
     if (_showCompleted && _completed.length >= 2) {
       // Shadow / outline for completed route.
       next.add(
@@ -1519,7 +1531,7 @@ class RideMapController {
       );
     }
 
-    if (_remaining.length >= 2) {
+    if (activeRemaining.length >= 2) {
       // Shadow / outline for active route (Uber/Ola style).
       next.add(
         Polyline(
@@ -1530,7 +1542,7 @@ class RideMapController {
           endCap: Cap.roundCap,
           jointType: JointType.round,
           geodesic: false,
-          points: _remaining,
+          points: activeRemaining,
           zIndex: 2,
         ),
       );
@@ -1543,7 +1555,7 @@ class RideMapController {
           endCap: Cap.roundCap,
           jointType: JointType.round,
           geodesic: false,
-          points: _remaining,
+          points: activeRemaining,
           zIndex: 3,
         ),
       );

@@ -445,29 +445,42 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                                   child: SizedBox(
                                     width: double.infinity,
                                     height: 52,
+                                    // Secondary / utility action -> tonal blue so
+                                    // it reads as distinct from the solid primary
+                                    // "Arrived at Pickup Point" CTA below.
                                     child: ElevatedButton.icon(
                                       onPressed: _onNavigatePressed,
-                                      icon: const Icon(
-                                        Icons.navigation_rounded,
-                                        color: Colors.white,
-                                        size: 20,
+                                      icon: Container(
+                                        width: 26,
+                                        height: 26,
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFF1A73E8),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.navigation_rounded,
+                                          color: Colors.white,
+                                          size: 15,
+                                        ),
                                       ),
                                       label: const Text(
                                         'Navigate to Pickup',
                                         style: TextStyle(
-                                          color: Colors.white,
+                                          color: Color(0xFF1A73E8),
                                           fontSize: 16,
-                                          fontWeight: FontWeight.w700,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.2,
                                         ),
                                       ),
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(
-                                          0xFF1A73E8,
-                                        ),
+                                        backgroundColor: const Color(0xFFEAF1FE),
+                                        foregroundColor: const Color(0xFF1A73E8),
                                         elevation: 0,
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            12,
+                                          borderRadius: BorderRadius.circular(14),
+                                          side: const BorderSide(
+                                            color: Color(0xFF1A73E8),
+                                            width: 1.3,
                                           ),
                                         ),
                                       ),

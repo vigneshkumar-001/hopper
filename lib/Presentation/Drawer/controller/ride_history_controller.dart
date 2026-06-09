@@ -6,7 +6,7 @@ import 'package:hopper/Presentation/Drawer/model/add_wallet_response.dart';
 import 'package:hopper/Presentation/Drawer/model/ride_history_response.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 
-import '../model/wallet_history_response.dart';
+import 'package:hopper/Presentation/Drawer/model/wallet_history_response.dart';
 
 class RideHistoryController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
@@ -204,13 +204,17 @@ class RideHistoryController extends GetxController {
     }
   }
 
-  Future<void> requestWithdraw({required double amount}) async {
-    if (isWithdrawLoading.value) return;
+  /// Returns true only when the backend confirms the withdrawal request.
+  Future<bool> requestWithdraw({required double amount}) async {
+    if (isWithdrawLoading.value) return false;
     isWithdrawLoading.value = true;
     try {
       final results = await apiDataSource.requestWithdraw(amount: amount);
-      results.fold(
-        (failure) => CustomSnackBar.showError(failure.message),
+      return await results.fold(
+        (failure) async {
+          CustomSnackBar.showError(failure.message);
+          return false;
+        },
         (response) async {
           if (response.success) {
             CustomSnackBar.showSuccess(
@@ -219,16 +223,19 @@ class RideHistoryController extends GetxController {
                   : response.message,
             );
             await customerWalletHistory(isRefresh: true);
+            return true;
           } else {
             CustomSnackBar.showError(
               response.message.isEmpty ? 'Withdrawal failed' : response.message,
             );
+            return false;
           }
         },
       );
     } catch (e) {
       CommonLogger.log.e(e);
       CustomSnackBar.showError('Something went wrong');
+      return false;
     } finally {
       isWithdrawLoading.value = false;
     }

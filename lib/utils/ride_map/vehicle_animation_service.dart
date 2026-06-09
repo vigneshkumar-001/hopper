@@ -32,6 +32,9 @@ class VehicleAnimationService {
   LatLng? _to;
   double _bearingFrom = 0;
   double _bearingTo = 0;
+  // Wall-clock time of the previous animateTo() — used to glide over the actual
+  // fix cadence instead of raw distance (continuous motion, no stop-and-go).
+  DateTime? _lastAnimateAt;
 
   void dispose() {
     _ticker?.dispose();
@@ -40,6 +43,9 @@ class VehicleAnimationService {
 
   void setImmediate(LatLng position, double bearing) {
     _stop();
+    // Reset cadence tracking: the next animateTo() should fall back to the
+    // distance-based duration rather than measure against this teleport.
+    _lastAnimateAt = null;
     pose.value = VehiclePose(position: position, bearing: BearingUtils.normalize360(bearing));
   }
 
@@ -52,6 +58,7 @@ class VehicleAnimationService {
     double minMs = 700,
     double maxMs = 2500,
   }) {
+    final now = DateTime.now();
     final current = pose.value;
     final from = current?.position ?? to;
     final bearingFrom = current?.bearing ?? bearingTo;
@@ -61,8 +68,25 @@ class VehicleAnimationService {
     _bearingFrom = BearingUtils.normalize360(bearingFrom);
     _bearingTo = BearingUtils.normalize360(bearingTo);
 
+    // Continuous-motion duration (Uber/Ola feel): glide over the time BETWEEN
+    // fixes — stretched ~15% so the marker is still moving when the next fix
+    // lands — instead of `distance/speed`, which finishes early and then freezes
+    // (stop-and-go) at low/medium speeds. Falls back to distance/speed for the
+    // first fix (no cadence yet). Always clamped to [minMs, maxMs].
     final meters = _distanceMeters(from, to);
-    final ms = _durationFor(meters, speedMetersPerSecond, minMs, maxMs);
+    final lastAt = _lastAnimateAt;
+    int ms;
+    if (lastAt != null) {
+      final intervalMs = now.difference(lastAt).inMilliseconds;
+      ms = intervalMs > 0
+          ? (intervalMs * 1.15).round()
+          : _durationFor(meters, speedMetersPerSecond, minMs, maxMs);
+    } else {
+      ms = _durationFor(meters, speedMetersPerSecond, minMs, maxMs);
+    }
+    ms = ms.clamp(minMs.round(), maxMs.round());
+    _lastAnimateAt = now;
+
     _duration = Duration(milliseconds: ms);
     _elapsed = Duration.zero;
 

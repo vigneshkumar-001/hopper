@@ -70,6 +70,7 @@ class MarkerIconCache {
     required ui.Image srcImage,
     required int targetWidthPx,
     required int targetHeightPx,
+    bool withShadow = false,
   }) async {
     final srcRect = (await _opaqueBounds(srcImage)) ??
         ui.Rect.fromLTWH(
@@ -83,8 +84,13 @@ class MarkerIconCache {
     final cropH = srcRect.height;
     if (cropW <= 1 || cropH <= 1) return null;
 
-    // Contain within target square without stretching.
-    final scale = math.min(targetWidthPx / cropW, targetHeightPx / cropH);
+    // With a shadow we leave headroom so the blurred silhouette isn't clipped.
+    final double contentScale = withShadow ? 0.80 : 1.0;
+    final double availW = targetWidthPx * contentScale;
+    final double availH = targetHeightPx * contentScale;
+
+    // Contain within the available box without stretching.
+    final scale = math.min(availW / cropW, availH / cropH);
     final dstW = cropW * scale;
     final dstH = cropH * scale;
     final dx = (targetWidthPx - dstW) / 2.0;
@@ -96,8 +102,26 @@ class MarkerIconCache {
       recorder,
       ui.Rect.fromLTWH(0, 0, targetWidthPx.toDouble(), targetHeightPx.toDouble()),
     );
-    final paint = ui.Paint()..isAntiAlias = true..filterQuality = ui.FilterQuality.high;
+
+    if (withShadow) {
+      // Uber/Ola-style soft "floating" shadow: a blurred dark silhouette of the
+      // vehicle, nudged down so it reads as a ground shadow under the car.
+      final double shadowDy = targetHeightPx * 0.06;
+      final shadowRect = ui.Rect.fromLTWH(dx, dy + shadowDy, dstW, dstH);
+      final shadowPaint = ui.Paint()
+        ..isAntiAlias = true
+        ..colorFilter =
+            const ui.ColorFilter.mode(ui.Color(0x4D000000), ui.BlendMode.srcIn)
+        ..maskFilter =
+            ui.MaskFilter.blur(ui.BlurStyle.normal, targetWidthPx * 0.04);
+      canvas.drawImageRect(srcImage, srcRect, shadowRect, shadowPaint);
+    }
+
+    final paint = ui.Paint()
+      ..isAntiAlias = true
+      ..filterQuality = ui.FilterQuality.high;
     canvas.drawImageRect(srcImage, srcRect, dstRect, paint);
+
     final picture = recorder.endRecording();
     final img = await picture.toImage(targetWidthPx, targetHeightPx);
     final png = await img.toByteData(format: ui.ImageByteFormat.png);
@@ -127,7 +151,7 @@ class MarkerIconCache {
     final logical = (type == RideVehicleType.car)
         ? MapUiConfig.carMarkerSize
         : MapUiConfig.bikeMarkerSize;
-    return _loadAssetContain(asset, logicalSize: logical);
+    return _loadAssetContain(asset, logicalSize: logical, withShadow: true);
   }
 
   static Future<BitmapDescriptor> loadPickupPin() {
@@ -142,9 +166,11 @@ class MarkerIconCache {
   static Future<BitmapDescriptor> _loadAssetContain(
     String asset, {
     required double logicalSize,
+    bool withShadow = false,
   }) {
     final dpr = _dpr();
-    final key = '$asset|${logicalSize.toStringAsFixed(2)}@${dpr.toStringAsFixed(2)}';
+    final key =
+        '$asset|${logicalSize.toStringAsFixed(2)}@${dpr.toStringAsFixed(2)}|s${withShadow ? 1 : 0}';
     return _cache.putIfAbsent(key, () async {
       final widthPx = (logicalSize * dpr).round().clamp(1, 1024);
       final heightPx = (logicalSize * dpr).round().clamp(1, 1024);
@@ -161,6 +187,7 @@ class MarkerIconCache {
           srcImage: frame.image,
           targetWidthPx: widthPx,
           targetHeightPx: heightPx,
+          withShadow: withShadow,
         );
         if (bytes == null) return BitmapDescriptor.defaultMarker;
         return BitmapDescriptor.bytes(bytes);
