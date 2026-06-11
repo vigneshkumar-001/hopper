@@ -990,7 +990,10 @@ class RideStatsController extends GetxController
     _positionStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 5,
+        // 5 -> 0: this stream only runs during an active ride, so don't let the
+        // OS withhold fixes at low speed — the driver's own map (route +
+        // reached-destination + vehicle marker) stays smooth in slow traffic.
+        distanceFilter: 0,
       ),
     ).listen((Position position) async {
       if (_shouldRenderSocketDriverLocationDirectly()) {

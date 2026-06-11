@@ -430,23 +430,36 @@ class PickingCustomerController extends GetxController {
 
       final pickupM = asDouble(payload['pickupDistanceInMeters']);
       if (pickupM != null) {
-        driverStatusController.pickupDistanceInMeters.value = pickupM;
+        // A transient/stale 0 during the pickup phase must NOT blank the
+        // "X km" / "X min" card. Accept a 0 only once the driver has genuinely
+        // reached pickup (_driverReachedSocket — set from a real positive
+        // in-radius reading or a driver-arrived event); positive values are
+        // always accepted. Otherwise keep the last good value.
+        // NOTE: do NOT gate on `pickupM <= _ARRIVED_PICKUP_RADIUS_M` here — when
+        // pickupM is 0 that test is vacuously true and would re-admit the poison
+        // 0 (and the radius is 500 m, nowhere near "arrived").
+        if (pickupM > 0 || _driverReachedSocket) {
+          driverStatusController.pickupDistanceInMeters.value = pickupM;
 
-        _lastSocketFixAt = DateTime.now();
-        if (!_driverReachedSocket && pickupM > 0 && pickupM <= _ARRIVED_PICKUP_RADIUS_M) {
-          _driverReachedSocket = true;
-          CommonLogger.log.i(
-            'Auto driverReached TRUE (socket) pickupDistanceInMeters=${pickupM.toStringAsFixed(1)}m',
-          );
-        } else if (_driverReachedSocket && pickupM >= _ARRIVED_PICKUP_EXIT_RADIUS_M) {
-          _driverReachedSocket = false;
+          _lastSocketFixAt = DateTime.now();
+          if (!_driverReachedSocket && pickupM > 0 && pickupM <= _ARRIVED_PICKUP_RADIUS_M) {
+            _driverReachedSocket = true;
+            CommonLogger.log.i(
+              'Auto driverReached TRUE (socket) pickupDistanceInMeters=${pickupM.toStringAsFixed(1)}m',
+            );
+          } else if (_driverReachedSocket && pickupM >= _ARRIVED_PICKUP_EXIT_RADIUS_M) {
+            _driverReachedSocket = false;
+          }
+
+          _recomputeDriverReached();
         }
-
-        _recomputeDriverReached();
       }
       final pickupMin = asDouble(payload['pickupDurationInMin']);
       if (pickupMin != null) {
-        driverStatusController.pickupDurationInMin.value = pickupMin;
+        // Same guard: ignore a transient 0-min ETA unless genuinely arrived.
+        if (pickupMin > 0 || _driverReachedSocket) {
+          driverStatusController.pickupDurationInMin.value = pickupMin;
+        }
       }
 
       driverStatusController.setLastDriverLocationAtFrom(

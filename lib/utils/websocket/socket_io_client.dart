@@ -27,6 +27,7 @@ class SocketService {
   DateTime _lastHeartbeatLogAt = DateTime.fromMillisecondsSinceEpoch(0);
   final Map<String, DateTime> _lastHighFreqEmitAtByKey = <String, DateTime>{};
   final Map<String, String> _lastHighFreqEmitSigByKey = <String, String>{};
+  int _clientLocationSeq = 0;
 
   // Debug-only: log every socket emit (very chatty).
   // Always enabled in debug builds as requested.
@@ -61,6 +62,20 @@ class SocketService {
   void clearAllBookingRooms() {
     _bookingId = null;
     _joinedRooms.clear();
+    _lastHighFreqEmitAtByKey.clear();
+    _lastHighFreqEmitSigByKey.clear();
+  }
+
+  void setSingleActiveBookingRoom(String bookingId) {
+    final id = bookingId.trim();
+    if (id.isEmpty) {
+      clearAllBookingRooms();
+      return;
+    }
+    _bookingId = id;
+    _joinedRooms
+      ..clear()
+      ..add(id);
   }
 
   void _ensureConnecting() {
@@ -121,10 +136,30 @@ class SocketService {
     final id = bookingId ?? _bookingId;
     if (id != null && id.trim().isNotEmpty) {
       _joinedRooms.removeWhere((r) => r == id);
+      _lastHighFreqEmitAtByKey.remove('updateLocation|$id');
+      _lastHighFreqEmitAtByKey.remove('driver-heartbeat|$id');
+      _lastHighFreqEmitSigByKey.remove('updateLocation|$id');
+      _lastHighFreqEmitSigByKey.remove('driver-heartbeat|$id');
     }
     if (bookingId == null || bookingId == _bookingId) {
       _bookingId = null;
     }
+  }
+
+  int nextClientLocationSeq() {
+    // Monotonic across ISOLATES. The driver emits location from two separate
+    // isolates with independent memory: this foreground SocketService and the
+    // background location service (background_service.dart). A per-instance
+    // counter restarts at 0 in each isolate, so when the driver opens Google
+    // Maps (foreground -> background handoff) the background stream carries low
+    // seq numbers that the customer's seq-gate (`seq <= lastSeq` -> drop)
+    // rejects wholesale -> the customer marker freezes for the entire
+    // navigation. Deriving seq from the device wall clock (shared by both
+    // isolates) makes it one strictly-increasing space across the handoff.
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    _clientLocationSeq =
+        nowMs > _clientLocationSeq ? nowMs : _clientLocationSeq + 1;
+    return _clientLocationSeq;
   }
 
   // ---------------------------------------------------------

@@ -419,10 +419,18 @@ class PickingCustomerSharedController extends GetxController {
         'dropDuration',
       ]);
 
-      if (pickupMetersRaw != null) {
+      // Poison-0 guard (mirrors the single-ride pickup controller): a transient
+      // 0 pickup metric during approach must not blank the global "X km / X min"
+      // pickup stats. Only let a non-positive value through once the rider is
+      // genuinely past pickup (ride started / onboard-drop); otherwise hold the
+      // last good value. (The per-rider etaMeters/etaMinutes/_etaCache below are
+      // already 0-guarded.)
+      final pastPickup =
+          startedLike || active?.stage == SharedRiderStage.onboardDrop;
+      if (pickupMetersRaw != null && (pickupMetersRaw > 0 || pastPickup)) {
         driverStatusController.pickupDistanceInMeters.value = pickupMetersRaw;
       }
-      if (pickupMinsRaw != null) {
+      if (pickupMinsRaw != null && (pickupMinsRaw > 0 || pastPickup)) {
         driverStatusController.pickupDurationInMin.value = pickupMinsRaw;
       }
       if (dropMetersRaw != null) {

@@ -12,6 +12,12 @@ class RideHistoryController extends GetxController {
   ApiDataSource apiDataSource = ApiDataSource();
   RxBool isLoading = false.obs;
   RxBool isWithdrawLoading = false.obs;
+
+  /// True when the last first-page fetch failed (network / 500) so the screen
+  /// can show the server-error state with a "Try again" action. Tracked
+  /// separately for ride history and wallet history.
+  RxBool rideHasError = false.obs;
+  RxBool walletHasError = false.obs;
   RxList<RideActivityHistoryData> rideHistoryData =
       RxList<RideActivityHistoryData>();
 
@@ -35,6 +41,7 @@ class RideHistoryController extends GetxController {
       page = 1;
       hasMore.value = true;
       rideHistoryData.clear();
+      rideHasError.value = false;
       isLoading.value = true;
     } else {
       if (!hasMore.value) return; // stop if no more
@@ -46,6 +53,7 @@ class RideHistoryController extends GetxController {
 
       result.fold(
             (failure) {
+          if (isRefresh) rideHasError.value = true;
           CustomSnackBar.showError(failure.message);
         },
             (response) {
@@ -82,6 +90,7 @@ class RideHistoryController extends GetxController {
       page = 1;
       hasMore.value = true;
       traction.clear();
+      walletHasError.value = false;
       isLoading.value = true;
     } else {
       if (!hasMore.value) return;
@@ -93,6 +102,7 @@ class RideHistoryController extends GetxController {
 
       results.fold(
             (failure) {
+          if (isRefresh) walletHasError.value = true;
           if (showErrors) {
             CustomSnackBar.showError(failure.message);
           }

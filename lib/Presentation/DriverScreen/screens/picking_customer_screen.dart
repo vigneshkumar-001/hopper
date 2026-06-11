@@ -933,12 +933,16 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
 
       // Center: Duration + Customer name below
       title: Center(
-        child: Obx(
-          () => CustomTextfield.textWithStyles600(
-            _formatDuration(driverStatusController.pickupDurationInMin.value),
-            fontSize: 20,
-          ),
-        ),
+        child: Obx(() {
+          final mins = driverStatusController.pickupDurationInMin.value;
+          // "0 min" is only legitimate once the driver has genuinely reached
+          // pickup. While approaching, the controller holds the last good ETA,
+          // so a non-positive value here means "no fresh ETA yet" -> show '--'
+          // instead of a misleading "0 min".
+          final text =
+              (mins > 0 || c.driverReached.value) ? _formatDuration(mins) : '--';
+          return CustomTextfield.textWithStyles600(text, fontSize: 20);
+        }),
       ),
       subtitle: Center(
         child: Obx(() {

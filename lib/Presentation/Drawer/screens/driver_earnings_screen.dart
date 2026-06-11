@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
+import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/empty_state_view.dart';
 import 'package:hopper/Presentation/Drawer/controller/driver_earnings_controller.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 
@@ -597,17 +599,23 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
   }
 
   Widget _emptyView() {
+    final hasError = c.errorText.value.trim().isNotEmpty;
     return Padding(
-      padding: const EdgeInsets.only(top: 50),
-      child: Center(
-        child: Text(
-          'No earnings found for the selected filters.',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: textGrey,
-          ),
-        ),
-      ),
+      padding: const EdgeInsets.only(top: 40),
+      child: hasError
+          ? EmptyStateView(
+              image: AppImages.errorServer,
+              title: "Something went wrong",
+              subtitle:
+                  "We couldn't load your earnings. Please try again.",
+              onRetry: () => c.refreshList(),
+            )
+          : EmptyStateView(
+              image: AppImages.emptyEarnings,
+              title: "No earnings yet",
+              subtitle:
+                  "Your earnings for the selected filters will appear here.",
+            ),
     );
   }
 

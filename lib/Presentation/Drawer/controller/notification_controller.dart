@@ -12,6 +12,10 @@ class NotificationController extends GetxController {
   final RxBool isLoading = false.obs;
   final RxBool isMoreLoading = false.obs;
   final RxBool hasMore = true.obs;
+
+  /// True when the last first-page fetch failed (network / 500) so the screen
+  /// can show the server-error state with a "Try again" action.
+  final RxBool hasError = false.obs;
   final RxBool isSharedToggleLoading = false.obs;
   RxBool isSharedEnabled = false.obs;
   final cfg = Get.find<ApiConfigController>();
@@ -112,6 +116,7 @@ class NotificationController extends GetxController {
     if (!hasMore.value) return;
 
     if (page == 1) {
+      hasError.value = false;
       isLoading.value = true;
     } else {
       isMoreLoading.value = true;
@@ -122,6 +127,7 @@ class NotificationController extends GetxController {
 
       result.fold(
         (failure) {
+          if (page == 1) hasError.value = true;
           CommonLogger.log.e("Error: $failure");
         },
         (response) {
@@ -144,6 +150,7 @@ class NotificationController extends GetxController {
         },
       );
     } catch (e) {
+      if (page == 1) hasError.value = true;
       CommonLogger.log.e("❌ Error in getNotification: $e");
     } finally {
       isLoading.value = false;

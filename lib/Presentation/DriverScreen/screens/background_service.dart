@@ -17,8 +17,14 @@ Future<void>? _configureOnce;
 Future<void>? _startOnce;
 DateTime _lastStartRequestedAt = DateTime.fromMillisecondsSinceEpoch(0);
 
-const Duration _bgActiveTripPollInterval = Duration(seconds: 12);
-const Duration _bgActiveTripMinEmitGap = Duration(seconds: 10);
+// Poll wakes every 2s so an active trip keeps a steady ~2s feed even when the
+// OS throttles the background position stream (was 12s -> the customer car
+// barely moved while the driver app was minimised). When idle the per-emit gap
+// below (18s) still short-circuits the poll before any GPS read, so battery is
+// unaffected when nobody is on a live ride.
+const Duration _bgActiveTripPollInterval = Duration(seconds: 2);
+// Active trip: allow the poll fallback to emit ~every 1.5s (was 10s).
+const Duration _bgActiveTripMinEmitGap = Duration(milliseconds: 1500);
 const Duration _bgIdleMinEmitGap = Duration(seconds: 18);
 
 bool isBackgroundTrackingEnabled() {
@@ -192,6 +198,11 @@ void onStart(ServiceInstance service) async {
   String? currentBookingId;
   StreamSubscription<Position>? positionSub;
   Timer? pollTimer;
+  int clientSeq = 0;
+  int emitCountWindow = 0;
+  DateTime emitWindowStartedAt = DateTime.now();
+  DateTime? lastEmitMetricAt;
+  int lastEmitGapMs = 0;
 
   // Keep service as foreground (Android) so it continues on screen-lock.
   try {
@@ -214,6 +225,11 @@ void onStart(ServiceInstance service) async {
   double? lastLat;
   double? lastLng;
   DateTime lastEmitAt = DateTime.fromMillisecondsSinceEpoch(0);
+  // Last GPS heading trusted while actually moving. Below ~1 m/s GPS heading is
+  // random noise, so we HOLD this instead of sending raw per-fix heading — raw
+  // heading made the customer's car icon spin/flip while the driver was stopped.
+  // Mirrors the foreground `_lastEmitBearing` gate in DriverMainController.
+  double? lastEmitBearing;
 
   try {
     driverId = await SharedPrefHelper.getDriverId();
@@ -232,6 +248,16 @@ void onStart(ServiceInstance service) async {
   // opening external navigation).
   try {
     final prefs = await SharedPreferences.getInstance();
+    final persistedDriverId = prefs.getString('bg_driver_id')?.trim();
+    if (driverId == null &&
+        persistedDriverId != null &&
+        persistedDriverId.isNotEmpty) {
+      driverId = persistedDriverId;
+    }
+    final persistedBookingId = prefs.getString('bg_ride_id')?.trim();
+    if (persistedBookingId != null && persistedBookingId.isNotEmpty) {
+      currentBookingId = persistedBookingId;
+    }
     final override = prefs.getString('bg_socket_url');
     if (override != null && override.trim().isNotEmpty) {
       socketUrl = override.trim();
@@ -242,18 +268,77 @@ void onStart(ServiceInstance service) async {
   String? _pendingEvent;
   DateTime _lastManualReconnectAt = DateTime.fromMillisecondsSinceEpoch(0);
 
-  final socket = IO.io(
-    socketUrl,
-    IO.OptionBuilder()
-        .setTransports(['websocket'])
-        .enableReconnection()
-        .enableAutoConnect()
-        .setReconnectionAttempts(999999)
-        .setReconnectionDelay(1000)
-        .setReconnectionDelayMax(8000)
-        .setTimeout(15000)
-        .build(),
-  );
+  int nextClientSeq() {
+    // Monotonic across ISOLATES — must use the SAME scheme as the foreground
+    // SocketService.nextClientLocationSeq(): derive seq from the device wall
+    // clock so the foreground and this background isolate share one strictly
+    // increasing seq space. Without this the background stream restarts low and
+    // the customer's seq-gate drops every packet while the driver is in Google
+    // Maps (the navigation freeze bug).
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    clientSeq = nowMs > clientSeq ? nowMs : clientSeq + 1;
+    return clientSeq;
+  }
+
+  String maskIdForLog(String? raw) {
+    final value = raw?.trim() ?? '';
+    if (value.isEmpty) return '';
+    if (value.length <= 4) return value;
+    return '***${value.substring(value.length - 4)}';
+  }
+
+  Future<void> persistLastBgEmit(String? bookingId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('bg_last_emit_at', DateTime.now().millisecondsSinceEpoch);
+      if (bookingId != null && bookingId.trim().isNotEmpty) {
+        await prefs.setString('bg_last_emit_booking_id', bookingId.trim());
+      } else {
+        await prefs.remove('bg_last_emit_booking_id');
+      }
+    } catch (_) {}
+  }
+
+  void noteEmit(String event) {
+    final emitNow = DateTime.now();
+    if (lastEmitMetricAt != null) {
+      lastEmitGapMs =
+          emitNow.difference(lastEmitMetricAt!).inMilliseconds.clamp(
+                0,
+                1 << 30,
+              );
+    }
+    lastEmitMetricAt = emitNow;
+    emitCountWindow += 1;
+    final now = emitNow;
+    if (now.difference(emitWindowStartedAt) < const Duration(minutes: 1)) {
+      return;
+    }
+    CommonLogger.log.i(
+      '[BG_METRIC] emit_rate=$emitCountWindow/min '
+      'last_gap_ms=$lastEmitGapMs '
+      'event=$event bookingId=${maskIdForLog(currentBookingId)}',
+    );
+    emitWindowStartedAt = now;
+    emitCountWindow = 0;
+  }
+
+  IO.Socket buildSocket(String url) {
+    return IO.io(
+      url,
+      IO.OptionBuilder()
+          .setTransports(['websocket'])
+          .enableReconnection()
+          .enableAutoConnect()
+          .setReconnectionAttempts(999999)
+          .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(8000)
+          .setTimeout(15000)
+          .build(),
+    );
+  }
+
+  late IO.Socket socket;
 
   void safeRegisterAndFlush() {
     final did = driverId?.trim() ?? '';
@@ -269,41 +354,79 @@ void onStart(ServiceInstance service) async {
     final payload = _pendingPayload;
     if (event != null && payload != null) {
       socket.emit(event, payload);
+      noteEmit(event);
+      unawaited(persistLastBgEmit(currentBookingId));
       _pendingEvent = null;
       _pendingPayload = null;
     }
   }
 
+  void attachSocketListeners(IO.Socket activeSocket) {
+    activeSocket.onConnect((_) {
+      if (!identical(activeSocket, socket)) return;
+      safeRegisterAndFlush();
+      CommonLogger.log.i("[BG_SOCKET] Connected ($socketUrl)");
+    });
+
+    activeSocket.onReconnect((_) {
+      if (!identical(activeSocket, socket)) return;
+      safeRegisterAndFlush();
+      CommonLogger.log.i("[BG_SOCKET] Reconnected ($socketUrl)");
+    });
+
+    activeSocket.onDisconnect((_) {
+      if (!identical(activeSocket, socket)) return;
+      CommonLogger.log.e("[BG_SOCKET] Disconnected ($socketUrl)");
+
+      // If the server explicitly disconnects, socket.io may not auto-reconnect.
+      // Try a debounced manual reconnect; re-register happens on connect.
+      final now = DateTime.now();
+      if (now.difference(_lastManualReconnectAt) >= const Duration(seconds: 2)) {
+        _lastManualReconnectAt = now;
+        activeSocket.connect();
+      }
+    });
+
+    activeSocket.onConnectError((err) {
+      if (!identical(activeSocket, socket)) return;
+      CommonLogger.log.e("[BG_SOCKET] Connect error: $err ($socketUrl)");
+    });
+  }
+
+  Future<void> recreateSocket(String nextUrl) async {
+    final normalized = nextUrl.trim();
+    if (normalized.isEmpty) return;
+    if (normalized == socketUrl && socket.connected) {
+      safeRegisterAndFlush();
+      return;
+    }
+
+    final previousUrl = socketUrl;
+    socketUrl = normalized;
+
+    try {
+      socket.dispose();
+    } catch (_) {
+      try {
+        socket.disconnect();
+      } catch (_) {}
+    }
+
+    socket = buildSocket(socketUrl);
+    attachSocketListeners(socket);
+    socket.connect();
+
+    CommonLogger.log.i(
+      "[BG_SOCKET] Recreated socket oldUrl=$previousUrl newUrl=$socketUrl",
+    );
+  }
+
+  socket = buildSocket(socketUrl);
+  attachSocketListeners(socket);
   socket.connect();
 
-  socket.onConnect((_) {
-    safeRegisterAndFlush();
-    CommonLogger.log.i("[BG_SOCKET] Connected ($socketUrl)");
-  });
-
-  socket.onReconnect((_) {
-    safeRegisterAndFlush();
-    CommonLogger.log.i("[BG_SOCKET] Reconnected ($socketUrl)");
-  });
-
-  socket.onDisconnect((_) {
-    CommonLogger.log.e("[BG_SOCKET] Disconnected ($socketUrl)");
-
-    // If the server explicitly disconnects, socket.io may not auto-reconnect.
-    // Try a debounced manual reconnect; re-register happens on connect.
-    final now = DateTime.now();
-    if (now.difference(_lastManualReconnectAt) >= const Duration(seconds: 2)) {
-      _lastManualReconnectAt = now;
-      socket.connect();
-    }
-  });
-
-  socket.onConnectError((err) {
-    CommonLogger.log.e("[BG_SOCKET] Connect error: $err ($socketUrl)");
-  });
-
   Timer? heartbeatTimer;
-  service.on('data').listen((event) {
+  service.on('data').listen((event) async {
     if (event == null) return;
 
     if (event['action'] == 'stopService') {
@@ -314,12 +437,47 @@ void onStart(ServiceInstance service) async {
       service.stopSelf();
     }
 
+    var shouldRefreshRegistration = false;
+
+    final nextSocketUrl = event['socketUrl']?.toString().trim() ?? '';
+    if (nextSocketUrl.isNotEmpty && nextSocketUrl != socketUrl) {
+      shouldRefreshRegistration = true;
+      await recreateSocket(nextSocketUrl);
+    }
+
     if (event.containsKey('bookingId')) {
-      currentBookingId = event['bookingId']?.toString();
+      final nextBookingId = event['bookingId']?.toString();
+      if (nextBookingId != currentBookingId) {
+        currentBookingId = nextBookingId;
+        shouldRefreshRegistration = true;
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          if (nextBookingId != null && nextBookingId.trim().isNotEmpty) {
+            await prefs.setString('bg_ride_id', nextBookingId.trim());
+          } else {
+            await prefs.remove('bg_ride_id');
+          }
+        } catch (_) {}
+      }
     }
 
     if (event.containsKey('driverId')) {
-      driverId = event['driverId']?.toString();
+      final nextDriverId = event['driverId']?.toString();
+      if (nextDriverId != driverId) {
+        driverId = nextDriverId;
+        shouldRefreshRegistration = true;
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          if (nextDriverId != null && nextDriverId.trim().isNotEmpty) {
+            await prefs.setString('bg_driver_id', nextDriverId.trim());
+          } else {
+            await prefs.remove('bg_driver_id');
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (shouldRefreshRegistration) {
       if (socket.connected) {
         safeRegisterAndFlush();
       } else {
@@ -331,8 +489,9 @@ void onStart(ServiceInstance service) async {
   positionSub = Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
       accuracy: LocationAccuracy.bestForNavigation,
-      // 8 -> 5: more frequent fixes in slow traffic so the ~1s emit has fresh data.
-      distanceFilter: 5,
+      // Keep fixes flowing even in crawl / U-turn / parking-lot movement while
+      // Google Maps is foregrounded. Emit throttling below still bounds chatter.
+      distanceFilter: 0,
     ),
   ).listen((position) {
     if (driverId == null || driverId!.trim().isEmpty) return;
@@ -372,6 +531,15 @@ void onStart(ServiceInstance service) async {
     lastLng = position.longitude;
     lastEmitAt = now;
 
+    // Hold heading unless genuinely moving (mirrors the foreground bearing
+    // gate). Below ~1 m/s GPS heading is noise; sending raw per-fix heading
+    // spun the customer's car icon while the driver was stopped.
+    final double bgSpeedMs =
+        (position.speed.isFinite && position.speed >= 0) ? position.speed : 0.0;
+    if (bgSpeedMs >= 1.0 && position.heading.isFinite && position.heading >= 0) {
+      lastEmitBearing = position.heading;
+    }
+
     final locationData = {
       'userId': driverId,
       'driverId': driverId,
@@ -381,13 +549,18 @@ void onStart(ServiceInstance service) async {
       // Add common aliases for compatibility with other clients.
       'lat': position.latitude,
       'lng': position.longitude,
-      'bearing': position.heading,
+      // Omit when null so the backend (which gates bearing by speed) treats it
+      // as "no heading" and keeps the last good one — never sends 0/north.
+      if (lastEmitBearing != null) 'bearing': lastEmitBearing,
       'speed': position.speed,
       'accuracy': position.accuracy,
       if (currentBookingId != null) 'bookingId': currentBookingId,
       if (currentBookingId != null) 'rideId': currentBookingId,
+      'seq': nextClientSeq(),
       // Device GPS fix time in UTC (not local send-time) for correct ordering.
       'timestamp': position.timestamp.toUtc().toIso8601String(),
+      'deviceTimestamp': position.timestamp.toUtc().toIso8601String(),
+      'clientSentAt': now.toUtc().toIso8601String(),
     };
     if (!socket.connected) {
       _pendingEvent = 'updateLocation';
@@ -395,6 +568,8 @@ void onStart(ServiceInstance service) async {
       socket.connect();
     } else {
       socket.emit('updateLocation', locationData);
+      noteEmit('updateLocation');
+      unawaited(persistLastBgEmit(currentBookingId));
     }
 
     // Mirror to the UI isolate (so screens can refresh immediately on return).
@@ -403,7 +578,7 @@ void onStart(ServiceInstance service) async {
       service.invoke('locationUpdate', {
         'lat': position.latitude,
         'lng': position.longitude,
-        'bearing': position.heading,
+        'bearing': lastEmitBearing ?? position.heading,
         'speed': position.speed,
         'accuracy': position.accuracy,
         if (currentBookingId != null) 'bookingId': currentBookingId,
@@ -412,7 +587,12 @@ void onStart(ServiceInstance service) async {
       });
     } catch (_) {}
 
-    CommonLogger.log.i('[BG_SOCKET_EMIT] updateLocation $locationData');
+    if (kDebugMode) {
+      CommonLogger.log.i(
+        '[BG_SOCKET_EMIT] event=updateLocation '
+        'bookingId=${maskIdForLog(currentBookingId)} seq=${locationData['seq']}',
+      );
+    }
   });
 
   // If the stream doesn't emit (driver stationary / OEM throttling), poll and emit
@@ -460,6 +640,11 @@ void onStart(ServiceInstance service) async {
       final isMoving =
           (movedMeters != null && movedMeters >= 5.0) || speedMs >= 0.6;
 
+      // Hold heading unless genuinely moving (mirrors the foreground gate).
+      if (speedMs >= 1.0 && position.heading.isFinite && position.heading >= 0) {
+        lastEmitBearing = position.heading;
+      }
+
       final locationData = {
         'userId': driverId,
         'driverId': driverId,
@@ -467,32 +652,36 @@ void onStart(ServiceInstance service) async {
         'longitude': position.longitude,
         'lat': position.latitude,
         'lng': position.longitude,
-        'bearing': position.heading,
+        if (lastEmitBearing != null) 'bearing': lastEmitBearing,
         'speed': position.speed,
         'accuracy': position.accuracy,
         if (currentBookingId != null) 'bookingId': currentBookingId,
         if (currentBookingId != null) 'rideId': currentBookingId,
+        'seq': nextClientSeq(),
         // Device GPS fix time in UTC (consistent with the stream emit) so the
         // customer's strict ordering doesn't drop these as "out of order".
         'timestamp': position.timestamp.toUtc().toIso8601String(),
+        'deviceTimestamp': position.timestamp.toUtc().toIso8601String(),
+        'clientSentAt': now.toUtc().toIso8601String(),
       };
 
+      final eventName =
+          hasActiveBooking ? 'updateLocation' : (isMoving ? 'updateLocation' : 'driver-heartbeat');
       if (!socket.connected) {
-        _pendingEvent = isMoving ? 'updateLocation' : 'driver-heartbeat';
+        _pendingEvent = eventName;
         _pendingPayload = locationData;
         socket.connect();
       } else {
-        socket.emit(
-          isMoving ? 'updateLocation' : 'driver-heartbeat',
-          locationData,
-        );
+        socket.emit(eventName, locationData);
+        noteEmit(eventName);
+        unawaited(persistLastBgEmit(currentBookingId));
       }
 
       try {
         service.invoke('locationUpdate', {
           'lat': position.latitude,
           'lng': position.longitude,
-          'bearing': position.heading,
+          'bearing': lastEmitBearing ?? position.heading,
           'speed': position.speed,
           'accuracy': position.accuracy,
           if (currentBookingId != null) 'bookingId': currentBookingId,
@@ -501,9 +690,13 @@ void onStart(ServiceInstance service) async {
         });
       } catch (_) {}
 
-      CommonLogger.log.i(
-        '[BG_SOCKET_EMIT] ${isMoving ? 'updateLocation' : 'driver-heartbeat'} (poll) $locationData',
-      );
+      if (kDebugMode) {
+        CommonLogger.log.i(
+          '[BG_SOCKET_EMIT] event=$eventName '
+          'bookingId=${maskIdForLog(currentBookingId)} seq=${locationData['seq']} '
+          'source=poll',
+        );
+      }
     } catch (_) {}
   });
 

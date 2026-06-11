@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/empty_state_view.dart';
 
 import '../../Authentication/widgets/textFields.dart';
 import '../controller/notification_controller.dart';
@@ -86,7 +87,22 @@ class _NotificationScreenState extends State<NotificationScreen> {
                 }
 
                 if (notificationController.notificationData.isEmpty) {
-                  return const Center(child: Text("No Notification found."));
+                  if (notificationController.hasError.value) {
+                    return EmptyStateView(
+                      image: AppImages.errorServer,
+                      title: "Something went wrong",
+                      subtitle:
+                          "We couldn't load your notifications. Please try again.",
+                      onRetry: () => notificationController.getNotification(
+                          isRefresh: true),
+                    );
+                  }
+                  return EmptyStateView(
+                    image: AppImages.emptyNotifications,
+                    title: "No notifications yet",
+                    subtitle:
+                        "Updates about your rides, payments and offers will appear here.",
+                  );
                 }
 
                 return RefreshIndicator(

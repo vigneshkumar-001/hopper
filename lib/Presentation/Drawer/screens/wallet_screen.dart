@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/empty_state_view.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
 import 'package:hopper/Presentation/Drawer/model/wallet_history_response.dart';
@@ -287,8 +288,25 @@ class _WalletScreenState extends State<WalletScreen> {
                 List<Transaction> filtered = _filterTransactions();
 
                 if (filtered.isEmpty) {
-                  return const SliverToBoxAdapter(
-                    child: Center(child: Text("No transactions found")),
+                  return SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: walletController.walletHasError.value
+                          ? EmptyStateView(
+                              image: AppImages.errorServer,
+                              title: "Something went wrong",
+                              subtitle:
+                                  "We couldn't load your wallet history. Please try again.",
+                              onRetry: () => walletController
+                                  .customerWalletHistory(isRefresh: true),
+                            )
+                          : EmptyStateView(
+                              image: AppImages.emptyWallet,
+                              title: "No transactions yet",
+                              subtitle:
+                                  "Your earnings, top-ups and withdrawals will appear here.",
+                            ),
+                    ),
                   );
                 }
 

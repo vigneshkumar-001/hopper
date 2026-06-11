@@ -103,4 +103,12 @@ class AppImages {
 
   static String flutter_wave = "assets/images/flutter_wave.png";
   static String payStack = "assets/images/payStack.png";
+
+  // Empty-state illustrations (image + text on empty / error screens).
+  static String emptyRides = "assets/images/empty_rides.png";
+  static String emptyWallet = "assets/images/empty_wallet.png";
+  static String emptyEarnings = "assets/images/empty_earnings.png";
+  static String emptyNotifications = "assets/images/empty_notifications.png";
+  static String emptyNoDrivers = "assets/images/empty_no_drivers.png";
+  static String errorServer = "assets/images/error_server.png";
 }

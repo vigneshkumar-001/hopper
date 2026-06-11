@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:dotted_line/dotted_line.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
+import 'package:hopper/Core/Utility/empty_state_view.dart';
 import 'package:hopper/Core/Utility/date_time_converter.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
 
@@ -91,12 +92,21 @@ class _RideAndPackageHistoryScreenState
                       children: [
                         SizedBox(
                           height: MediaQuery.of(context).size.height * 0.7,
-                          child: Center(
-                            child: CustomTextfield.textWithStyles600(
-                              'No History Found',
-                              color: AppColors.commonBlack,
-                            ),
-                          ),
+                          child: controller.rideHasError.value
+                              ? EmptyStateView(
+                                  image: AppImages.errorServer,
+                                  title: "Something went wrong",
+                                  subtitle:
+                                      "We couldn't load your ride activity. Please try again.",
+                                  onRetry: () =>
+                                      controller.rideHistory(isRefresh: true),
+                                )
+                              : EmptyStateView(
+                                  image: AppImages.emptyRides,
+                                  title: "No rides yet",
+                                  subtitle:
+                                      "Your completed trips will appear here once you finish your first ride.",
+                                ),
                         ),
                       ],
                     ),

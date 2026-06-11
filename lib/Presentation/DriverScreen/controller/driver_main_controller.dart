@@ -34,6 +34,7 @@ import 'package:hopper/utils/ride_map/ride_map_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/background_service.dart'
     as bg;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
@@ -57,6 +58,12 @@ class DriverMainController extends GetxController
       12.0; // allow big move if very accurate
   static const double _MOVING_SPEED_MS = 0.6;
   static const double _MOVING_METERS = 5.0;
+  // Below this much real movement since the last fix we emit speed:0 — the car
+  // physically hasn't progressed, so the customer must not dead-reckon it
+  // forward (GPS often reports a phantom 1-2 m/s while standing still). Actual
+  // position changes still animate via the customer's segment lerp; only the
+  // forward extrapolation is suppressed.
+  static const double _STATIONARY_EMIT_M = 1.5;
 
   // External controllers
   final BookingRequestController bookingController =
@@ -100,12 +107,19 @@ class DriverMainController extends GetxController
   double _lastEmitBearing = 0.0;
   String? _lastSentLocationTimestamp;
   DateTime? _lastLocationEmitAt;
+  DateTime? _lastDriverEmitMetricAt;
   DateTime? _lastMovedAt;
   DateTime? _lastUpdateLocationEmitAt;
   DateTime? _lastHeartbeatEmitAt;
   DateTime _lastHomeRefreshAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _emitLoopToken = 0;
+  DateTime _emitMetricsWindowStartedAt = DateTime.now().toUtc();
+  int _emitCountWindow = 0;
+  int _emitLastGapMs = 0;
   bool _backgroundServiceActive = false;
+  // Tracks whether the live GPS stream was built for an active trip (so we can
+  // rebuild it with a tighter distanceFilter when a trip starts / ends).
+  bool _emitLoopForActiveTrip = false;
 
   String? driverId;
   String? currentBookingId;
@@ -180,6 +194,12 @@ class DriverMainController extends GetxController
   static const Duration _onlineMovingEmitInterval = Duration(seconds: 5);
   static const Duration _onlineSlowEmitInterval = Duration(seconds: 8);
   static const Duration _movementIdleCutoff = Duration(seconds: 20);
+  // On an active trip we keep the steady 1s feed alive through long stops
+  // (red lights / tunnels) — but not forever. After this much continuous
+  // no-movement we back off to the lighter 25s heartbeat. This also stops a
+  // booking whose context wasn't cleared on completion from emitting 1Hz
+  // indefinitely while the car is parked.
+  static const Duration _activeTripIdleCutoff = Duration(seconds: 120);
 
   // Expose demand micro-interaction animations (for UI overlays).
   Listenable get demandBounceListenable => _demandBounceCtrl;
@@ -204,9 +224,12 @@ class DriverMainController extends GetxController
     final hasActiveBooking = bookingId.isNotEmpty;
 
     if (hasActiveBooking) {
-      return speed >= 1.2
-          ? _activeTripFastEmitInterval
-          : _onlineMovingEmitInterval;
+      // Steady 1s for the WHOLE active trip (driver approaching pickup +
+      // passenger on board). Never downgrade to 5s/8s when the car slows in
+      // traffic / at a signal — that starves the customer motion engine and
+      // makes the marker freeze, then lurch. The speed-based downgrade is
+      // intentionally bypassed here.
+      return _activeTripFastEmitInterval;
     }
 
     if (speed >= 2.2) return _onlineMovingEmitInterval;
@@ -897,7 +920,7 @@ class DriverMainController extends GetxController
     }
 
     BookingDataService().clear();
-    socketService.clearBookingContext(bookingId: bookingId);
+    socketService.clearAllBookingRooms();
 
     currentBookingId = null;
     _lastResumedBookingId = null;
@@ -1350,6 +1373,41 @@ class DriverMainController extends GetxController
     return null;
   }
 
+  String _maskIdForLog(String? raw) {
+    final value = raw?.trim() ?? '';
+    if (value.isEmpty) return '';
+    if (value.length <= 4) return value;
+    return '***${value.substring(value.length - 4)}';
+  }
+
+  void _noteDriverEmitMetric({
+    required String event,
+    required String? bookingId,
+  }) {
+    final now = DateTime.now().toUtc();
+    if (_lastDriverEmitMetricAt != null) {
+      _emitLastGapMs =
+          now.difference(_lastDriverEmitMetricAt!).inMilliseconds.clamp(
+                0,
+                1 << 30,
+              );
+    }
+    _lastDriverEmitMetricAt = now;
+    _emitCountWindow += 1;
+    if (now.difference(_emitMetricsWindowStartedAt) < const Duration(minutes: 1)) {
+      return;
+    }
+    if (kDebugMode) {
+      CommonLogger.log.i(
+        '[TRACK_METRIC] emit_rate=$_emitCountWindow/min '
+        'last_gap_ms=$_emitLastGapMs event=$event '
+        'bookingId=${_maskIdForLog(bookingId)}',
+      );
+    }
+    _emitMetricsWindowStartedAt = now;
+    _emitCountWindow = 0;
+  }
+
   // ---------------- location emit loop ----------------
   Future<void> startEmitLoop() async {
     final int token = ++_emitLoopToken;
@@ -1360,12 +1418,18 @@ class DriverMainController extends GetxController
     if (_disposed || isClosed) return;
     if (token != _emitLoopToken) return;
 
+    // Active trip => distanceFilter 0 so the OS never withholds fixes at low
+    // speed (traffic / signal); the customer then gets an even, fresh ~1s feed.
+    // Idle/online => 5 to save battery when nobody is watching a live ride.
+    // The stream is rebuilt (see the emit timer) when this state flips.
+    final bool activeTripStream =
+        _resolveBookingIdForLocationPayload() != null;
+    _emitLoopForActiveTrip = activeTripStream;
+
     locationSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
+      locationSettings: LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        // 8 -> 5: produce GPS fixes a bit more often (esp. in slow traffic) so
-        // the ~1s active-trip emit actually has fresh positions to send.
-        distanceFilter: 5,
+        distanceFilter: activeTripStream ? 0 : 5,
       ),
     ).listen((pos) {
       if (_disposed || isClosed) return;
@@ -1412,6 +1476,7 @@ class DriverMainController extends GetxController
 
       // 2) freeze drift/jumps when almost stationary
       final prev = lastPosition;
+      double? movedSinceLastFix;
       if (prev != null) {
         final movedMeters = Geolocator.distanceBetween(
           prev.latitude,
@@ -1419,6 +1484,7 @@ class DriverMainController extends GetxController
           current.latitude,
           current.longitude,
         );
+        movedSinceLastFix = movedMeters;
 
         final isMoving =
             speedMs >= _MOVING_SPEED_MS || movedMeters >= _MOVING_METERS;
@@ -1449,6 +1515,16 @@ class DriverMainController extends GetxController
         _lastEmitBearing = pos.heading;
       }
 
+      // Trust position over GPS-reported speed: when the car physically barely
+      // moved since the last fix, send speed 0 so the customer holds the marker
+      // (no forward dead-reckoning) even if GPS reports a phantom speed. Real
+      // movement still carries the true speed and still animates via lerp.
+      final double reportedSpeed = speedMs.isFinite ? speedMs : 0.0;
+      final double emitSpeed = (movedSinceLastFix != null &&
+              movedSinceLastFix < _STATIONARY_EMIT_M)
+          ? 0.0
+          : reportedSpeed;
+
       final bookingIdForPayload = _resolveBookingIdForLocationPayload();
       latestLocationPayload = {
         'userId': driverId,
@@ -1458,12 +1534,15 @@ class DriverMainController extends GetxController
         'lat': current.latitude,
         'lng': current.longitude,
         'bearing': _lastEmitBearing,
-        'speed': speedMs.isFinite ? speedMs : 0.0,
+        'speed': emitSpeed,
         'accuracy': accuracyM.isFinite ? accuracyM : null,
         if (bookingIdForPayload != null) 'bookingId': bookingIdForPayload,
+        'seq': socketService.nextClientLocationSeq(),
         // DEVICE GPS fix time in UTC (not local send-time) so the customer can
         // order/interpolate points correctly.
         'timestamp': pos.timestamp.toUtc().toIso8601String(),
+        'deviceTimestamp': pos.timestamp.toUtc().toIso8601String(),
+        'clientSentAt': now.toUtc().toIso8601String(),
       };
 
       updateCarMarker(
@@ -1487,33 +1566,76 @@ class DriverMainController extends GetxController
       final payload = latestLocationPayload;
       if (payload == null) return;
 
-      // Moving => `updateLocation` (only when we have a *new* fix)
       final ts = payload['timestamp']?.toString();
       if (ts == null || ts.isEmpty) return;
-      if (ts == _lastSentLocationTimestamp) return;
 
+      final now = DateTime.now();
+      final bool activeTrip = payload['bookingId'] != null;
+      final bool isNewFix = ts != _lastSentLocationTimestamp;
+
+      // Active-trip state flipped since the stream was built -> rebuild it so
+      // the distanceFilter matches (0 on trip, 5 idle). startEmitLoop() bumps
+      // the loop token, so this timer stops right after we return.
+      if (activeTrip != _emitLoopForActiveTrip) {
+        unawaited(startEmitLoop());
+        return;
+      }
+
+      // Idle/online: only emit on a genuinely new GPS fix (battery + data).
+      // Active trip: also re-emit the last position as a steady ~1s heartbeat
+      // so the customer engine keeps gliding / dead-reckoning through GPS gaps
+      // (tunnels, signal loss) instead of freezing then jumping.
+      if (!isNewFix && !activeTrip) return;
+
+      // Stop the 1s feed once the car has been stationary too long. An active
+      // trip gets a long window (covers red lights / tunnels) before backing
+      // off; idle uses the short cutoff. The active window also bounds a
+      // booking whose context wasn't cleared on completion so it can't emit
+      // 1Hz forever while parked.
       final movedAt = _lastMovedAt;
-      final idleFor =
-          movedAt == null
-              ? const Duration(days: 9999)
-              : DateTime.now().difference(movedAt);
-      if (idleFor >= _movementIdleCutoff) {
+      final idleFor = movedAt == null
+          ? const Duration(days: 9999)
+          : now.difference(movedAt);
+      final idleCutoff =
+          activeTrip ? _activeTripIdleCutoff : _movementIdleCutoff;
+      if (idleFor >= idleCutoff) {
         return;
       }
 
       final preferredInterval = _preferredLocationEmitInterval(payload);
       final lastEmitAt = _lastLocationEmitAt;
-      final now = DateTime.now();
       if (lastEmitAt != null &&
           now.difference(lastEmitAt) < preferredInterval) {
         return;
       }
 
-      _lastSentLocationTimestamp = ts;
+      // Build the outgoing payload. For a heartbeat re-emit (no fresh fix)
+      // refresh the timestamp to send-time so the customer orders it after the
+      // previous point; remember the GPS fix time so the next real fix is still
+      // detected as new.
+      //
+      // CRITICAL: a re-emit means we have NO fresh evidence of motion. Send
+      // speed:0 (keep the last bearing) so the customer engine HOLDS the marker
+      // instead of dead-reckoning it forward. Otherwise a car stopped at a
+      // signal (last known speed > 0) would visibly creep/drift past the line.
+      final Map<String, dynamic> outPayload;
+      if (isNewFix) {
+        outPayload = payload;
+        _lastSentLocationTimestamp = ts;
+      } else {
+        outPayload = Map<String, dynamic>.from(payload)
+          ..['timestamp'] = now.toUtc().toIso8601String()
+          ..['speed'] = 0.0;
+      }
+
       _lastLocationEmitAt = now;
       _lastUpdateLocationEmitAt = now;
       if (_backgroundServiceActive) return;
-      socketService.emit('updateLocation', payload);
+      socketService.emit('updateLocation', outPayload);
+      _noteDriverEmitMetric(
+        event: 'updateLocation',
+        bookingId: outPayload['bookingId']?.toString(),
+      );
       Get.find<DriverAnalyticsController>().trackOnlineTick(
         const Duration(seconds: 7),
       );
@@ -1548,15 +1670,21 @@ class DriverMainController extends GetxController
       }
 
       final bookingIdForPayload = _resolveBookingIdForLocationPayload();
+      if (bookingIdForPayload != null) {
+        return;
+      }
       final pos = lastPosition;
       final hb = <String, dynamic>{
         'userId': did,
+        'driverId': did,
         if (bookingIdForPayload != null) 'bookingId': bookingIdForPayload,
         if (pos != null) 'latitude': pos.latitude,
         if (pos != null) 'longitude': pos.longitude,
+        'seq': socketService.nextClientLocationSeq(),
         // UTC (consistent with updateLocation). Local time here made the
         // customer's strict ordering drop points when the source flipped.
         'timestamp': now.toUtc().toIso8601String(),
+        'clientSentAt': now.toUtc().toIso8601String(),
       };
       _lastHeartbeatEmitAt = now;
       socketService.emit('driver-heartbeat', hb);
@@ -2027,6 +2155,13 @@ class DriverMainController extends GetxController
           activeBookingData.value = null;
           _lastDismissedBookingId = null;
           showActiveBookingCard.value = false;
+          // No active trip on the backend -> drop stale trip context so the
+          // location emit loop reverts to idle (distanceFilter 5, 5/8s buckets,
+          // 20s idle cutoff). Without this a completed ride leaves
+          // currentBookingId/BookingDataService set, keeping the active-trip
+          // stream (distanceFilter 0 + 1s) alive -> battery/data drain.
+          currentBookingId = null;
+          BookingDataService().clear();
           socketService.clearAllBookingRooms();
           if (shouldAutoResumeFromExternalNav) {
             await NavigationService().clearExternalNavigationReturnPending();
@@ -2037,6 +2172,10 @@ class DriverMainController extends GetxController
         if (data == null) {
           activeBookingData.value = null;
           showActiveBookingCard.value = false;
+          // No active trip on the backend -> drop stale trip context (see above)
+          // so the emit loop reverts to idle settings.
+          currentBookingId = null;
+          BookingDataService().clear();
           socketService.clearAllBookingRooms();
           if (shouldAutoResumeFromExternalNav) {
             await NavigationService().clearExternalNavigationReturnPending();
@@ -2101,6 +2240,10 @@ class DriverMainController extends GetxController
           activeBookingData.value = null;
           _lastDismissedBookingId = null;
           showActiveBookingCard.value = false;
+          // Trip finished/cancelled on the backend -> drop stale trip context so
+          // the emit loop reverts to idle (distanceFilter 5, 5/8s, 20s cutoff).
+          currentBookingId = null;
+          BookingDataService().clear();
           socketService.clearAllBookingRooms();
           if (shouldAutoResumeFromExternalNav) {
             await NavigationService().clearExternalNavigationReturnPending();
@@ -2260,6 +2403,7 @@ class DriverMainController extends GetxController
           connectedCustomers: data['connectedCustomers'],
         );
       } else {
+        socketService.setSingleActiveBookingRoom(bookingId);
         socketService.registerDriver(did, bookingId: bookingId);
         socketService.joinBooking(bookingId, userId: did);
       }
@@ -2368,6 +2512,7 @@ class DriverMainController extends GetxController
   Future<void> onAppPaused() async {
     if (_disposed || isClosed) return;
     _appInForeground = false;
+    final handoffRequestedAt = DateTime.now().millisecondsSinceEpoch;
 
     // Hand off to background service ONLY when online.
     var bgRunning = false;
@@ -2376,12 +2521,37 @@ class DriverMainController extends GetxController
       final did = driverId?.trim() ?? '';
       if (did.isNotEmpty) {
         try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('bg_handoff_requested_at', handoffRequestedAt);
+        } catch (_) {}
+        try {
           await bg.ensureDriverTrackingServiceRunning(
             driverId: did,
             bookingId: _resolveBookingIdForLocationPayload(),
           );
         } catch (_) {}
         bgRunning = await bg.isDriverTrackingServiceRunning();
+        if (bgRunning) {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final waitUntil = DateTime.now().add(
+              const Duration(milliseconds: 1600),
+            );
+            while (DateTime.now().isBefore(waitUntil)) {
+              final lastBgEmitAt = prefs.getInt('bg_last_emit_at') ?? 0;
+              if (lastBgEmitAt >= handoffRequestedAt) {
+                break;
+              }
+              await Future<void>.delayed(const Duration(milliseconds: 150));
+            }
+            final lastBgEmitAt = prefs.getInt('bg_last_emit_at') ?? 0;
+            if (lastBgEmitAt < handoffRequestedAt) {
+              bgRunning = false;
+            }
+          } catch (_) {
+            bgRunning = false;
+          }
+        }
       }
     }
 
