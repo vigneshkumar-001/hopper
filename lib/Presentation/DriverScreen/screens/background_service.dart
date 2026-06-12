@@ -1,5 +1,6 @@
 // lib/services/background_service.dart
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -17,14 +18,14 @@ Future<void>? _configureOnce;
 Future<void>? _startOnce;
 DateTime _lastStartRequestedAt = DateTime.fromMillisecondsSinceEpoch(0);
 
-// Poll wakes every 2s so an active trip keeps a steady ~2s feed even when the
+// Poll wakes every 1s so an active trip keeps a steady ~1s feed even when the
 // OS throttles the background position stream (was 12s -> the customer car
 // barely moved while the driver app was minimised). When idle the per-emit gap
 // below (18s) still short-circuits the poll before any GPS read, so battery is
 // unaffected when nobody is on a live ride.
-const Duration _bgActiveTripPollInterval = Duration(seconds: 2);
-// Active trip: allow the poll fallback to emit ~every 1.5s (was 10s).
-const Duration _bgActiveTripMinEmitGap = Duration(milliseconds: 1500);
+const Duration _bgActiveTripPollInterval = Duration(seconds: 1);
+// Active trip: allow the poll fallback to emit ~every 1s (was 10s).
+const Duration _bgActiveTripMinEmitGap = Duration(seconds: 1);
 const Duration _bgIdleMinEmitGap = Duration(seconds: 18);
 
 bool isBackgroundTrackingEnabled() {
@@ -196,6 +197,9 @@ void onStart(ServiceInstance service) async {
 
   String? driverId;
   String? currentBookingId;
+  // Stable per-install id (FCM token) so the backend dedupes this device's
+  // foreground/background sockets instead of revoking them as a new-device-login.
+  String? deviceId;
   StreamSubscription<Position>? positionSub;
   Timer? pollTimer;
   int clientSeq = 0;
@@ -262,11 +266,20 @@ void onStart(ServiceInstance service) async {
     if (override != null && override.trim().isNotEmpty) {
       socketUrl = override.trim();
     }
+    final fcm = (prefs.getString('fcmToken') ?? '').trim();
+    if (fcm.isNotEmpty) deviceId = fcm;
   } catch (_) {}
 
   Map<String, dynamic>? _pendingPayload;
   String? _pendingEvent;
   DateTime _lastManualReconnectAt = DateTime.fromMillisecondsSinceEpoch(0);
+  // Single-session guard (mirrors the foreground SocketService). When the
+  // foreground app reclaims the socket on resume, the backend revokes THIS
+  // background session ("server namespace disconnect" / `session-revoked`).
+  // Reconnecting here would revoke the foreground again -> endless revoke-war.
+  // So once revoked we stop the background service entirely; the foreground now
+  // owns the single connection.
+  bool sessionRevoked = false;
 
   int nextClientSeq() {
     // Monotonic across ISOLATES — must use the SAME scheme as the foreground
@@ -346,6 +359,7 @@ void onStart(ServiceInstance service) async {
       socket.emit('register', {
         'userId': did,
         'type': 'driver',
+        if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
         if (currentBookingId != null) 'bookingId': currentBookingId,
       });
     }
@@ -374,9 +388,31 @@ void onStart(ServiceInstance service) async {
       CommonLogger.log.i("[BG_SOCKET] Reconnected ($socketUrl)");
     });
 
-    activeSocket.onDisconnect((_) {
+    activeSocket.onDisconnect((reason) {
       if (!identical(activeSocket, socket)) return;
-      CommonLogger.log.e("[BG_SOCKET] Disconnected ($socketUrl)");
+      CommonLogger.log.e(
+        "[BG_SOCKET] Disconnected ($socketUrl) reason=$reason",
+      );
+
+      if (sessionRevoked) return;
+
+      // Single-session revoke: the foreground app reclaimed the socket. Don't
+      // reconnect (that revokes the foreground -> revoke-war). Stop this service.
+      final rl = (reason?.toString() ?? '').toLowerCase();
+      if (rl.contains('server namespace disconnect')) {
+        sessionRevoked = true;
+        CommonLogger.log.w(
+          "[BG_SOCKET] Session revoked (namespace) — foreground owns the "
+          "session; stopping BG service",
+        );
+        try {
+          activeSocket.disconnect();
+        } catch (_) {}
+        try {
+          service.stopSelf();
+        } catch (_) {}
+        return;
+      }
 
       // If the server explicitly disconnects, socket.io may not auto-reconnect.
       // Try a debounced manual reconnect; re-register happens on connect.
@@ -390,6 +426,24 @@ void onStart(ServiceInstance service) async {
     activeSocket.onConnectError((err) {
       if (!identical(activeSocket, socket)) return;
       CommonLogger.log.e("[BG_SOCKET] Connect error: $err ($socketUrl)");
+    });
+
+    // Explicit single-session signal from the backend (sent to the OLDER socket
+    // just before it is disconnected). The foreground now owns the session, so
+    // stop the background service instead of reconnecting and fighting it.
+    activeSocket.on('session-revoked', (_) {
+      if (!identical(activeSocket, socket)) return;
+      sessionRevoked = true;
+      CommonLogger.log.w(
+        "[BG_SOCKET] session-revoked — foreground owns the session; stopping "
+        "BG service",
+      );
+      try {
+        activeSocket.disconnect();
+      } catch (_) {}
+      try {
+        service.stopSelf();
+      } catch (_) {}
     });
   }
 
@@ -419,6 +473,70 @@ void onStart(ServiceInstance service) async {
     CommonLogger.log.i(
       "[BG_SOCKET] Recreated socket oldUrl=$previousUrl newUrl=$socketUrl",
     );
+  }
+
+  Future<void> emitBootstrapPosition(String reason) async {
+    final did = driverId?.trim() ?? '';
+    if (did.isEmpty) return;
+
+    try {
+      final now = DateTime.now();
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+        ),
+      );
+      final acc = position.accuracy.isFinite ? position.accuracy : 9999.0;
+      if (acc > maxAccuracyM) return;
+
+      final speedMs =
+          (position.speed.isFinite && position.speed >= 0) ? position.speed : 0.0;
+      if (speedMs >= 1.0 &&
+          position.heading.isFinite &&
+          position.heading >= 0) {
+        lastEmitBearing = position.heading;
+      }
+
+      lastLat = position.latitude;
+      lastLng = position.longitude;
+      lastEmitAt = now;
+
+      final locationData = <String, dynamic>{
+        'userId': did,
+        'driverId': did,
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'lat': position.latitude,
+        'lng': position.longitude,
+        if (lastEmitBearing != null) 'bearing': lastEmitBearing,
+        'speed': position.speed,
+        'accuracy': position.accuracy,
+        if (currentBookingId != null) 'bookingId': currentBookingId,
+        if (currentBookingId != null) 'rideId': currentBookingId,
+        'seq': nextClientSeq(),
+        'timestamp': position.timestamp.toUtc().toIso8601String(),
+        'deviceTimestamp': position.timestamp.toUtc().toIso8601String(),
+        'clientSentAt': now.toUtc().toIso8601String(),
+      };
+
+      if (!socket.connected) {
+        _pendingEvent = 'updateLocation';
+        _pendingPayload = locationData;
+        socket.connect();
+      } else {
+        socket.emit('updateLocation', locationData);
+        noteEmit('updateLocation');
+        unawaited(persistLastBgEmit(currentBookingId));
+      }
+
+      if (kDebugMode) {
+        CommonLogger.log.i(
+          '[BG_SOCKET_EMIT] event=updateLocation '
+          'bookingId=${maskIdForLog(currentBookingId)} seq=${locationData['seq']} '
+          'source=$reason',
+        );
+      }
+    } catch (_) {}
   }
 
   socket = buildSocket(socketUrl);
@@ -483,16 +601,35 @@ void onStart(ServiceInstance service) async {
       } else {
         socket.connect();
       }
+      if (currentBookingId != null && currentBookingId!.trim().isNotEmpty) {
+        unawaited(emitBootstrapPosition('booking_refresh'));
+      }
     }
   });
 
+  // CRITICAL (Android): base `LocationSettings` leaves geolocator on its DEFAULT
+  // 5000ms fused-provider interval, so while the driver is navigating in Google
+  // Maps (this FGS owns the feed) the customer only got a fix every ~5s -> a
+  // jittery, freezing marker. `AndroidSettings.intervalDuration` requests ~1Hz
+  // fixes so the customer keeps a smooth glide. The emit gates below (1s min,
+  // movement/jitter filters) still bound chatter and protect battery. iOS keeps
+  // base settings (it already streams at the accuracy/distanceFilter rate).
+  final LocationSettings bgLocationSettings =
+      Platform.isAndroid
+          ? AndroidSettings(
+            accuracy: LocationAccuracy.bestForNavigation,
+            distanceFilter: 0,
+            intervalDuration: const Duration(seconds: 1),
+          )
+          : const LocationSettings(
+            accuracy: LocationAccuracy.bestForNavigation,
+            // Keep fixes flowing even in crawl / U-turn / parking-lot movement
+            // while Google Maps is foregrounded.
+            distanceFilter: 0,
+          );
+
   positionSub = Geolocator.getPositionStream(
-    locationSettings: const LocationSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      // Keep fixes flowing even in crawl / U-turn / parking-lot movement while
-      // Google Maps is foregrounded. Emit throttling below still bounds chatter.
-      distanceFilter: 0,
-    ),
+    locationSettings: bgLocationSettings,
   ).listen((position) {
     if (driverId == null || driverId!.trim().isEmpty) return;
 
@@ -594,6 +731,10 @@ void onStart(ServiceInstance service) async {
       );
     }
   });
+
+  if (currentBookingId != null && currentBookingId!.trim().isNotEmpty) {
+    unawaited(emitBootstrapPosition('startup'));
+  }
 
   // If the stream doesn't emit (driver stationary / OEM throttling), poll and emit
   // periodically so the server still receives location while driver is online.

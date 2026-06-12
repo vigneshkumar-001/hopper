@@ -16,9 +16,20 @@ class SocketService {
   bool get connected => _socket?.connected ?? false;
   String? get currentUrl => _socketUrl;
 
+  /// True after the backend revoked this session (a newer socket for the same
+  /// userId took over). While true we suppress auto-reconnect. The foreground
+  /// owner reclaims via an intentional connect() — see `_sessionRevoked`.
+  bool get sessionRevoked => _sessionRevoked;
+
   String? _userId;
   String? _driverId;
   String? _bookingId;
+  // Stable per-install identifier (the FCM token). Sent on `register` so the
+  // backend can tell THIS device's foreground<->background socket handoff apart
+  // from a genuine login on a DIFFERENT device. Without it the backend treats
+  // our own background isolate's socket as a `new-device-login` and revokes the
+  // foreground (the self-revoke seen in the logs).
+  String? _deviceId;
 
   final List<String> _joinedRooms = [];
   final Map<String, Function(dynamic)> _callbacks = {};
@@ -28,6 +39,19 @@ class SocketService {
   final Map<String, DateTime> _lastHighFreqEmitAtByKey = <String, DateTime>{};
   final Map<String, String> _lastHighFreqEmitSigByKey = <String, String>{};
   int _clientLocationSeq = 0;
+
+  // Single-session coordination. The backend enforces ONE active socket per
+  // userId: when a newer socket registers (the background-tracking isolate
+  // taking over on app-pause, a reconnect that opened a fresh connection, or the
+  // same driver on another device), the server emits `session-revoked` to the
+  // older socket and disconnects it (reason "server namespace disconnect").
+  // Without this guard the revoked socket auto-reconnected and re-registered,
+  // which then revoked the OTHER socket — an endless revoke-war that surfaced as
+  // the driver socket "randomly disconnecting" until the app was killed and
+  // reopened. When revoked we STOP auto-reconnecting; only an intentional
+  // (re)connect — app resume, go-online, screen init, URL switch — reclaims the
+  // session and clears this flag.
+  bool _sessionRevoked = false;
 
   // Debug-only: log every socket emit (very chatty).
   // Always enabled in debug builds as requested.
@@ -80,6 +104,7 @@ class SocketService {
 
   void _ensureConnecting() {
     if (!_initialized) return;
+    if (_sessionRevoked) return; // revoked: wait for an intentional reclaim
     final s = _socket;
     if (s == null) return;
     if (s.disconnected) {
@@ -166,6 +191,8 @@ class SocketService {
   // ✅ INIT socket (create once per URL)
   // ---------------------------------------------------------
   void initSocket(String url) {
+    // Any explicit init is an intentional session (re)claim.
+    _sessionRevoked = false;
     // same url already initialized -> just connect if needed
     if (_initialized && _socketUrl == url) {
       if (_socket != null && _socket!.disconnected) _socket!.connect();
@@ -202,6 +229,8 @@ class SocketService {
   // ✅ SWITCH URL (Shared <-> Single)
   // ---------------------------------------------------------
   void switchUrl(String newUrl) {
+    // Switching URL is an intentional session (re)claim on the new endpoint.
+    _sessionRevoked = false;
     if (_socketUrl == newUrl && _initialized) {
       if (_socket != null && _socket!.disconnected) _socket!.connect();
       return;
@@ -265,6 +294,17 @@ class SocketService {
         return;
       }
 
+      // Single-session revoke: a newer socket for this userId took over. Do NOT
+      // auto-reconnect (that would revoke the newer socket -> revoke-war). Wait
+      // for an intentional reclaim (resume / online / screen init).
+      if (rl.contains('server namespace disconnect')) {
+        _sessionRevoked = true;
+        CommonLogger.log.w(
+          "🚫 Session revoked (namespace disconnect): $_socketUrl — staying down until an intentional reconnect",
+        );
+        return;
+      }
+
       CommonLogger.log.e("❌ Disconnected: $_socketUrl | reason: $reason");
 
       // If server explicitly disconnected us, socket.io may not auto-reconnect.
@@ -316,6 +356,17 @@ class SocketService {
       CommonLogger.log.e("❌ Reconnect failed | url=$_socketUrl");
     });
 
+    // Explicit single-session signal from the backend (sent to the OLDER socket
+    // right before it is disconnected). Suppress auto-reconnect so this socket
+    // stops fighting the newer session for the same userId.
+    s.on('session-revoked', (_) {
+      _sessionRevoked = true;
+      CommonLogger.log.w(
+        "🚫 [SOCKET] session-revoked received url=$_socketUrl — another session "
+        "took over; suppressing auto-reconnect until an intentional reclaim",
+      );
+    });
+
     if (kDebugMode) {
       s.onAny((event, data) {
         CommonLogger.log.i("Url: $_socketUrl\n📦 [onAny] $event → $data");
@@ -327,6 +378,9 @@ class SocketService {
   // ✅ Manual connect
   // ---------------------------------------------------------
   void connect() {
+    // Intentional (re)claim of the session: clear any prior revoke so this
+    // socket is allowed to reconnect and become the active session again.
+    _sessionRevoked = false;
     if (_initialized && _socket != null && _socket!.disconnected) {
       _socket!.connect();
     }
@@ -339,6 +393,15 @@ class SocketService {
   }
 
   void _safeManualReconnect() {
+    // Session was revoked by a newer socket for this userId. Reconnecting here
+    // would re-register and revoke that newer socket -> revoke-war. Stay down
+    // until an intentional reclaim (connect()/initSocket()/switchUrl()).
+    if (_sessionRevoked) {
+      CommonLogger.log.w(
+        "🚫 [SOCKET] Reconnect suppressed (session revoked) url=$_socketUrl",
+      );
+      return;
+    }
     final now = DateTime.now();
     if (now.difference(_lastManualReconnectAt) < const Duration(seconds: 2)) {
       return;
@@ -386,6 +449,14 @@ class SocketService {
   // ---------------------------------------------------------
   // ✅ Register customer
   // ---------------------------------------------------------
+  /// Set the stable per-install device id (FCM token) included on every
+  /// `register` so the backend can dedupe this device's own foreground/background
+  /// sockets instead of revoking them as a `new-device-login`.
+  void setDeviceId(String? id) {
+    final v = id?.trim();
+    if (v != null && v.isNotEmpty) _deviceId = v;
+  }
+
   void registerUser(String userId, {String? bookingId}) {
     _userId = userId;
     _driverId = null;
@@ -394,6 +465,7 @@ class SocketService {
     final payload = <String, dynamic>{
       "userId": userId,
       "type": "customer",
+      if (_deviceId != null) "deviceId": _deviceId,
       if (_bookingId != null) "bookingId": _bookingId,
     };
 
@@ -424,6 +496,7 @@ class SocketService {
     final payload = <String, dynamic>{
       "userId": driverId,
       "type": "driver",
+      if (_deviceId != null) "deviceId": _deviceId,
       if (_bookingId != null) "bookingId": _bookingId,
     };
 
@@ -537,7 +610,12 @@ class SocketService {
   void emit(String event, dynamic data) {
     // If we emit while disconnected, socket.io may queue, but ensure we are
     // actively reconnecting (helps after URL switches / background-resume).
-    if (_initialized && _socket != null && _socket!.disconnected) {
+    // Skip while session-revoked: a high-frequency updateLocation must not
+    // silently re-register and trigger a revoke-war (see _sessionRevoked).
+    if (_initialized &&
+        _socket != null &&
+        _socket!.disconnected &&
+        !_sessionRevoked) {
       _socket!.connect();
     }
     final s = _socket;
