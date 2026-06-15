@@ -3,6 +3,7 @@ import 'package:dotted_border/dotted_border.dart';
 import 'package:dotted_line/dotted_line.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/empty_state_view.dart';
+import 'package:hopper/Core/Utility/skeleton_loaders.dart';
 import 'package:hopper/Core/Utility/date_time_converter.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
 
@@ -81,7 +82,7 @@ class _RideAndPackageHistoryScreenState
               child: Obx(() {
                 final data = controller.rideHistoryData;
                 if (controller.isLoading.value) {
-                  return AppLoader.circularLoader();
+                  return SkeletonLoaders.rideHistory();
                 } else if (data.isEmpty) {
                   return RefreshIndicator(
                     onRefresh: () async {

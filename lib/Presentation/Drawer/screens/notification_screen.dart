@@ -4,6 +4,7 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/empty_state_view.dart';
+import 'package:hopper/Core/Utility/skeleton_loaders.dart';
 
 import '../../Authentication/widgets/textFields.dart';
 import '../controller/notification_controller.dart';
@@ -83,7 +84,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
             Expanded(
               child: Obx(() {
                 if (notificationController.isLoading.value) {
-                  return AppLoader.circularLoader();
+                  return SkeletonLoaders.notifications();
                 }
 
                 if (notificationController.notificationData.isEmpty) {

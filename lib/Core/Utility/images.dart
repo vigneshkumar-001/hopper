@@ -106,6 +106,7 @@ class AppImages {
 
   // Empty-state illustrations (image + text on empty / error screens).
   static String emptyRides = "assets/images/empty_rides.png";
+  static String emptySupport = "assets/images/empty_support.png";
   static String emptyWallet = "assets/images/empty_wallet.png";
   static String emptyEarnings = "assets/images/empty_earnings.png";
   static String emptyNotifications = "assets/images/empty_notifications.png";

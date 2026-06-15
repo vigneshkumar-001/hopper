@@ -7,6 +7,7 @@ import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
 import 'package:hopper/Presentation/Drawer/model/wallet_history_response.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
+import 'package:hopper/Core/Utility/skeleton_loaders.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Presentation/Drawer/screens/drawer_screens.dart';
 
@@ -281,7 +282,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 if (walletController.isLoading.value &&
                     walletController.traction.isEmpty) {
                   return SliverToBoxAdapter(
-                    child: const Center(child: HopprCircularLoader(radius: 14)),
+                    child: SkeletonLoaders.walletHistory(),
                   );
                 }
 

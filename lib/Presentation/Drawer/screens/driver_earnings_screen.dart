@@ -5,6 +5,7 @@ import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/empty_state_view.dart';
 import 'package:hopper/Presentation/Drawer/controller/driver_earnings_controller.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
+import 'package:hopper/Core/Utility/skeleton_loaders.dart';
 
 class DriverEarningsScreen extends StatefulWidget {
   const DriverEarningsScreen({super.key});
@@ -652,7 +653,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
       ),
       body: Obx(() {
         if (c.isLoading.value && c.items.isEmpty) {
-          return const Center(child: HopprCircularLoader());
+          return SkeletonLoaders.earnings();
         }
 
         if (c.errorText.value.isNotEmpty && c.items.isEmpty) {

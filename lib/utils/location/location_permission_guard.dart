@@ -105,14 +105,23 @@ class LocationPermissionGuard extends GetxService with WidgetsBindingObserver {
 
     Get.dialog(
       _locationBlockDialog(
-        title: 'Turn on Location',
+        // Prominent Disclosure (Google Play User Data policy): shown BEFORE the
+        // system location prompt. Must state we collect location, that it runs
+        // in the background, and why.
+        title: 'Allow Hoppr to use your location',
         message:
-            'Please enable GPS/Location services. This app is location-based and needs your location to work.',
-        primaryText: 'Open Settings',
+            'Hoppr Driver collects location data to show you nearby ride '
+            'requests, navigate to pickup and drop-off points, and share your '
+            'live location with customers during a trip.\n\n'
+            'This includes collecting location in the background — even when the '
+            'app is closed or not in use — so your trips keep tracking while you '
+            'drive. You can turn this off anytime in your device Settings.\n\n'
+            'Tap “Allow” to continue and grant location access.',
+        primaryText: 'Allow',
         onPrimary: () async {
           await _openSettingsFlow();
         },
-        secondaryText: 'Retry',
+        secondaryText: 'Not now',
         onSecondary: () async {
           await _checkAndGate();
         },
@@ -167,7 +176,8 @@ Widget _locationBlockDialog({
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     child: Padding(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
@@ -242,6 +252,7 @@ Widget _locationBlockDialog({
             ],
           ),
         ],
+      ),
       ),
     ),
   );
