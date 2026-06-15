@@ -154,6 +154,11 @@ class DriverMainController extends GetxController
   String? _lastResumedBookingId;
   String? _lastDismissedBookingId;
   bool _appInForeground = true;
+  // Debounce for the foreground single-session self-heal (see
+  // _maybeReclaimRevokedSession). Stops a revoked foreground socket from sitting
+  // dead (dropping location/heartbeat) when no resume event will fire to
+  // reclaim it, without re-creating a tight revoke-war.
+  DateTime _lastSessionReclaimAt = DateTime.fromMillisecondsSinceEpoch(0);
   bool _restoringPendingBookingRequest = false;
 
   final Rxn<Map<String, dynamic>> activeBookingData =
@@ -199,7 +204,7 @@ class DriverMainController extends GetxController
   // no-movement we back off to the lighter 25s heartbeat. This also stops a
   // booking whose context wasn't cleared on completion from emitting 1Hz
   // indefinitely while the car is parked.
-  static const Duration _activeTripIdleCutoff = Duration(seconds: 120);
+  static const Duration _activeTripIdleCutoff = Duration(minutes: 15);
 
   // Expose demand micro-interaction animations (for UI overlays).
   Listenable get demandBounceListenable => _demandBounceCtrl;
@@ -1385,7 +1390,8 @@ class DriverMainController extends GetxController
     required String? bookingId,
   }) {
     final now = DateTime.now().toUtc();
-    if (_lastDriverEmitMetricAt != null) {
+    final bool hadPrevEmit = _lastDriverEmitMetricAt != null;
+    if (hadPrevEmit) {
       _emitLastGapMs =
           now.difference(_lastDriverEmitMetricAt!).inMilliseconds.clamp(
                 0,
@@ -1394,6 +1400,23 @@ class DriverMainController extends GetxController
     }
     _lastDriverEmitMetricAt = now;
     _emitCountWindow += 1;
+
+    // [track-gap] DIAGNOSTIC (hop 1/4: driver → server, FOREGROUND path). The
+    // background service already logs this for its path; the foreground emit —
+    // used right after returning from Google-Maps navigation — was previously
+    // NOT instrumented, a blind spot when localizing a ride-2 freeze. Fires only
+    // when the app resumes emitting after an anomalous silence (>3s) during an
+    // ACTIVE booking (the moment the customer marker would freeze), pinning the
+    // stall to the device. Warning-level so it shows in release logcat; rare by
+    // construction (no spam).
+    final bool hasActiveBooking =
+        bookingId != null && bookingId.trim().isNotEmpty;
+    if (hadPrevEmit && hasActiveBooking && _emitLastGapMs > 3000) {
+      CommonLogger.log.w(
+        '[track-gap] hop=driver-emit-fg gap_ms=$_emitLastGapMs event=$event '
+        'booking=${_maskIdForLog(bookingId)}',
+      );
+    }
     if (now.difference(_emitMetricsWindowStartedAt) < const Duration(minutes: 1)) {
       return;
     }
@@ -1406,6 +1429,34 @@ class DriverMainController extends GetxController
     }
     _emitMetricsWindowStartedAt = now;
     _emitCountWindow = 0;
+  }
+
+  /// Platform-correct location settings for the live tracking stream.
+  ///
+  /// CRITICAL (Android): geolocator's base [LocationSettings] does NOT set an
+  /// update interval, so the Android FusedLocationProvider falls back to its
+  /// DEFAULT 5000ms interval — the stream then delivered a fix only every ~5s
+  /// even though our emit timer ticks at 1s. That sparse 5s feed is what made
+  /// the customer's car jitter / freeze / dead-reckon between points (the
+  /// driver-side root cause of the "shaking, uneven, jumping" marker). Request
+  /// ~1Hz fixes on an active trip via [AndroidSettings.intervalDuration]
+  /// (Uber/Ola/Rapido-grade), and a gentler cadence when merely online/idle to
+  /// protect battery. iOS already streams at the accuracy/distanceFilter rate
+  /// (no fixed interval), so it keeps the base settings — no behaviour change.
+  LocationSettings _trackingLocationSettings({required bool activeTrip}) {
+    const accuracy = LocationAccuracy.bestForNavigation;
+    final distanceFilter = activeTrip ? 0 : 5;
+    // Force ~1Hz only during an active trip (Android). Idle/online keeps the
+    // previous default behaviour, so there is no battery regression when nobody
+    // is watching a live ride.
+    if (activeTrip && Platform.isAndroid) {
+      return AndroidSettings(
+        accuracy: accuracy,
+        distanceFilter: distanceFilter,
+        intervalDuration: const Duration(seconds: 1),
+      );
+    }
+    return LocationSettings(accuracy: accuracy, distanceFilter: distanceFilter);
   }
 
   // ---------------- location emit loop ----------------
@@ -1427,10 +1478,7 @@ class DriverMainController extends GetxController
     _emitLoopForActiveTrip = activeTripStream;
 
     locationSub = Geolocator.getPositionStream(
-      locationSettings: LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: activeTripStream ? 0 : 5,
-      ),
+      locationSettings: _trackingLocationSettings(activeTrip: activeTripStream),
     ).listen((pos) {
       if (_disposed || isClosed) return;
       if (token != _emitLoopToken) return;
@@ -1563,6 +1611,9 @@ class DriverMainController extends GetxController
       if (_disposed || isClosed) return;
       if (token != _emitLoopToken) return;
       if (!statusController.isOnline.value) return;
+      // Foreground self-heal: reclaim a revoked-and-suppressed socket so it does
+      // not sit dead while the app is the rightful (foreground) owner.
+      _maybeReclaimRevokedSession();
       final payload = latestLocationPayload;
       if (payload == null) return;
 
@@ -1648,6 +1699,10 @@ class DriverMainController extends GetxController
     }
 
     // Not moving but online => emit `driver-heartbeat` every 20–30s (we use 25s).
+    if (activeTripStream) {
+      heartbeatTimer?.cancel();
+      return;
+    }
     final localHeartbeatTimer = Timer.periodic(const Duration(seconds: 25), (
       _,
     ) {
@@ -2486,6 +2541,18 @@ class DriverMainController extends GetxController
     if (_disposed || isClosed) return;
     if (driverId == null) return;
 
+    // Stable per-install device id (FCM token) so the backend can dedupe this
+    // device's foreground/background sockets instead of revoking the foreground
+    // as a `new-device-login`. Set BEFORE register so the very first `register`
+    // carries it. Safe no-op if the token isn't ready yet (re-register on
+    // connect will include it once available).
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final fcm = (prefs.getString('fcmToken') ?? '').trim();
+      if (fcm.isNotEmpty) socketService.setDeviceId(fcm);
+    } catch (_) {}
+    if (_disposed || isClosed) return;
+
     socketService.initSocket(cfg.socketUrl);
     _bindSocketListeners();
 
@@ -2507,6 +2574,45 @@ class DriverMainController extends GetxController
     // NOTE: Don’t start BG tracking while the app is foregrounded.
     // Running BG socket + foreground socket together causes `io server disconnect`
     // on servers that enforce a single active session per driverId.
+  }
+
+  /// Foreground single-session self-heal.
+  ///
+  /// When the backend revokes this socket (a newer session for the same userId
+  /// took over), `SocketService` suppresses auto-reconnect to stop the
+  /// revoke-war. That is correct WHILE the app is backgrounded (the background
+  /// tracking isolate legitimately owns the session). But if the app is in the
+  /// FOREGROUND and online, THIS isolate is the rightful owner — a suppressed
+  /// socket would otherwise sit dead (dropping updateLocation/heartbeat) with no
+  /// resume event to trigger a reclaim, so the customer's marker freezes.
+  ///
+  /// Here we reclaim: stop any background isolate first (so it can't fight back
+  /// — it also self-stops on its own session-revoke), then intentionally
+  /// reconnect (`connect()` clears the revoke flag) and re-register. Debounced
+  /// to 5s so a genuinely contested session backs off instead of tight-looping.
+  void _maybeReclaimRevokedSession() {
+    if (_disposed || isClosed) return;
+    if (!_appInForeground) return; // backgrounded -> BG isolate owns the session
+    if (!statusController.isOnline.value) return; // offline -> nothing to own
+    if (!socketService.sessionRevoked) return; // only when explicitly suppressed
+
+    final now = DateTime.now();
+    if (now.difference(_lastSessionReclaimAt) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastSessionReclaimAt = now;
+
+    unawaited(bg.stopDriverTrackingService());
+    socketService.connect(); // intentional reclaim -> clears the revoke flag
+    final did = driverId?.trim() ?? '';
+    if (did.isNotEmpty) {
+      socketService.registerDriver(did, bookingId: currentBookingId);
+    }
+    if (kDebugMode) {
+      CommonLogger.log.w(
+        '🩹 [SOCKET] Foreground reclaiming revoked session url=${socketService.currentUrl}',
+      );
+    }
   }
 
   Future<void> onAppPaused() async {
@@ -2582,6 +2688,11 @@ class DriverMainController extends GetxController
     if (_disposed || isClosed) return;
     _appInForeground = true;
     _backgroundServiceActive = false;
+
+    // Back in Hoppr — the floating "return to app" bubble over Google Maps is
+    // now redundant. (MainActivity.onResume also removes it as a native safety
+    // net; this covers resume paths that don't recreate the activity.)
+    unawaited(NavigationService().hideReturnBubble());
 
     driverId ??= await SharedPrefHelper.getDriverId();
     final did = driverId?.trim() ?? '';

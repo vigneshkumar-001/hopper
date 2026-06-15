@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- "Display over other apps": lets us float the Hoppr return-bubble on top of
+         Google Maps while the driver navigates (Uber/Ola style). Runtime-gated by
+         Settings.canDrawOverlays; we degrade gracefully if the user denies it. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:label="Hoppr Partner"

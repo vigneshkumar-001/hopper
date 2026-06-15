@@ -175,6 +175,23 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
             ? Get.find<ApiConfigController>().socketUrl
             : ApiConfigController.singleSocket;
 
+    // One-time: ensure the "Display over other apps" permission so we can float
+    // a quick Hoppr return-bubble on top of Google Maps. If this opens settings
+    // (first time only), abort this tap so the driver can grant it and retry.
+    final proceed = await _navigationService.prepareReturnBubble();
+    if (!proceed) {
+      Get.snackbar(
+        'One-time setup',
+        'Allow "Display over other apps" so Hoppr can show a quick return button '
+            'on the map while you navigate. Then tap Navigate to Pickup again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: const Color(0xFF111827),
+        colorText: Colors.white,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+
     await _navigationService.markExternalNavigationReturnPending(
       source: 'single_pickup_google_maps',
     );

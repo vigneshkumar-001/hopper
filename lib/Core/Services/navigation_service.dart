@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -13,9 +15,72 @@ class NavigationService {
   static const String _navReturnPendingKey = 'nav_return_pending';
   static const String _navReturnSetAtKey = 'nav_return_set_at_ms';
   static const String _navReturnSourceKey = 'nav_return_source';
+  // Tracks whether we've already sent the driver to the "Display over other
+  // apps" settings once, so we never loop them back there on every Navigate tap.
+  static const String _overlayPromptedKey = 'overlay_bubble_prompted';
 
   static const MethodChannel _channel =
       MethodChannel('hopper/navigation_intents');
+
+  // ---- Floating "return to Hoppr" bubble over Google Maps (Android only) ----
+
+  bool get _isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  /// Whether the "Display over other apps" permission is granted.
+  Future<bool> hasOverlayPermission() async {
+    if (!_isAndroid) return false;
+    try {
+      return await _channel.invokeMethod<bool>('hasOverlayPermission') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _openOverlaySettings() async {
+    try {
+      await _channel.invokeMethod('requestOverlayPermission');
+    } catch (_) {}
+  }
+
+  /// Prepare the return-bubble before launching external navigation.
+  ///
+  /// Returns `true` if the caller should proceed to launch Google Maps now.
+  /// Returns `false` ONLY when we just opened the overlay-permission settings
+  /// screen (first time) — the caller should abort this tap so the driver can
+  /// grant it and tap Navigate again. After that first prompt we never block
+  /// navigation again, even if still denied (bubble simply won't show).
+  Future<bool> prepareReturnBubble() async {
+    if (!_isAndroid) return true;
+    if (await hasOverlayPermission()) return true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final prompted = prefs.getBool(_overlayPromptedKey) ?? false;
+      if (!prompted) {
+        await prefs.setBool(_overlayPromptedKey, true);
+        await _openOverlaySettings();
+        return false;
+      }
+    } catch (_) {}
+    return true;
+  }
+
+  /// Show the floating return bubble over Google Maps. No-op if the permission
+  /// isn't granted; safe on iOS/web.
+  Future<void> showReturnBubble() async {
+    if (!_isAndroid) return;
+    try {
+      await _channel.invokeMethod('showReturnBubble');
+    } catch (_) {}
+  }
+
+  /// Remove the floating return bubble. Safe to call anytime / on iOS/web.
+  Future<void> hideReturnBubble() async {
+    if (!_isAndroid) return;
+    try {
+      await _channel.invokeMethod('hideReturnBubble');
+    } catch (_) {}
+  }
 
   Future<void> markExternalNavigationReturnPending({
     String source = 'trip_navigation',
@@ -129,6 +194,13 @@ class NavigationService {
     required double destLng,
     required String destinationLabel,
   }) async {
+    // Android: show the floating "return to Hoppr" bubble just before handing
+    // off to Google Maps, so it's added while we're still foregrounded and then
+    // floats on top of Maps. No-op if the overlay permission isn't granted.
+    if (_isAndroid) {
+      unawaited(showReturnBubble());
+    }
+
     // Android: launch with an explicit intent to reduce Google Maps back-stack
     // and improve "return to app" behavior on some devices.
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
