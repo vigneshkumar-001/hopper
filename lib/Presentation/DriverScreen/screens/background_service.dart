@@ -303,7 +303,10 @@ void onStart(ServiceInstance service) async {
   Future<void> persistLastBgEmit(String? bookingId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('bg_last_emit_at', DateTime.now().millisecondsSinceEpoch);
+      await prefs.setInt(
+        'bg_last_emit_at',
+        DateTime.now().millisecondsSinceEpoch,
+      );
       if (bookingId != null && bookingId.trim().isNotEmpty) {
         await prefs.setString('bg_last_emit_booking_id', bookingId.trim());
       } else {
@@ -316,11 +319,10 @@ void onStart(ServiceInstance service) async {
     final emitNow = DateTime.now();
     final bool hadPrevEmit = lastEmitMetricAt != null;
     if (hadPrevEmit) {
-      lastEmitGapMs =
-          emitNow.difference(lastEmitMetricAt!).inMilliseconds.clamp(
-                0,
-                1 << 30,
-              );
+      lastEmitGapMs = emitNow
+          .difference(lastEmitMetricAt!)
+          .inMilliseconds
+          .clamp(0, 1 << 30);
     }
 
     // [track-gap] DIAGNOSTIC (hop 1/4: driver → server). Fires only when the
@@ -436,7 +438,8 @@ void onStart(ServiceInstance service) async {
       // If the server explicitly disconnects, socket.io may not auto-reconnect.
       // Try a debounced manual reconnect; re-register happens on connect.
       final now = DateTime.now();
-      if (now.difference(_lastManualReconnectAt) >= const Duration(seconds: 2)) {
+      if (now.difference(_lastManualReconnectAt) >=
+          const Duration(seconds: 2)) {
         _lastManualReconnectAt = now;
         activeSocket.connect();
       }
@@ -568,7 +571,9 @@ void onStart(ServiceInstance service) async {
       if (acc > maxAccuracyM) return;
 
       final speedMs =
-          (position.speed.isFinite && position.speed >= 0) ? position.speed : 0.0;
+          (position.speed.isFinite && position.speed >= 0)
+              ? position.speed
+              : 0.0;
       if (speedMs >= 1.0 &&
           position.heading.isFinite &&
           position.heading >= 0) {
@@ -751,7 +756,9 @@ void onStart(ServiceInstance service) async {
     // spun the customer's car icon while the driver was stopped.
     final double bgSpeedMs =
         (position.speed.isFinite && position.speed >= 0) ? position.speed : 0.0;
-    if (bgSpeedMs >= 1.0 && position.heading.isFinite && position.heading >= 0) {
+    if (bgSpeedMs >= 1.0 &&
+        position.heading.isFinite &&
+        position.heading >= 0) {
       lastEmitBearing = position.heading;
     }
 
@@ -860,7 +867,9 @@ void onStart(ServiceInstance service) async {
           (movedMeters != null && movedMeters >= 5.0) || speedMs >= 0.6;
 
       // Hold heading unless genuinely moving (mirrors the foreground gate).
-      if (speedMs >= 1.0 && position.heading.isFinite && position.heading >= 0) {
+      if (speedMs >= 1.0 &&
+          position.heading.isFinite &&
+          position.heading >= 0) {
         lastEmitBearing = position.heading;
       }
 
@@ -885,7 +894,9 @@ void onStart(ServiceInstance service) async {
       };
 
       final eventName =
-          hasActiveBooking ? 'updateLocation' : (isMoving ? 'updateLocation' : 'driver-heartbeat');
+          hasActiveBooking
+              ? 'updateLocation'
+              : (isMoving ? 'updateLocation' : 'driver-heartbeat');
       if (!socket.connected) {
         _pendingEvent = eventName;
         _pendingPayload = locationData;
