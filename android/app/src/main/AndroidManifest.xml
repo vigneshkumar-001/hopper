@@ -7,6 +7,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Keep the CPU awake while the location foreground service runs, so the 1Hz
+         emit/poll timers don't get throttled when the screen is locked (the
+         driver-side "froze for ~50s then jumped" cause). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Lets us prompt the driver to exempt Hoppr from battery optimization, so
+         aggressive OEMs (Xiaomi/Oppo/Vivo/Samsung) don't suspend the tracking
+         service mid-trip. Runtime-requested; we degrade gracefully if denied. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- "Display over other apps": lets us float the Hoppr return-bubble on top of
          Google Maps while the driver navigates (Uber/Ola style). Runtime-gated by
          Settings.canDrawOverlays; we degrade gracefully if the user denies it. -->

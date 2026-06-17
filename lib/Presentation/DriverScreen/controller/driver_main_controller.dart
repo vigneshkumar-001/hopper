@@ -145,6 +145,7 @@ class DriverMainController extends GetxController
   final ApiConfigController cfg = Get.find<ApiConfigController>();
   Worker? _sharedToggleWorker;
   Worker? _serviceTypeWorker;
+  Worker? _autoOfflineWorker;
   final ApiDataSource _apiDataSource = ApiDataSource();
 
   // âœ… IMPORTANT: prevent callbacks after dispose
@@ -1761,6 +1762,10 @@ class DriverMainController extends GetxController
     socketService.off('driver:demand-opportunity');
     socketService.off('driver:demand-opportunities');
 
+    // Server-authoritative online status: register the push listener (dedup-safe)
+    // so a server-side flip (other device / inactivity / admin) reaches the UI.
+    statusController.bindOnlineStatusListener();
+
     socketService.on('connect', (_) {
       if (_disposed || isClosed) return;
       socketService.registerDriver(
@@ -1770,6 +1775,9 @@ class DriverMainController extends GetxController
           if (kDebugMode) CommonLogger.log.i("register ack: $resp");
         },
       );
+      // Fires on initial connect AND every reconnect -> always pull the true
+      // online status from the server and apply it.
+      statusController.requestOnlineStatus(driverId: driverId);
     });
 
     socketService.on('registered', (_) async {
@@ -2565,6 +2573,9 @@ class DriverMainController extends GetxController
       if (socketService.connected) {
         await startEmitLoop();
         requestDemandOpportunities(reason: 'socket_already_connected');
+        // Socket already up (singleton reused) -> 'connect' won't refire, so
+        // pull the authoritative online status now.
+        statusController.requestOnlineStatus(driverId: did);
       }
     }
 
@@ -2715,6 +2726,9 @@ class DriverMainController extends GetxController
       await startEmitLoop();
       requestDemandOpportunities(reason: 'app_resumed');
     }
+    // Resume: the toggle must reflect the TRUE server status (it may have been
+    // flipped offline by inactivity / another device while we were away).
+    statusController.requestOnlineStatus(driverId: did);
 
     unawaited(restorePendingBookingRequestFromNotification(force: true));
 
@@ -2823,8 +2837,16 @@ class DriverMainController extends GetxController
           );
           return;
         }
+        // Going online: ask the OS to exempt Hoppr from battery optimization so
+        // OEMs don't suspend the tracking FGS mid-trip (the driver-side "froze
+        // then jumped" cause). Best-effort, never blocks going online.
+        unawaited(_requestBatteryOptimizationExemptionOnce());
       }
 
+      // Show a pending state until the server confirms via driver-online-status
+      // (push) or the get-online-status ack below. Optimistic flip keeps the tap
+      // responsive; the server's truth reconciles it (and reverts on failure).
+      statusController.markTogglePending();
       statusController.toggleStatus();
       final isOnline = statusController.isOnline.value;
 
@@ -2856,6 +2878,10 @@ class DriverMainController extends GetxController
         longitude: lng,
       );
 
+      // Confirm with the server (its push/ack is the source of truth). If the
+      // toggle failed server-side, this reconciles the optimistic flip back.
+      statusController.requestOnlineStatus(driverId: driverId);
+
       // Background tracking (screen lock / app closed). Runs as Android foreground service.
       if (isOnline) {
         if (_appInForeground) {
@@ -2883,6 +2909,196 @@ class DriverMainController extends GetxController
     } finally {
       statusController.isToggleLoading.value = false;
     }
+  }
+
+  bool _batteryOptExemptionAsked = false;
+
+  /// Uber/Ola-style battery-optimization opt-in. Aggressive OEMs (Xiaomi/Oppo/
+  /// Vivo/Samsung) suspend a backgrounded foreground service unless exempted —
+  /// that suspension froze the driver location feed mid-trip (the customer saw
+  /// the car stop ~50s then jump). Like Uber, we DON'T fire the bare system
+  /// dialog: we first show a clear rationale sheet explaining why, then the
+  /// driver taps "Turn on" to grant. Once per session, best-effort, never blocks
+  /// going online.
+  Future<void> _requestBatteryOptimizationExemptionOnce() async {
+    if (!Platform.isAndroid) return;
+    if (_batteryOptExemptionAsked) return;
+    _batteryOptExemptionAsked = true;
+    try {
+      // Already exempted -> nothing to ask.
+      final status = await Permission.ignoreBatteryOptimizations.status;
+      if (status.isGranted) return;
+      if (Get.context == null) return;
+
+      final accepted = await Get.bottomSheet<bool>(
+        _batteryOptimizationSheet(),
+        isScrollControlled: true,
+        isDismissible: true,
+        backgroundColor: Colors.transparent,
+      );
+
+      if (accepted == true) {
+        await Permission.ignoreBatteryOptimizations.request();
+      }
+    } catch (_) {}
+  }
+
+  Widget _batteryOptimizationSheet() {
+    const brand = Color(0xFF357AE9);
+    Widget bullet(IconData icon, String title, String sub) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 38,
+            width: 38,
+            decoration: BoxDecoration(
+              color: brand.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: brand, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  sub,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.3,
+                    color: Colors.black.withOpacity(0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 4,
+              width: 44,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              height: 56,
+              width: 56,
+              decoration: BoxDecoration(
+                color: brand.withOpacity(0.10),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.battery_charging_full_rounded,
+                color: brand,
+                size: 30,
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Keep Hoppr running',
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.w800,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Allow Hoppr to ignore battery optimization so it keeps working '
+              'while you drive with the screen off.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.35,
+                color: Colors.black.withOpacity(0.6),
+              ),
+            ),
+            const SizedBox(height: 14),
+            bullet(
+              Icons.notifications_active_rounded,
+              "Don't miss ride requests",
+              'Get new trips even when the app is in the background.',
+            ),
+            bullet(
+              Icons.my_location_rounded,
+              'Smooth live tracking',
+              'Your car stays accurate for the customer — no freezing or jumps.',
+            ),
+            bullet(
+              Icons.account_balance_wallet_rounded,
+              'No lost earnings',
+              'Stay online reliably through your whole shift.',
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Get.back<bool>(result: true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: brand,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Text(
+                  'Turn on',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Get.back<bool>(result: false),
+                child: Text(
+                  'Not now',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black.withOpacity(0.55),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<bool> _ensureNotificationPermissionForFgs() async {
@@ -2986,7 +3202,45 @@ class DriverMainController extends GetxController
       update(['map']);
     });
 
+    // Inactivity / server auto-offline -> show a tappable banner so the driver
+    // understands why their toggle flipped and can go back online.
+    _autoOfflineWorker?.dispose();
+    _autoOfflineWorker = ever<String>(statusController.autoOfflineReason, (
+      reason,
+    ) {
+      if (_disposed || isClosed) return;
+      if (reason == 'inactivity-auto-offline') _showInactivityOfflineBanner();
+    });
+
     _prepare();
+  }
+
+  void _showInactivityOfflineBanner() {
+    if (Get.context == null) return;
+    if (Get.isSnackbarOpen) return;
+    Get.snackbar(
+      'You went offline',
+      'You were set offline due to inactivity.',
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(12),
+      borderRadius: 12,
+      backgroundColor: Colors.black.withValues(alpha: 0.88),
+      colorText: Colors.white,
+      duration: const Duration(seconds: 6),
+      mainButton: TextButton(
+        onPressed: () {
+          Get.closeCurrentSnackbar();
+          if (!statusController.isOnline.value &&
+              !statusController.isToggleLoading.value) {
+            toggleOnline();
+          }
+        },
+        child: const Text(
+          'Go back online',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
   }
 
   /// Restores core socket listeners (especially `booking-request`) after other
@@ -3054,6 +3308,7 @@ class DriverMainController extends GetxController
 
     _sharedToggleWorker?.dispose();
     _serviceTypeWorker?.dispose();
+    _autoOfflineWorker?.dispose();
 
     countdownTimer?.cancel();
     emitTimer?.cancel();

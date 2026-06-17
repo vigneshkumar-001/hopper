@@ -500,7 +500,11 @@ class _GlassHeader extends StatelessWidget {
             onTap: onToggle,
             child: Obx(() {
               final isOnline = statusController.isOnline.value;
-              final isLoading = statusController.isToggleLoading.value;
+              // Show the spinner while the REST call runs OR while awaiting the
+              // server's authoritative confirmation (driver-online-status / ack).
+              final isLoading =
+                  statusController.isToggleLoading.value ||
+                  statusController.isTogglePending.value;
               // IMPORTANT: read serviceType inside Obx so the icon updates immediately.
               final serviceType = statusController.serviceType.value.trim();
               final hasServiceType = serviceType.isNotEmpty;

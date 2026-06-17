@@ -19,13 +19,14 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
   final ScrollController _scroll = ScrollController();
   final RxInt selectedTab = 0.obs;
 
-  // Match existing app theme (Wallet screen).
-  static const Color bgColor = AppColors.containerColor1;
+  // Reference-style blue/indigo palette (clean fintech earnings look).
+  static const Color bgColor = Color(0xFFF7F8FC);
   static const Color cardColor = AppColors.commonWhite;
-  static final Color primaryColor = AppColors.drkGreen;
-  static final Color lightPrimary = AppColors.drkGreen.withValues(alpha: 0.12);
-  static const Color blackColor = AppColors.commonBlack;
-  static final Color textGrey = AppColors.textColorGrey;
+  static const Color navy = Color(0xFF111315); // headings + amount + bars (black)
+  static const Color primaryColor = Color(0xFF111315); // black accent / selected
+  static final Color lightPrimary = const Color(0xFF111315).withValues(alpha: 0.08);
+  static const Color blackColor = navy;
+  static const Color textGrey = Color(0xFF9AA1B8);
   static final Color cardBorder = Colors.black.withValues(alpha: 0.06);
   static final Color lineColor = Colors.black.withValues(alpha: 0.06);
 
@@ -59,244 +60,328 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
     super.dispose();
   }
 
-  static String _rupee(String amount) => '\u20B9$amount';
+  static String _rupee(String amount) => '\u20A6$amount';
 
-  Widget _balanceCard(dynamic s) {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: cardBorder),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  'Available Balance',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: textGrey,
-                  ),
-                ),
-                const Spacer(),
-                const _StatusPill(),
-              ],
-            ),
-          const SizedBox(height: 14),
-          Text(
-            _rupee(s.availableBalance),
-            style: const TextStyle(
-              fontSize: 36,
-              fontWeight: FontWeight.w900,
-              color: blackColor,
-              letterSpacing: -1.2,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(child: _smallStat('Cash on Hand', _rupee(s.cashOnHand))),
-              const SizedBox(width: 12),
-              Expanded(child: _smallStat('Withdrawals', _rupee(s.totalWithdrawals))),
-            ],
-          ),
-        ],
-      ),
+  // ---- Reference-style week selector + weekly bar chart ----
+  static const List<String> _wdFull = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static const List<String> _mon = [
+    'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+    'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+  ];
+
+  String _money(double v) => '₦${v.toStringAsFixed(2)}';
+
+  // ---- Period filter (Today / This Week / This Month) ----
+  static const List<String> _periods = ['Today', 'This Week', 'This Month'];
+  final RxString _period = 'This Week'.obs;
+
+  DateTimeRange _rangeFor(String p) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    switch (p) {
+      case 'Today':
+        return DateTimeRange(start: today, end: today);
+      case 'This Month':
+        return DateTimeRange(
+          start: DateTime(now.year, now.month, 1),
+          end: DateTime(now.year, now.month + 1, 0),
+        );
+      case 'This Week':
+      default:
+        final monday = today.subtract(Duration(days: today.weekday - 1));
+        return DateTimeRange(
+          start: monday,
+          end: monday.add(const Duration(days: 6)),
+        );
+    }
+  }
+
+  Future<void> _applyPeriod(String p) async {
+    _period.value = p;
+    final r = _rangeFor(p);
+    c.fromDate.value = r.start;
+    c.toDate.value = r.end;
+    await c.applyFilters(
+      bookingTypeValue: c.bookingType.value,
+      paymentModeValues: c.paymentModes.toList(growable: false),
+      statusValues: c.statuses.toList(growable: false),
+      transactionTypeValues: c.transactionTypes.toList(growable: false),
     );
   }
 
-  Widget _smallStat(String title, String value) {
+  // Small period dropdown chip (Today / This Week / This Month).
+  Widget _periodDropdown() {
+    return Obx(() {
+      return PopupMenuButton<String>(
+        onSelected: _applyPeriod,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        offset: const Offset(0, 42),
+        itemBuilder: (_) => _periods
+            .map(
+              (p) => PopupMenuItem<String>(
+                value: p,
+                height: 42,
+                child: Text(
+                  p,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: _period.value == p ? primaryColor : navy,
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _period.value,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 3),
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 18,
+                color: Colors.white,
+              ),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  String _weekLabel(DateTimeRange w) {
+    final s = w.start, e = w.end;
+    return s.month == e.month
+        ? '${s.day}-${e.day} ${_mon[e.month - 1]}'
+        : '${s.day} ${_mon[s.month - 1]}-${e.day} ${_mon[e.month - 1]}';
+  }
+
+  // Sum item amounts per weekday (Mon=0..Sun=6) within [w].
+  List<double> _dailyTotals(DateTimeRange w) {
+    final t = List<double>.filled(7, 0);
+    for (final it in c.items) {
+      final dt = DateTime.tryParse(it.createdAtIso)?.toLocal();
+      if (dt == null) continue;
+      final d = DateTime(dt.year, dt.month, dt.day);
+      if (d.isBefore(w.start) || d.isAfter(w.end)) continue;
+      final idx = d.weekday - 1;
+      if (idx >= 0 && idx < 7) t[idx] += double.tryParse(it.amount) ?? 0;
+    }
+    return t;
+  }
+
+  String _periodSubtitle(String p, DateTimeRange r) {
+    switch (p) {
+      case 'Today':
+        return 'Today, ${r.start.day} ${_mon[r.start.month - 1]}';
+      case 'This Month':
+        return '${_mon[r.start.month - 1]} ${r.start.year}';
+      case 'This Week':
+      default:
+        return _weekLabel(r);
+    }
+  }
+
+  // Premium dark hero card: label + period pill + big amount + the chart, all in
+  // one elevated black card (clean, modern fintech look).
+  Widget _heroCard(List<double> totals, DateTimeRange range, String period) {
+    final total = totals.fold<double>(0, (a, b) => a + b);
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
       decoration: BoxDecoration(
-        color: bgColor.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: lineColor),
+        borderRadius: BorderRadius.circular(30),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF2A2D36), Color(0xFF141519)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 34,
+            offset: const Offset(0, 18),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: textGrey,
-            ),
+          Row(
+            children: [
+              Text(
+                'YOUR EARNINGS',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.3,
+                  color: Colors.white.withValues(alpha: 0.55),
+                ),
+              ),
+              const Spacer(),
+              _periodDropdown(),
+            ],
           ),
-          const SizedBox(height: 7),
+          const SizedBox(height: 14),
           Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            _money(total),
             style: const TextStyle(
-              fontSize: 17,
+              fontSize: 40,
               fontWeight: FontWeight.w900,
-              color: blackColor,
+              color: Colors.white,
+              letterSpacing: -1.4,
             ),
           ),
+          const SizedBox(height: 4),
+          Text(
+            _periodSubtitle(period, range),
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+          const SizedBox(height: 24),
+          _barChart(totals, range, showDates: period != 'This Month', onDark: true),
         ],
       ),
     );
   }
 
-  Widget _filterTabs() {
-    return Obx(() {
-      final selected = selectedTab.value;
+  // Weekly bars + baseline. Tallest day gets a soft value chip. `onDark` renders
+  // white bars/labels for the dark hero card; otherwise dark bars on light.
+  Widget _barChart(
+    List<double> totals,
+    DateTimeRange w, {
+    bool showDates = true,
+    bool onDark = false,
+  }) {
+    final maxV = totals.fold<double>(0, (a, b) => b > a ? b : a);
+    final hasData = maxV > 0;
+    int peak = 0;
+    for (int i = 1; i < 7; i++) {
+      if (totals[i] > totals[peak]) peak = i;
+    }
+    const chartH = 130.0;
+    final barColor = onDark ? Colors.white : navy;
+    final dateColor = onDark ? Colors.white : navy;
+    final wdColor =
+        onDark ? Colors.white.withValues(alpha: 0.55) : textGrey;
+    final baseLine =
+        onDark ? Colors.white.withValues(alpha: 0.14) : lineColor;
 
-      return Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: cardBorder),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 22,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: Row(
-          children: List.generate(tabs.length, (index) {
-            final isSelected = selected == index;
-
-            return Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () async {
-                  selectedTab.value = index;
-                  final type = tabs[index]['type'] ?? '';
-
-                  await c.applyFilters(
-                    bookingTypeValue: type,
-                    paymentModeValues: c.paymentModes.toList(growable: false),
-                    statusValues: c.statuses.toList(growable: false),
-                    transactionTypeValues: c.transactionTypes.toList(growable: false),
-                  );
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    gradient: isSelected
-                        ? const LinearGradient(
-                            colors: [Color(0xFF7B61FF), Color(0xFF5B8EFF)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          )
-                        : null,
-                    color: isSelected ? null : Colors.transparent,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Center(
-                    child: Text(
-                      tabs[index]['title'] ?? '',
-                      style: TextStyle(
-                        color: isSelected ? Colors.white : blackColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
+    return Column(
+      children: [
+        // Bars (with a value chip over the tallest).
+        SizedBox(
+          height: chartH + 26,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: List.generate(7, (i) {
+              final v = totals[i];
+              final frac = hasData ? (v / maxV) : 0.0;
+              final barH = (hasData && v > 0) ? (8 + frac * (chartH - 8)) : 0.0;
+              final isPeak = hasData && i == peak && v > 0;
+              return Expanded(
+                child: SizedBox(
+                  height: chartH + 26,
+                  child: Stack(
+                    alignment: Alignment.bottomCenter,
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 14,
+                        height: barH,
+                        decoration: BoxDecoration(
+                          color: barColor,
+                          borderRadius: BorderRadius.circular(7),
+                        ),
                       ),
-                    ),
+                      if (isPeak)
+                        Positioned(
+                          bottom: barH + 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: onDark ? Colors.white : navy,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _money(v),
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w900,
+                                color: onDark ? navy : Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
+              );
+            }),
+          ),
+        ),
+        Container(height: 1, color: baseLine),
+        const SizedBox(height: 9),
+        // Labels row (aligned to the bars above).
+        Row(
+          children: List.generate(7, (i) {
+            final d = w.start.add(Duration(days: i));
+            return Expanded(
+              child: Column(
+                children: [
+                  if (showDates) ...[
+                    Text(
+                      '${d.day}',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: dateColor,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _wdFull[i],
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: wdColor,
+                      ),
+                    ),
+                  ] else
+                    Text(
+                      _wdFull[i],
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: dateColor,
+                      ),
+                    ),
+                ],
               ),
             );
           }),
         ),
-      );
-    });
-  }
-
-  Widget _dateAndFilterRow() {
-    return Obx(() {
-      final fd = c.fromDate.value;
-      final td = c.toDate.value;
-
-      String dateText = 'All Time';
-      if (fd != null && td != null) {
-        dateText =
-            '${fd.day.toString().padLeft(2, '0')}-${fd.month.toString().padLeft(2, '0')} → '
-            '${td.day.toString().padLeft(2, '0')}-${td.month.toString().padLeft(2, '0')}';
-      }
-
-      return Row(
-        children: [
-          Expanded(
-            child: _actionChip(
-              icon: Icons.calendar_month_rounded,
-              text: dateText,
-              onTap: () => c.pickDateRange(context),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _actionChip(
-              icon: Icons.tune_rounded,
-              text: 'More Filter',
-              onTap: _openFilters,
-            ),
-          ),
-        ],
-      );
-    });
-  }
-
-  Widget _actionChip({
-    required IconData icon,
-    required String text,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: cardBorder),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.035),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: primaryColor),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                text,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  color: blackColor,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      ],
     );
   }
 
@@ -627,29 +712,24 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
       appBar: AppBar(
         backgroundColor: bgColor,
         elevation: 0,
-        centerTitle: false,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Driver Wallet',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: textGrey,
-              ),
-            ),
-            SizedBox(height: 2),
-            Text(
-              'Earnings',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                color: blackColor,
-              ),
-            ),
-          ],
+        centerTitle: true,
+        iconTheme: const IconThemeData(color: navy),
+        title: const Text(
+          'Your earnings',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: navy,
+          ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Filter',
+            onPressed: _openFilters,
+            icon: const Icon(Icons.tune_rounded, color: navy),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: Obx(() {
         if (c.isLoading.value && c.items.isEmpty) {
@@ -669,32 +749,29 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
           );
         }
 
-        final s = c.summary.value;
+        final period = _period.value;
+        final range = _rangeFor(period);
+        final totals = _dailyTotals(range);
 
         return RefreshIndicator(
           color: primaryColor,
           onRefresh: () => c.refreshList(),
           child: ListView(
             controller: _scroll,
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
+            padding: const EdgeInsets.fromLTRB(18, 6, 18, 28),
             children: [
-              if (s != null) ...[
-                _balanceCard(s),
-                const SizedBox(height: 18),
-              ],
-              _filterTabs(),
-              const SizedBox(height: 14),
-              _dateAndFilterRow(),
+              _heroCard(totals, range, period),
               const SizedBox(height: 24),
-              const Text(
-                'Recent Activity',
+              Text(
+                'DETAILS',
                 style: TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w900,
-                  color: blackColor,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.0,
+                  color: textGrey,
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               if (c.items.isEmpty && !c.isLoading.value)
                 _emptyView()
               else
@@ -708,29 +785,6 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
           ),
         );
       }),
-    );
-  }
-}
-
-class _StatusPill extends StatelessWidget {
-  const _StatusPill();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-      decoration: BoxDecoration(
-        color: _DriverEarningsScreenState.lightPrimary,
-        borderRadius: BorderRadius.circular(30),
-      ),
-      child: Text(
-        'Active',
-        style: TextStyle(
-          color: _DriverEarningsScreenState.primaryColor,
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
     );
   }
 }
@@ -791,7 +845,7 @@ class _StatusPill extends StatelessWidget {
 //     super.dispose();
 //   }
 
-//   static String _rupee(String amount) => '\u20B9$amount';
+//   static String _rupee(String amount) => '\u20A6$amount';
 
 //   static String _formatDateTime(String iso) {
 //     final dt = DateTime.tryParse(iso);

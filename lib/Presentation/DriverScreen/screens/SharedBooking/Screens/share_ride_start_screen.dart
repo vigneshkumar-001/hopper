@@ -330,6 +330,21 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     );
 
     _initSocket();
+    // Get.off(ShareRideStartScreen) disposes the shared pickup controller AFTER
+    // this initState, and its onClose raw-offs the SHARED socket events on the
+    // singleton socket — which can strip the listeners _initSocket just
+    // registered (drop screen would then stop getting driver-location / cancel /
+    // reached events: car frozen, completion missed). Re-arm once the teardown
+    // settles. _initSocket is idempotent: wrapper on() replaces handlers,
+    // joinBooking is idempotent, and onConnect only runs while disconnected.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposing) return;
+      _initSocket();
+    });
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted || _isDisposing) return;
+      _initSocket();
+    });
     _initConnectivityWatchdog();
     _loadDriverId();
     _loadMarkerIcons();

@@ -565,6 +565,9 @@ void onStart(ServiceInstance service) async {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
+          // Bound the read so a struggling GPS chip can't hang this poll/bootstrap
+          // for tens of seconds (which froze the feed, then jumped on recovery).
+          timeLimit: Duration(seconds: 8),
         ),
       );
       final acc = position.accuracy.isFinite ? position.accuracy : 9999.0;
@@ -837,6 +840,9 @@ void onStart(ServiceInstance service) async {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
+          // Bound the read so a struggling GPS chip can't hang this poll/bootstrap
+          // for tens of seconds (which froze the feed, then jumped on recovery).
+          timeLimit: Duration(seconds: 8),
         ),
       );
 

@@ -161,7 +161,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _SettingsRowTile(
                   icon: Icons.badge_outlined,
                   title: 'Documents',
-                  subtitle: 'Aadhaar, license, profile photo and status',
+                  subtitle: 'NIN, license, profile photo and status',
                   onTap:
                       () => Get.to(
                         () => _DocumentsDetailsScreen(profile: profile),
@@ -854,7 +854,7 @@ class _DocumentsDetailsScreen extends StatelessWidget {
                   _approved(profile?.profilePhotoStatus),
                 ),
                 _statusRow(
-                  'Aadhaar / NIN',
+                  'NIN',
                   _approved(profile?.ninVerificationStatus),
                 ),
                 _statusRow(
@@ -875,9 +875,9 @@ class _DocumentsDetailsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             _PhotoSection(
-              title: 'Aadhaar / NIN Photos',
+              title: 'NIN Photos',
               urls: [profile?.frontIdCardNin, profile?.backIdCardNin],
-              emptyLabel: 'No Aadhaar / NIN photos uploaded yet',
+              emptyLabel: 'No NIN photos uploaded yet',
             ),
             const SizedBox(height: 16),
             _PhotoSection(

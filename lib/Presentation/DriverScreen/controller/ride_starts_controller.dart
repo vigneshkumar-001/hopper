@@ -199,6 +199,21 @@ class RideStatsController extends GetxController
 
     _hydrateFromJoinedData();
     _wireSocketEvents();
+    // Get.offAll(RideStatsScreen) disposes the pickup controller AFTER this
+    // onInit runs, and pickup.onClose raw-offs the SHARED socket events on the
+    // singleton socket — which can strip the booking listeners just registered
+    // above (the drop screen would then stop getting driver-location / cancel
+    // events: car frozen, completion missed). Re-arm once the teardown settles.
+    // _wireSocketEvents is idempotent: wrapper on() replaces handlers and the
+    // one-time hooks (onAny / onConnect) are flag-guarded.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (isClosed) return;
+      _wireSocketEvents();
+    });
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (isClosed) return;
+      _wireSocketEvents();
+    });
     unawaited(_fetchActiveBookingSnapshotIfNeeded());
     unawaited(_primeDriverLocationAndRoute());
     _startLocationStream();
@@ -816,6 +831,9 @@ class RideStatsController extends GetxController
 
   // ---------------- SOCKET ----------------
 
+  bool _onAnyAttached = false;
+  bool _connectHooksAttached = false;
+
   void _wireSocketEvents() {
     socketService = SocketService();
     final cfg = Get.find<ApiConfigController>();
@@ -834,7 +852,10 @@ class RideStatsController extends GetxController
     });
 
     unawaited(_joinBookingRoom());
-    socketService.onConnect(() => unawaited(_joinBookingRoom()));
+    if (!_connectHooksAttached) {
+      _connectHooksAttached = true;
+      socketService.onConnect(() => unawaited(_joinBookingRoom()));
+    }
     socketService.on('driver-location', (data) {
       CommonLogger.log.i('driver-location : $data');
       if (data == null) return;
@@ -923,9 +944,12 @@ class RideStatsController extends GetxController
       Get.find<DriverMainController>().handleCustomerCancelled(data);
     });
 
-    socketService.socket.onAny((event, data) {
-      CommonLogger.log.i('Socket event: $event | data: $data');
-    });
+    if (!_onAnyAttached) {
+      _onAnyAttached = true;
+      socketService.socket.onAny((event, data) {
+        CommonLogger.log.i('Socket event: $event | data: $data');
+      });
+    }
 
     if (!socketService.connected) {
       socketService.connect();

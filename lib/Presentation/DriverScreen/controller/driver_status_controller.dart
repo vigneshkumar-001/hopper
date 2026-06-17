@@ -23,6 +23,14 @@ class DriverStatusController extends GetxController {
   var isOnline = false.obs;
   RxBool isLoading = false.obs;
   final RxBool isToggleLoading = false.obs;
+  // ---- Server-authoritative online status ----
+  // True while a tap is awaiting the server's confirmation (push or ack).
+  final RxBool isTogglePending = false.obs;
+  // 'inactivity-auto-offline' when the server auto-flips us offline, so the UI
+  // can explain why the toggle changed. Cleared once back online.
+  final RxString autoOfflineReason = ''.obs;
+  Timer? _toggleConfirmTimer;
+  String? _statusDriverId;
   final RxBool isBookingAcceptLoading = false.obs;
   final RxBool isBookingRejectLoading = false.obs;
   var serviceType = ''.obs;
@@ -154,6 +162,7 @@ class DriverStatusController extends GetxController {
 
   /// Clears user-scoped state so UI doesn't show stale Car/Bike after logout.
   void resetForLogout() {
+    unbindOnlineStatusListener();
     isOnline.value = false;
     isToggleLoading.value = false;
     isLoading.value = false;
@@ -173,6 +182,95 @@ class DriverStatusController extends GetxController {
 
   void toggleStatus() {
     isOnline.value = !isOnline.value;
+  }
+
+  // ---- Server-authoritative online status -----------------------------------
+  // The backend is the source of truth. A push event `driver-online-status`
+  // fires whenever the server changes our status (toggle from another device,
+  // inactivity auto-offline, admin disable); `get-online-status` pulls it on
+  // connect / resume / reconnect. Both funnel through [applyServerOnlineStatus].
+
+  /// Register the push listener ONCE. SocketService keeps a single handler per
+  /// event, so calling this on every (re)connect / rebind never duplicates.
+  void bindOnlineStatusListener() {
+    socketService.on('driver-online-status', (data) {
+      final map = _coerceStatusMap(data);
+      if (map == null) return;
+      final online = _readBoolFlexible(map['onlineStatus']);
+      if (online == null) return;
+      applyServerOnlineStatus(online, reason: map['reason']?.toString());
+    });
+  }
+
+  /// Stop listening + clear pending (call on logout).
+  void unbindOnlineStatusListener() {
+    _toggleConfirmTimer?.cancel();
+    isTogglePending.value = false;
+    autoOfflineReason.value = '';
+    try {
+      socketService.off('driver-online-status');
+    } catch (_) {}
+  }
+
+  /// Pull the authoritative status. The server replies via ack AND re-emits
+  /// `driver-online-status`; both apply idempotently.
+  void requestOnlineStatus({String? driverId}) {
+    if (driverId != null && driverId.trim().isNotEmpty) {
+      _statusDriverId = driverId.trim();
+    }
+    final did = _statusDriverId;
+    socketService.emitWithAck('get-online-status', {
+      if (did != null) 'driverId': did,
+    }, (resp) {
+      final map = _coerceStatusMap(resp);
+      if (map == null) return;
+      // Missing `success` is treated as success (some servers omit it on ack).
+      final ok = map['success'] == null || map['success'] == true;
+      if (!ok) return;
+      final online = _readBoolFlexible(map['onlineStatus']);
+      if (online != null) applyServerOnlineStatus(online);
+    });
+  }
+
+  /// THE source of truth — apply the server's status to the UI, clear any
+  /// pending tap, and surface the inactivity reason for a banner.
+  void applyServerOnlineStatus(bool online, {String? reason}) {
+    _toggleConfirmTimer?.cancel();
+    isTogglePending.value = false;
+    isOnline.value = online;
+    final r = (reason ?? '').trim().toLowerCase();
+    autoOfflineReason.value =
+        (!online && r == 'inactivity-auto-offline')
+            ? 'inactivity-auto-offline'
+            : '';
+  }
+
+  /// Mark the user's tap as pending until the server confirms (push or ack).
+  /// If nothing confirms in time, reconcile with the server's truth.
+  void markTogglePending() {
+    isTogglePending.value = true;
+    _toggleConfirmTimer?.cancel();
+    _toggleConfirmTimer = Timer(const Duration(seconds: 7), () {
+      isTogglePending.value = false;
+      requestOnlineStatus();
+    });
+  }
+
+  bool? _readBoolFlexible(dynamic v) {
+    if (v is bool) return v;
+    if (v is num) return v != 0;
+    final s = v?.toString().trim().toLowerCase();
+    if (s == 'true' || s == '1') return true;
+    if (s == 'false' || s == '0') return false;
+    return null;
+  }
+
+  Map<String, dynamic>? _coerceStatusMap(dynamic data) {
+    if (data is Map) return Map<String, dynamic>.from(data);
+    if (data is List && data.isNotEmpty && data.first is Map) {
+      return Map<String, dynamic>.from(data.first as Map);
+    }
+    return null;
   }
 
   // ðŸ”¹ booking accept

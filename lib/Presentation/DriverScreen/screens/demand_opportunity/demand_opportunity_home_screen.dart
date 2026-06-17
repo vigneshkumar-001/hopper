@@ -124,7 +124,7 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
       title: 'Express Delivery - Groceries',
       location: LatLng(12.9716, 77.5946),
       distanceKm: 2.3,
-      earningsLabel: '₹320',
+      earningsLabel: '₦320',
       category: DemandOpportunityCategory.delivery,
     ),
     DemandOpportunity(
@@ -132,7 +132,7 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
       title: 'AC Repair - Quick Service',
       location: LatLng(12.9782, 77.6070),
       distanceKm: 3.8,
-      earningsLabel: '₹750',
+      earningsLabel: '₦750',
       category: DemandOpportunityCategory.service,
     ),
     DemandOpportunity(
@@ -140,7 +140,7 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
       title: 'Part-time Shift - 2 hours',
       location: LatLng(12.9650, 77.5865),
       distanceKm: 1.6,
-      earningsLabel: '₹500',
+      earningsLabel: '₦500',
       category: DemandOpportunityCategory.jobs,
     ),
     DemandOpportunity(
@@ -148,7 +148,7 @@ class _DemandOpportunityHomeScreenState extends State<DemandOpportunityHomeScree
       title: 'Errand - Documents Pickup',
       location: LatLng(12.9620, 77.6008),
       distanceKm: 4.1,
-      earningsLabel: '₹280',
+      earningsLabel: '₦280',
       category: DemandOpportunityCategory.errands,
     ),
   ];
