@@ -25,6 +25,10 @@ class SocketService {
   String? _userId;
   String? _driverId;
   String? _bookingId;
+  // Register-dedupe: skip an identical `register` for the SAME connection fired
+  // within a short window (reconnect bursts / onConnect+onReconnect double-fire).
+  String? _lastRegisterSig;
+  DateTime? _lastRegisterAt;
   // Stable per-install identifier (the FCM token). Sent on `register` so the
   // backend can tell THIS device's foreground<->background socket handoff apart
   // from a genuine login on a DIFFERENT device. Without it the backend treats
@@ -571,6 +575,24 @@ class SocketService {
       );
       return;
     }
+
+    // DEDUPE: skip a duplicate register for the SAME connection within 2s. Reconnect
+    // bursts (onConnect + onReconnect firing together, or rapid reconnects under
+    // heavy location emits) otherwise spam identical register events. A new socket
+    // id, a changed userId/deviceId/bookingId, or an explicit ACK call always goes
+    // through — and room rejoin is separate (_restoreJoinedRooms), so this never
+    // affects rooms.
+    final sig =
+        '${_socket!.id}|$driverId|driver|${_deviceId ?? ''}|${_bookingId ?? ''}';
+    final nowReg = DateTime.now();
+    if (ack == null &&
+        sig == _lastRegisterSig &&
+        _lastRegisterAt != null &&
+        nowReg.difference(_lastRegisterAt!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastRegisterSig = sig;
+    _lastRegisterAt = nowReg;
 
     if (ack != null) {
       _socket!.emitWithAck('register', payload, ack: ack);

@@ -32,6 +32,10 @@ class SecondaryDispatchSocket {
   String? _url;
   String? _driverId;
   String? _deviceId;
+  // Register-dedupe (mirrors the primary socket): skip an identical register for
+  // the same connection fired within 2s (onConnect + onReconnect double-fire).
+  String? _lastRegSig;
+  DateTime? _lastRegAt;
   void Function(dynamic data)? _onBookingRequest;
 
   bool get active => _socket != null;
@@ -110,6 +114,16 @@ class SecondaryDispatchSocket {
     final id = _driverId;
     final s = _socket;
     if (id == null || id.trim().isEmpty || s == null) return;
+    // DEDUPE: skip identical register for the same connection within 2s.
+    final sig = '${s.id}|$id|driver|${_deviceId ?? ''}';
+    final now = DateTime.now();
+    if (sig == _lastRegSig &&
+        _lastRegAt != null &&
+        now.difference(_lastRegAt!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastRegSig = sig;
+    _lastRegAt = now;
     final payload = <String, dynamic>{
       "userId": id,
       "type": "driver",

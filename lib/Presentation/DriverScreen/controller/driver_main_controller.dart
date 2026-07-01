@@ -958,6 +958,15 @@ class DriverMainController extends GetxController
     } catch (_) {}
   }
 
+  /// Public cleanup for the driver's shared "Cancel All" success. Clears the
+  /// active booking id (so location STOPS emitting the stale bookingId), the
+  /// booking cache, active-booking card, and leaves booking rooms — mirroring the
+  /// per-booking end cleanup. The driver keeps streaming location as an idle
+  /// driver (no bookingId attached).
+  Future<void> clearAfterSharedCancelAll() async {
+    await _cleanupAfterBookingEnded();
+  }
+
   Future<void> _cleanupAfterBookingEnded({String? bookingId}) async {
     countdownTimer?.cancel();
     remainingSeconds.value = 0;
@@ -1543,9 +1552,23 @@ class DriverMainController extends GetxController
   }
 
   // ---------------- location emit loop ----------------
+  bool _isStartingLocationStream = false;
+
   Future<void> startEmitLoop() async {
+    // RE-ENTRANCY GUARD: never let two starts overlap. Rapid active-trip flips
+    // (bookingId set/cleared) previously raced through the `await cancel()` and
+    // double-subscribed the Geolocator stream (the start/stop churn). Only the
+    // async prefix (up to the cancel) needs guarding — everything after is
+    // synchronous, so Dart cannot interleave another start there. Timer-driven
+    // rebuilds (which run after this returns) are unaffected.
+    if (_isStartingLocationStream) return;
+    _isStartingLocationStream = true;
     final int token = ++_emitLoopToken;
-    await locationSub?.cancel();
+    try {
+      await locationSub?.cancel();
+    } catch (_) {}
+    locationSub = null;
+    _isStartingLocationStream = false;
     emitTimer?.cancel();
     heartbeatTimer?.cancel();
 
@@ -2340,9 +2363,15 @@ class DriverMainController extends GetxController
         final rideStarted =
             _asBool(r['rideStarted']) ||
             _statusHas(status, ['ride_in_progress', 'in_progress', 'started']);
-        final dropped =
-            _asBool(r['destinationReached']) ||
-            _statusHas(status, ['complete', 'completed', 'finished']);
+        // DROPPED = the driver actually SWIPED complete (booking status SUCCESS/
+        // PAID). Do NOT use `destinationReached`: that flag is set the moment the
+        // CAR reaches the drop area (GPS < 50m), which is NOT a completion — using
+        // it here wrongly auto-moved a rider to "Completed" (and the customer to
+        // paid/completed) without any swipe. Completion is swipe-only.
+        final dropped = _statusHas(
+          status,
+          ['success', 'paid', 'complete', 'completed', 'finished'],
+        );
 
         if (dropped) {
           sharedRide.markDropped(bid);

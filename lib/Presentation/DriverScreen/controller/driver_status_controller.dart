@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hopper/Core/Constants/log.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/models/today_parcel_activity_response.dart';
 import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
@@ -796,6 +797,13 @@ class DriverStatusController extends GetxController {
         (message) {
           successMsg = message;
           CommonLogger.log.i("cancelAllSharedRides success: $message");
+          // CLEANUP: clear the active booking id so location stops emitting the
+          // stale bookingId after cancel-all (driver continues as idle, no bookingId).
+          try {
+            if (Get.isRegistered<DriverMainController>()) {
+              Get.find<DriverMainController>().clearAfterSharedCancelAll();
+            }
+          } catch (_) {}
         },
       );
     } catch (e) {

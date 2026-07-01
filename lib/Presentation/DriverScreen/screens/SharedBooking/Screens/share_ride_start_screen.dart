@@ -1180,6 +1180,21 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         data['timestamp'] ?? data['ts'],
       );
 
+      // BLINK FIX: the backend emits `driver-location` for EVERY active shared
+      // booking, each carrying ITS OWN pickup/drop distance + ETA. If we adopt the
+      // ETA from all of them, the active-stop card flip-flops between two riders'
+      // distances (e.g. 1.2 km ⇄ 0.0 km every tick). Only adopt the ETA/distance
+      // for the CURRENTLY ACTIVE stop's booking. (Icon/timestamp above are
+      // booking-agnostic — the driver's own position — so they stay unfiltered.)
+      final evtBookingId = (data['bookingId'] ?? '').toString().trim();
+      final activeBookingId =
+          (sharedRideController.activeTarget.value?.bookingId ?? '').trim();
+      if (evtBookingId.isNotEmpty &&
+          activeBookingId.isNotEmpty &&
+          evtBookingId != activeBookingId) {
+        return; // packet is for another rider's stop — ignore its ETA/distance
+      }
+
       // Only adopt server drop ETA/distance when actually present AND positive.
       // Previously this used `?? 0.0` and always assigned, so whenever the shared
       // backend's driver-location omitted these fields it CLOBBERED a good value
@@ -2586,11 +2601,11 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       final riderSlider = active.sliderController as ActionSliderController;
       return Obx(() {
         final canShow = sharedRideController.canCompleteActiveDrop.value;
-        // Same-drop cluster (2+ onboard riders sharing this drop) → show the
-        // optional grouped "complete drops here" banner above the single swipe.
-        final cluster = canShow
-            ? sharedRideController.completableDropClusterAtActive()
-            : const <SharedRiderItem>[];
+        // ONE SWIPE = ONE BOOKING. The same-drop "complete all drops here" batch
+        // card was removed so a shared drop NEVER auto-completes co-riders: each
+        // rider must be selected + swiped individually, which triggers ONLY that
+        // customer's completion + payment. (Product rule: same drop must not
+        // complete all customers automatically.)
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 220),
           switchInCurve: Curves.easeOut,
@@ -2603,10 +2618,6 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (cluster.length >= 2) ...[
-                          _buildCompleteDropsHereCard(cluster.length),
-                          const SizedBox(height: 10),
-                        ],
                         Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
@@ -3218,7 +3229,15 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                   child: DriverSeatsCard(controller: sharedRideController),
                 ),
 
-                if (!driverCompletedRide && active != null) ...[
+                // Show the active-stop card (Navigate / Arrived / Swipe-to-Complete)
+                // whenever there IS an active stop. Do NOT gate on
+                // `driverCompletedRide`: that flag is flipped by the per-booking
+                // `driver-reached-destination` event, so in a multi-rider shared ride
+                // it wrongly hid the card for the REMAINING riders. When the whole
+                // ride is finished, recomputeNextTarget() sets active=null, which
+                // already hides the card (and the ride-over guard sends the driver
+                // home) — so `active != null` is the correct, sufficient condition.
+                if (active != null) ...[
                   // Active info card
                   _buildActiveInfoCard(active),
                   const SizedBox(height: 12),

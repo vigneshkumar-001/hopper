@@ -11,11 +11,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 class Request {
   // SECURITY: never log the JWT. Returns only a presence indicator so logs stay
   // useful for debugging (was a token attached?) without ever leaking the token.
-  static String _tokenFromHeaders(Map<String, dynamic> headers) {
-    final v = headers['Authorization']?.toString() ?? '';
-    return v.trim().isEmpty ? '(none)' : 'Bearer ***masked***';
+  // static String _tokenFromHeaders(Map<String, dynamic> headers) {
+  //   final v = headers['Authorization']?.toString() ?? '';
+  //   return v.trim().isEmpty ? '(none)' : 'Bearer ***masked***';
+  // }
+static String _tokenFromHeaders(Map<String, dynamic> headers) {
+  final token = headers['Authorization']?.toString() ?? '';
+
+  if (token.trim().isEmpty) {
+    return '(none)';
   }
 
+  // Show full token only in debug builds.
+  if (kDebugMode) {
+    return token;
+  }
+
+  // Mask token in release/profile builds.
+  return 'Bearer ***masked***';
+}
   static void _debugLogInfo(String message) {
     if (!kDebugMode) return;
     AppLogger.log.i(message);
