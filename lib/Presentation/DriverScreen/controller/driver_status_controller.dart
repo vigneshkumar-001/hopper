@@ -1121,6 +1121,26 @@ class DriverStatusController extends GetxController {
     }
   }
 
+  /// Driver picks the next shared-ride stop. API-first: the backend validates +
+  /// saves + emits. Returns the success message, or null if the backend rejected
+  /// the stop (the reason is surfaced to the driver via a snackbar).
+  Future<String?> selectNextStop({
+    required String bookingId,
+    required String stopType, // 'pickup' | 'drop'
+  }) async {
+    final res = await apiDataSource.selectSharedNextStop(
+      bookingId: bookingId,
+      stopType: stopType,
+    );
+    return res.fold(
+      (failure) {
+        CustomSnackBar.showError(failure.message);
+        return null;
+      },
+      (msg) => msg,
+    );
+  }
+
   Future<String?> completeRideRequest(
     BuildContext context, {
     required String bookingId,

@@ -48,6 +48,9 @@ class ApiConstents {
   static String get notification => _u('/users/notifications');
   static String get sharedBookingStatus =>
       _u('/shared/customer/shared-booking/status');
+  // Driver selects which valid shared-ride stop (pickup/drop) to serve next.
+  static String get selectSharedNextStop =>
+      _u('/shared/customer/driver/select-next-stop');
   static String get loginApi => _u('/users/signUp');
   static String get driverWalletHistory => _u('/users/driver-wallet-history');
   static String get driverEarnings => _u('/users/driver-earnings');

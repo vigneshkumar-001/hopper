@@ -5,6 +5,19 @@ class ApiLoggerInterceptor extends Interceptor {
   final LoggerService _loggerService = LoggerService();
   final Map<String, int> _requestStartTimes = {};
 
+  // SECURITY: never write the JWT / cookies to the log file. Mask sensitive
+  // headers so a captured log can't be used to impersonate the driver.
+  Map<String, dynamic> _redactHeaders(Map<String, dynamic> headers) {
+    final redacted = Map<String, dynamic>.from(headers);
+    for (final key in redacted.keys.toList()) {
+      final lk = key.toLowerCase();
+      if (lk == 'authorization' || lk == 'cookie' || lk == 'set-cookie') {
+        redacted[key] = '***masked***';
+      }
+    }
+    return redacted;
+  }
+
   @override
   void onRequest(
     RequestOptions options,
@@ -15,7 +28,7 @@ class ApiLoggerInterceptor extends Interceptor {
     _loggerService.logApiRequest(
       url: options.uri.toString(),
       method: options.method,
-      headers: options.headers.cast<String, dynamic>(),
+      headers: _redactHeaders(options.headers.cast<String, dynamic>()),
       body: options.data,
     );
 

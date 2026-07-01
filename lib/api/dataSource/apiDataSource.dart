@@ -1501,6 +1501,36 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
+  /// Driver selects which valid shared-ride stop to serve NEXT. Backend is the
+  /// source of truth: it validates (ownership, not cancelled/completed, pickup
+  /// before drop), saves the choice, and emits the updated state. Returns the
+  /// success message on 200, else a Left carrying the backend reason to show.
+  Future<Either<Failure, String>> selectSharedNextStop({
+    required String bookingId,
+    required String stopType, // 'pickup' | 'drop'
+  }) async {
+    try {
+      final url = ApiConstents.selectSharedNextStop;
+      final response = await Request.sendRequest(
+        url,
+        {'bookingId': bookingId, 'stopType': stopType},
+        'Post',
+        false,
+      );
+      if (response is Response && response.statusCode == 200) {
+        final msg = response.data is Map ? response.data['message'] : null;
+        return Right((msg ?? 'Active stop updated').toString());
+      } else if (response is Response) {
+        final msg = response.data is Map ? response.data['message'] : null;
+        return Left(ServerFailure((msg ?? 'Could not select this stop').toString()));
+      }
+      return Left(ServerFailure('Unexpected error'));
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
   /// Driver-initiated "Resend OTP to rider" (Ride/Parcel). Returns the response
   /// body on success (carries `message`, `nextResendInSec`, `attemptsLeft`); a
   /// Left with the server message otherwise (cooldown / limit reached).

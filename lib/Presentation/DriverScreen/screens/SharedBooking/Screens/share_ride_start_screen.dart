@@ -1155,6 +1155,20 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       }
     });
 
+    // Backend-selected active stop (multi-device / reconnect sync). The backend is
+    // the source of truth: whenever it saves a new active stop it pushes this, and
+    // we re-point map + swipe to it. The rider who tapped already adopted it from
+    // the API response; this keeps any other driver session in sync.
+    socketService.on('shared_active_stop_updated', (data) {
+      if (!mounted || _isDisposing || data is! Map) return;
+      final stop = data['activeStop'];
+      if (stop is! Map) return;
+      _applyBackendActiveStop(
+        (stop['bookingId'] ?? '').toString(),
+        (stop['stopType'] ?? '').toString().toLowerCase(),
+      );
+    });
+
     socketService.on('driver-location', (data) {
       if (data == null) return;
 
@@ -1303,7 +1317,20 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Nav / target ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   Future<void> _setAsNextStop(SharedRiderItem r) async {
     if (!mounted || _isDisposing) return;
-    if (r.stage == SharedRiderStage.dropped) return;
+    if (r.stage == SharedRiderStage.dropped || r.cancelledByCustomer) return;
+    // BACKEND IS SOURCE OF TRUTH: call the API FIRST. The backend validates
+    // (ownership, not cancelled/completed, pickup-before-drop), saves the choice,
+    // and emits shared_my_state + shared_active_stop_updated. We adopt the stop
+    // locally ONLY after the backend accepts; on rejection the reason is shown and
+    // the active stop is left unchanged (no local-only decision).
+    final stopType =
+        r.stage == SharedRiderStage.waitingPickup ? 'pickup' : 'drop';
+    final msg = await driverStatusController.selectNextStop(
+      bookingId: r.bookingId,
+      stopType: stopType,
+    );
+    if (!mounted || _isDisposing) return;
+    if (msg == null) return; // rejected — snackbar already shown, keep current stop
     sharedRideController.setActiveTarget(r.bookingId, r.stage);
     (r.sliderController as ActionSliderController?)?.reset();
     await _syncActiveTargetRoute(
@@ -1311,6 +1338,22 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     );
     if (!mounted || _isDisposing) return;
     setState(() {});
+  }
+
+  /// Adopt a backend-pushed active stop (multi-device / reconnect). Reuses the
+  /// existing rider list — only re-points map + swipe to the backend's choice.
+  void _applyBackendActiveStop(String bookingId, String stopType) {
+    if (!mounted || _isDisposing || bookingId.isEmpty) return;
+    final idx = sharedRideController.riders
+        .indexWhere((x) => x.bookingId == bookingId);
+    if (idx == -1) return;
+    final r = sharedRideController.riders[idx];
+    if (r.stage == SharedRiderStage.dropped || r.cancelledByCustomer) return;
+    if (sharedRideController.activeTarget.value?.bookingId == bookingId) return;
+    sharedRideController.setActiveTarget(r.bookingId, r.stage);
+    (r.sliderController as ActionSliderController?)?.reset();
+    _syncActiveTargetRoute(active: sharedRideController.activeTarget.value);
+    if (mounted) setState(() {});
   }
 
   /// SAME-DROP BATCH: completes EVERY onboard rider clustered at the active drop,
@@ -2784,6 +2827,26 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     );
   }
 
+  /// Static, non-tappable state pill shown in a rider row for terminal riders
+  /// ("Completed" / "Cancelled").
+  Widget _riderStatePill(String label, Color textColor, Color bgColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: textColor,
+        ),
+      ),
+    );
+  }
+
   Widget _buildRiderRow(SharedRiderItem r) {
     final active = sharedRideController.activeTarget.value;
     final isCancelled = r.cancelledByCustomer;
@@ -3018,10 +3081,28 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
             ),
             const SizedBox(width: 8),
 
-            // Set as next button
-            if (!isDropped && !isCancelled)
+            // Trailing action / state per rider:
+            //   waiting pickup -> "Pickup Next"  (tap = select-next-stop API, pickup)
+            //   onboard        -> "Drop Next"    (tap = select-next-stop API, drop)
+            //   active         -> "Current Stop" (already selected; not tappable)
+            //   dropped        -> "Completed"    (static, disabled)
+            //   cancelled      -> "Cancelled"    (static, disabled)
+            if (isDropped)
+              _riderStatePill(
+                'Completed',
+                Colors.grey.shade600,
+                Colors.grey.withOpacity(0.12),
+              )
+            else if (isCancelled)
+              _riderStatePill(
+                'Cancelled',
+                Colors.red.shade400,
+                Colors.red.withOpacity(0.08),
+              )
+            else
               GestureDetector(
-                onTap: () => _setAsNextStop(r),
+                // Active stop is already selected → no-op tap. Others call the API.
+                onTap: isActive ? null : () => _setAsNextStop(r),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
@@ -3038,7 +3119,11 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                     ),
                   ),
                   child: Text(
-                    isActive ? 'Active' : 'Next',
+                    isActive
+                        ? 'Current Stop'
+                        : (r.stage == SharedRiderStage.waitingPickup
+                            ? 'Pickup Next'
+                            : 'Drop Next'),
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,

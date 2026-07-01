@@ -9,9 +9,11 @@ import 'package:hopper/api/interceptors/api_logger_interceptor.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Request {
+  // SECURITY: never log the JWT. Returns only a presence indicator so logs stay
+  // useful for debugging (was a token attached?) without ever leaking the token.
   static String _tokenFromHeaders(Map<String, dynamic> headers) {
     final v = headers['Authorization']?.toString() ?? '';
-    return v.toString().replaceFirst('Bearer ', '').trim();
+    return v.trim().isEmpty ? '(none)' : 'Bearer ***masked***';
   }
 
   static void _debugLogInfo(String message) {

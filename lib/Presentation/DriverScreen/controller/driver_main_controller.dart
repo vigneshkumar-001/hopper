@@ -2358,6 +2358,25 @@ class DriverMainController extends GetxController
           (r) => r.bookingId == previousActiveBookingId,
         );
       }
+
+      // COLD-START RESTORE (source of truth wins): if the backend resume payload
+      // carries a resolved active stop (stops[0] — already legal, reflecting the
+      // driver's selected stop), adopt it OVER local greedy / prior in-memory
+      // target. So a killed+reopened app shows the SAME stop the backend selected
+      // (e.g. Pickup Customer 2), not a greedy recompute. Missing → greedy stands.
+      final activeStop = data['activeStop'];
+      if (activeStop is Map) {
+        final asBid = (activeStop['bookingId'] ?? '').toString().trim();
+        if (asBid.isNotEmpty) {
+          final idx =
+              sharedRide.riders.indexWhere((r) => r.bookingId == asBid);
+          if (idx != -1 &&
+              sharedRide.riders[idx].stage != SharedRiderStage.dropped &&
+              !sharedRide.riders[idx].cancelledByCustomer) {
+            sharedRide.activeTarget.value = sharedRide.riders[idx];
+          }
+        }
+      }
     } catch (_) {
       // best-effort only; socket joined-booking will still hydrate in most cases
     }
