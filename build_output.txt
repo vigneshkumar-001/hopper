@@ -1,0 +1,7 @@
+No supported devices found with name or id matching 'SM_A515F'.
+
+The following devices were found:
+SM A515F (mobile) • RZ8N203263J • android-arm64  • Android 13 (API 33)
+Windows (desktop) • windows     • windows-x64    • Microsoft Windows [Version 10.0.19045.6466]
+Chrome (web)      • chrome      • web-javascript • Google Chrome 149.0.7827.103
+Edge (web)        • edge        • web-javascript • Microsoft Edge 149.0.4022.69

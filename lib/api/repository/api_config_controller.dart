@@ -30,10 +30,27 @@ class ApiConfigController extends GetxController {
     // defaultValue: 'https://hoppr-face-two-dbe557472d7f.herokuapp.com',
   );
 
+  // User PREFERENCE — driven by the "Shared Booking" side-menu toggle. Decides
+  // which backend the driver is on while IDLE and which dispatch pools they join.
   final RxBool isSharedEnabled = false.obs;
 
-  String get baseUrl => isSharedEnabled.value ? sharedBase : singleBase;
-  String get socketUrl => isSharedEnabled.value ? sharedSocket : singleSocket;
+  // DUAL-CONNECT active-ride backend OVERRIDE. While Shared Booking is ON the
+  // driver listens for requests on BOTH backends (shared primary + a single-ride
+  // dispatch socket). The moment they ACCEPT a request, that ride's whole
+  // lifecycle (accept→arrive→OTP→start→complete) must be bound to the backend
+  // that owns the booking, regardless of the toggle. We do that WITHOUT touching
+  // the user's `isSharedEnabled` preference (so the toggle UI stays put) by
+  // setting this override for the duration of the ride:
+  //   null  -> no active ride; use the preference (default — IDENTICAL to old behavior)
+  //   true  -> active SHARED ride  -> shared backend
+  //   false -> active SINGLE ride  -> single backend
+  final Rxn<bool> activeRideBackendShared = Rxn<bool>();
+
+  bool get effectiveShared =>
+      activeRideBackendShared.value ?? isSharedEnabled.value;
+
+  String get baseUrl => effectiveShared ? sharedBase : singleBase;
+  String get socketUrl => effectiveShared ? sharedSocket : singleSocket;
 
   @override
   void onInit() {
@@ -60,6 +77,43 @@ class ApiConfigController extends GetxController {
     try {
       SocketService().initSocket(socketUrl);
     } catch (_) {}
+    update();
+  }
+
+  /// DUAL-CONNECT: bind the active ride to a specific backend for its lifetime.
+  /// [shared] true = the accepted ride is a shared ride (stay on bck);
+  /// false = a single/"Ride Only" ride accepted via the dual-connect dispatch
+  /// socket (switch the PRIMARY socket + all API calls to bk for this ride).
+  /// Re-inits the primary socket only when the effective backend actually flips.
+  Future<void> bindActiveRideBackend(bool shared) async {
+    final wasShared = effectiveShared;
+    activeRideBackendShared.value = shared;
+    CommonLogger.log.i(
+      "[dual-connect] bindActiveRideBackend(shared=$shared) => baseUrl=$baseUrl",
+    );
+    if (effectiveShared != wasShared) {
+      try {
+        SocketService().initSocket(socketUrl);
+      } catch (_) {}
+    }
+    update();
+  }
+
+  /// DUAL-CONNECT: clear the active-ride binding when the ride ends
+  /// (complete / cancel / no-show). Restores the IDLE backend from the user's
+  /// `isSharedEnabled` preference and re-points the primary socket if it changed.
+  Future<void> clearActiveRideBackend() async {
+    if (activeRideBackendShared.value == null) return;
+    final wasShared = effectiveShared;
+    activeRideBackendShared.value = null;
+    CommonLogger.log.i(
+      "[dual-connect] clearActiveRideBackend => baseUrl=$baseUrl",
+    );
+    if (effectiveShared != wasShared) {
+      try {
+        SocketService().initSocket(socketUrl);
+      } catch (_) {}
+    }
     update();
   }
 

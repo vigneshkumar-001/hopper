@@ -544,6 +544,278 @@ class Buttons {
     );
   }
 
+  /// Unified shared-ride cancel sheet: the driver chooses to cancel ONE
+  /// passenger (with a passenger picker) or ALL passengers, then a reason.
+  /// Used on both the shared PICKUP and DROP screens.
+  static void showSharedRideCancelSheet(
+    BuildContext context, {
+    required List<({String bookingId, String name})> riders,
+    required Future<void> Function(String bookingId, String reason) onCancelOne,
+    required Future<void> Function(String reason) onCancelAll,
+  }) {
+    String scope = riders.length <= 1 ? 'all' : 'one';
+    String? selectedBookingId =
+        riders.length == 1 ? riders.first.bookingId : null;
+    String? selectedReason;
+    bool isSubmitting = false;
+
+    const reasons = <String>[
+      'Can’t find the rider',
+      'Rider not responding',
+      'Nowhere to stop',
+      'Rider’s items don’t fit',
+      'Vehicle issue',
+      'Other',
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            Widget scopeChip(String value, String label) {
+              final sel = scope == value;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: isSubmitting ? null : () => setState(() => scope = value),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: sel ? AppColors.commonBlack : AppColors.commonWhite,
+                      border: Border.all(
+                        color: sel ? AppColors.commonBlack : AppColors.buttonBorder,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Center(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          color: sel ? Colors.white : AppColors.commonBlack,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return Stack(
+              children: [
+                DraggableScrollableSheet(
+                  maxChildSize: 0.9,
+                  minChildSize: 0.5,
+                  initialChildSize: 0.72,
+                  builder: (context, scrollController) {
+                    return AbsorbPointer(
+                      absorbing: isSubmitting,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          borderRadius:
+                              BorderRadius.vertical(top: Radius.circular(25)),
+                        ),
+                        padding: const EdgeInsets.all(20),
+                        child: ListView(
+                          controller: scrollController,
+                          children: [
+                            Center(
+                              child: Container(
+                                width: 40,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[300],
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            const Center(
+                              child: Text(
+                                'Cancel ride',
+                                style: TextStyle(
+                                    fontSize: 20, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Center(
+                              child: Text(
+                                'Choose what to cancel and why',
+                                style:
+                                    TextStyle(fontSize: 13, color: Colors.grey),
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            if (riders.length > 1) ...[
+                              Row(
+                                children: [
+                                  scopeChip('one', 'This passenger'),
+                                  scopeChip('all', 'All passengers'),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+                            if (scope == 'one') ...[
+                              const Text('Select passenger',
+                                  style: TextStyle(fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 8),
+                              ...riders.map((r) {
+                                final sel = selectedBookingId == r.bookingId;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: GestureDetector(
+                                    onTap: isSubmitting
+                                        ? null
+                                        : () => setState(
+                                            () => selectedBookingId = r.bookingId),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 12),
+                                      decoration: BoxDecoration(
+                                        color: sel
+                                            ? AppColors.containerColor
+                                            : AppColors.commonWhite,
+                                        border: Border.all(
+                                          color: sel
+                                              ? AppColors.commonBlack
+                                              : AppColors.buttonBorder,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            sel
+                                                ? Icons.radio_button_checked
+                                                : Icons.radio_button_off,
+                                            size: 20,
+                                            color: sel
+                                                ? AppColors.commonBlack
+                                                : Colors.grey,
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              r.name,
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.w500),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                              const SizedBox(height: 16),
+                            ],
+                            const Text('Reason',
+                                style: TextStyle(fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 8),
+                            ...reasons.map((reason) {
+                              final sel = selectedReason == reason;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Buttons.button(
+                                  borderColor: sel
+                                      ? AppColors.commonBlack
+                                      : AppColors.buttonBorder,
+                                  buttonColor: sel
+                                      ? AppColors.containerColor
+                                      : AppColors.commonWhite,
+                                  borderRadius: 8,
+                                  textColor: AppColors.commonBlack,
+                                  onTap: () {
+                                    if (isSubmitting) return;
+                                    setState(() => selectedReason = reason);
+                                  },
+                                  text: Text(reason),
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 10),
+                            Buttons.button(
+                              buttonColor: AppColors.red,
+                              borderRadius: 8,
+                              onTap: () async {
+                                if (isSubmitting) return;
+                                if (scope == 'one' && selectedBookingId == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content:
+                                          Text('Select a passenger to cancel'),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                if (selectedReason == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Please select a reason'),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                setState(() => isSubmitting = true);
+                                try {
+                                  if (scope == 'all') {
+                                    await onCancelAll(selectedReason!);
+                                  } else {
+                                    await onCancelOne(
+                                        selectedBookingId!, selectedReason!);
+                                  }
+                                  if (context.mounted) Navigator.of(context).pop();
+                                } finally {
+                                  if (context.mounted) {
+                                    setState(() => isSubmitting = false);
+                                  }
+                                }
+                              },
+                              text: Text(
+                                scope == 'all'
+                                    ? 'Cancel all passengers'
+                                    : 'Cancel this passenger',
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                if (isSubmitting)
+                  Positioned.fill(
+                    child: Container(
+                      color: Colors.black.withOpacity(0.35),
+                      child: Center(
+                        child: SizedBox(
+                          height: 40,
+                          width: 40,
+                          child: AppLoader.inlineCircularLoader(
+                            size: 40,
+                            strokeWidth: 3,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   // static void showCancelRideBottomSheet(
   //   BuildContext context, {
   //   required Function(String selectedReason) onConfirmCancel,

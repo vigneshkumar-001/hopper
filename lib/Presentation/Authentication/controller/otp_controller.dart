@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -52,7 +53,7 @@ class OtpController extends GetxController {
           driverId = response.data.driverId;
 
           if (accessToken.isNotEmpty) {
-            await prefs.setString('token', accessToken);
+            await SharedPrefHelper.setToken(accessToken);
           }
           if (driverId.isNotEmpty) {
             await prefs.setString('driverId', driverId);
@@ -132,8 +133,7 @@ class OtpController extends GetxController {
           accessToken = response.data.token;
 
           CommonLogger.log.d('Auth token stored');
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('token', response.data.token);
+          await SharedPrefHelper.setToken(response.data.token);
 
           return response.message;
         },

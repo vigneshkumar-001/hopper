@@ -14,6 +14,8 @@ import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controll
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/share_ride_start_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Widgets/driver_seats_card.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
 import 'package:hopper/utils/ride_map/ride_map_view.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
@@ -22,6 +24,10 @@ import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
 import 'package:hopper/utils/ride_map/ride_map_controller.dart';
+import 'package:hopper/Core/Services/driver_background_location_service.dart';
+import 'package:hopper/Core/Services/navigation_service.dart';
+import 'package:hopper/api/repository/api_config_controller.dart';
+import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/booking_request_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/picking_customer_shared_controller.dart';
@@ -106,6 +112,10 @@ class _PickingCustomerSharedScreenState
   late final Animation<double> _headerFade;
   late final Animation<Offset> _headerSlide;
   late final Animation<double> _sheetFade;
+
+  // External Google-Maps navigation (handoff keeps live tracking alive).
+  final NavigationService _navigationService = NavigationService();
+  bool _backgroundServiceActive = false;
 
   @override
   void initState() {
@@ -901,12 +911,113 @@ class _PickingCustomerSharedScreenState
     );
   }
 
+  // ── External navigation (Google Maps) ────────────────────────────────────
+  // Mirrors the single-ride flow (picking_customer_screen._onNavigatePressed):
+  // request perms → arm the return-bubble → hand off the socket session to the
+  // background service → launch Google Maps. The handoff is what keeps the
+  // customer-side car marker moving while the driver is in Google Maps.
+  Future<void> _onNavigatePressed(
+    LatLng dest, {
+    required String label,
+    required String source,
+    SharedRiderItem? rider,
+  }) async {
+    final ok = await _navigationService.requestPermissions();
+    if (!ok) {
+      Get.snackbar(
+        'Permission Required',
+        'Please allow background location for tracking',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    final driverId = (await SharedPrefHelper.getDriverId())?.trim() ?? '';
+    if (driverId.isEmpty) {
+      Get.snackbar(
+        'Error',
+        'Driver ID missing. Please re-login.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    final socketUrl = Get.isRegistered<ApiConfigController>()
+        ? Get.find<ApiConfigController>().socketUrl
+        : ApiConfigController.sharedSocket;
+
+    // One-time "Display over other apps" permission so we can float a quick
+    // Hoppr return-bubble on top of Google Maps. If it opens settings (first
+    // time only), abort this tap so the driver can grant it and retry.
+    final proceed = await _navigationService.prepareReturnBubble();
+    if (!proceed) {
+      Get.snackbar(
+        'One-time setup',
+        'Allow "Display over other apps" so Hoppr can show a quick return '
+            'button on the map while you navigate. Then tap Navigate again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: const Color(0xFF111827),
+        colorText: Colors.white,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+
+    await _navigationService.markExternalNavigationReturnPending(source: source);
+
+    // Hand-off before launching external Google Maps (single socket session).
+    if (Get.isRegistered<DriverMainController>()) {
+      await Get.find<DriverMainController>().onAppPaused();
+    }
+
+    final trackingBookingId = (rider?.bookingId ?? widget.bookingId).trim();
+    if (rider != null) {
+      await c.selectRider(rider);
+    }
+
+    await DriverBackgroundLocationService.startTracking(
+      socketUrl: socketUrl,
+      rideId: trackingBookingId.isNotEmpty ? trackingBookingId : widget.bookingId,
+      driverId: driverId,
+    );
+    _backgroundServiceActive = true;
+
+    await _navigationService.openGoogleMapsNavigation(
+      destLat: dest.latitude,
+      destLng: dest.longitude,
+      destinationLabel: label,
+    );
+  }
+
   // ── CTA section ───────────────────────────────────────────────────────────
   Widget _buildCardCta(SharedRiderItem rider) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
       child: Column(
         children: [
+          // Navigate to the rider's pickup in Google Maps. Available the whole
+          // way to pickup (not gated on the arrived radius) so the driver can
+          // route there immediately, exactly like single ride.
+          if (!rider.arrived &&
+              rider.stage == SharedRiderStage.waitingPickup) ...[
+            _PrimaryButton(
+              label: 'Navigate to Pickup',
+              icon: Icons.navigation_rounded,
+              color: _C.green,
+              textColor: Colors.white,
+              loading: false,
+              onTap: () => _onNavigatePressed(
+                rider.pickupLatLng,
+                label: 'Pickup - ${rider.name}',
+                source: 'shared_pickup_google_maps',
+                rider: rider,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+
           // Not arrived yet
           if (!rider.arrived && rider.stage == SharedRiderStage.waitingPickup)
             Obx(() {
@@ -1040,7 +1151,7 @@ class _PickingCustomerSharedScreenState
           handleColor: _C.green,
           handleIconColor: Colors.white,
           borderRadius: BorderRadius.circular(15),
-          text: 'Swipe to Start - ${rider.name}',
+          text: 'Swipe to Start - ${rider.firstName}',
           textStyle: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
@@ -1099,6 +1210,121 @@ class _PickingCustomerSharedScreenState
   }
 
   // ── Rider card ────────────────────────────────────────────────────────────
+  // Disabled card for a customer who cancelled their own seat. Greyed out, shows
+  // the cancel reason, and can be swiped left to remove it from the list.
+  Widget _buildCancelledRiderCard(SharedRiderItem rider) {
+    final reason = rider.cancelReason.trim();
+    return Dismissible(
+      key: ValueKey('cancelled-${rider.bookingId}'),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) {
+        sharedRideController.removeRider(rider.bookingId);
+        if (mounted) setState(() {});
+      },
+      background: Container(
+        alignment: Alignment.centerRight,
+        margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: Colors.red.shade400,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text('Remove',
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w700)),
+            SizedBox(width: 6),
+            Icon(Icons.delete_outline, color: Colors.white),
+          ],
+        ),
+      ),
+      child: Opacity(
+        opacity: 0.7,
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _C.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.red.shade200),
+          ),
+          child: Row(
+            children: [
+              ColorFiltered(
+                colorFilter: const ColorFilter.mode(
+                    Colors.grey, BlendMode.saturation),
+                child: ClipOval(
+                  child: CachedNetworkImage(
+                    imageUrl: rider.profilePic,
+                    height: 46,
+                    width: 46,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => _avatarPlaceholder(),
+                    errorWidget: (_, __, ___) => _avatarPlaceholder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            rider.name.trim().isEmpty ? 'Customer' : rider.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: _C.text,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'Cancelled',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.red.shade400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      reason.isEmpty
+                          ? 'Cancelled by customer'
+                          : 'Cancelled by customer · $reason',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Swipe left to remove',
+                      style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildRiderCard(SharedRiderItem rider, {required bool isActive}) {
     final bool isRed = rider.secondsLeft > 0 && rider.secondsLeft <= 10;
 
@@ -1197,7 +1423,7 @@ class _PickingCustomerSharedScreenState
                   ),
                   const SizedBox(width: 12),
 
-                  // Name + tag
+                  // Name + tag + bookingId
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1211,18 +1437,42 @@ class _PickingCustomerSharedScreenState
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          rider.stage == SharedRiderStage.onboardDrop
-                              ? 'Onboard Rider'
-                              : 'Shared Rider',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color:
-                                rider.stage == SharedRiderStage.onboardDrop
-                                    ? _C.green
-                                    : _C.textSub,
-                          ),
+                        Row(
+                          children: [
+                            Text(
+                              rider.stage == SharedRiderStage.onboardDrop
+                                  ? 'Onboard Rider'
+                                  : 'Shared Rider',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color:
+                                    rider.stage == SharedRiderStage.onboardDrop
+                                        ? _C.green
+                                        : _C.textSub,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _C.borderLight,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'ID: ${rider.bookingId}',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: _C.textMuted,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1309,23 +1559,78 @@ class _PickingCustomerSharedScreenState
           Buttons.button(
             borderRadius: 8,
             buttonColor: AppColors.red,
-            onTap:
-                () => Buttons.showCancelRideBottomSheet(
+            onTap: () => Buttons.showSharedRideCancelSheet(
+              context,
+              riders: sharedRideController
+                  .getAllActiveRiders()
+                  .map((r) => (bookingId: r.bookingId, name: r.name))
+                  .toList(),
+              onCancelOne: (bookingId, reason) async {
+                // FIX: per-passenger cancel must NOT blindly navigate Home.
+                // Call the passenger-level API, then navigate Home ONLY when the
+                // backend says no active passengers remain (shouldNavigateHome).
+                // Use context-free Get.* navigation/snackbars and defer the Home
+                // jump to a post-frame callback so it runs AFTER the cancel sheet
+                // closes (mixing Navigator(context) + an open modal sheet was
+                // throwing the red error screen).
+                final res = await driverStatusController.cancelSharedPassenger(
+                  bookingId: bookingId,
+                  reason: reason,
+                );
+                if (!mounted) return;
+                if (!res.success) {
+                  Get.snackbar(
+                    'Cancel failed',
+                    res.message,
+                    snackPosition: SnackPosition.BOTTOM,
+                  );
+                  return; // keep old ride data, stay on screen
+                }
+                // Remove only the cancelled passenger from local state.
+                sharedRideController.removeRider(bookingId);
+                final goHome = res.shouldNavigateHome ||
+                    sharedRideController.getAllActiveRiders().isEmpty;
+                if (goHome) {
+                  sharedRideController.reset();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    Get.offAll(() => const DriverMainScreen());
+                  });
+                } else {
+                  if (mounted) setState(() {});
+                  Get.snackbar(
+                    'Passenger cancelled',
+                    'Ride continued with remaining passenger.',
+                    snackPosition: SnackPosition.BOTTOM,
+                  );
+                }
+              },
+              onCancelAll: (reason) async {
+                final msg = await driverStatusController.cancelAllSharedRides(
                   context,
-                  onConfirmCancel: (reason) async {
-                    if (Get.isBottomSheetOpen == true) {
-                      Get.back();
-                    }
-                    await driverStatusController.cancelBooking(
-                      context,
-                      bookingId: widget.bookingId,
-                      reason: reason,
-                      navigate: true,
-                      silent: true,
-                    );
-                  },
-                ),
-            text: const Text('Cancel this Shared Ride'),
+                  reason: reason,
+                );
+                if (!mounted) return;
+                // The driver's intent was to END the ride. A 200 response
+                // (msg != null) OR no active riders left means it's over → reset
+                // local state and go HOME. Stale/partial "failed" leftovers must
+                // NOT trap the driver on the pickup screen (the old code awaited
+                // the call but never navigated, so the screen just sat there).
+                if (msg != null ||
+                    sharedRideController.getAllActiveRiders().isEmpty) {
+                  sharedRideController.reset();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    Get.offAll(() => const DriverMainScreen());
+                  });
+                } else {
+                  Get.snackbar(
+                    'Could not cancel',
+                    'Please try again.',
+                    snackPosition: SnackPosition.BOTTOM,
+                  );
+                }
+              },
+            ),
+            text: const Text('Cancel Ride'),
           ),
           const SizedBox(height: 16),
         ],
@@ -1410,43 +1715,147 @@ class _PickingCustomerSharedScreenState
                       physics: const BouncingScrollPhysics(),
                       padding: const EdgeInsets.only(bottom: 16),
                       children: [
-                        if (sharedRideController.riders.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 36,
-                              horizontal: 24,
-                            ),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.sensors_rounded,
-                                  color: _C.textMuted,
-                                  size: 36,
-                                ),
-                                const SizedBox(height: 12),
-                                const Text(
-                                  'Waiting for shared ride requests…',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: _C.textSub,
-                                    fontWeight: FontWeight.w500,
+                        // Seat occupancy (collapsible "Seats n/3" → full car layout).
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                          child: DriverSeatsCard(controller: sharedRideController),
+                        ),
+                        Obx(() {
+                          // ✅ Show ALL active riders (not filtered by single booking)
+                          final allActiveRiders =
+                              sharedRideController.getAllActiveRiders();
+
+                          // Separate by stage for better UX
+                          final waitingRiders = allActiveRiders
+                              .where((r) => r.stage == SharedRiderStage.waitingPickup)
+                              .toList();
+                          final onboardRiders = allActiveRiders
+                              .where((r) => r.stage == SharedRiderStage.onboardDrop)
+                              .toList();
+                          // Customers who cancelled — shown disabled (with reason),
+                          // swipe to dismiss. Kept separate from active riders.
+                          final cancelledRiders =
+                              sharedRideController.getCancelledRiders();
+
+                          if (allActiveRiders.isEmpty && cancelledRiders.isEmpty)
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 36,
+                                horizontal: 24,
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.sensors_rounded,
+                                    color: _C.textMuted,
+                                    size: 36,
                                   ),
-                                  textAlign: TextAlign.center,
+                                  const SizedBox(height: 12),
+                                  const Text(
+                                    'Waiting for shared ride requests…',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: _C.textSub,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            );
+
+                          return Column(
+                            children: [
+                              // 📍 Show waiting riders first
+                              if (waitingRiders.isNotEmpty) ...[
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.schedule, size: 16, color: _C.textMuted),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'WAITING FOR PICKUP (${waitingRiders.length})',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: _C.textMuted,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
+                                ...waitingRiders.map((rider) {
+                                  final activeR =
+                                      sharedRideController.activeTarget.value;
+                                  final isActive =
+                                      activeR != null &&
+                                      activeR.bookingId == rider.bookingId;
+                                  return _buildRiderCard(rider, isActive: isActive);
+                                }),
                               ],
-                            ),
-                          )
-                        else
-                          ...sharedRideController.riders.map((rider) {
-                            final activeR =
-                                sharedRideController.activeTarget.value;
-                            final isActive =
-                                activeR != null &&
-                                activeR.bookingId == rider.bookingId;
-                            return _buildRiderCard(rider, isActive: isActive);
-                          }),
-                        if (sharedRideController.riders.isNotEmpty)
-                          _buildBottomActions(),
+
+                              // 🚗 Show onboard riders
+                              if (onboardRiders.isNotEmpty) ...[
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.local_taxi, size: 16, color: _C.green),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'ONBOARD (${onboardRiders.length})',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: _C.green,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                ...onboardRiders.map((rider) {
+                                  final activeR =
+                                      sharedRideController.activeTarget.value;
+                                  final isActive =
+                                      activeR != null &&
+                                      activeR.bookingId == rider.bookingId;
+                                  return _buildRiderCard(rider, isActive: isActive);
+                                }),
+                              ],
+
+                              // ✖ Cancelled customers — disabled, with reason,
+                              // swipe left to remove from the list.
+                              if (cancelledRiders.isNotEmpty) ...[
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.person_off_rounded,
+                                          size: 16, color: Colors.red.shade400),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'CANCELLED (${cancelledRiders.length})',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.red.shade400,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                ...cancelledRiders.map(_buildCancelledRiderCard),
+                              ],
+
+                              if (allActiveRiders.isNotEmpty)
+                                _buildBottomActions(),
+                            ],
+                          );
+                        }),
                       ],
                     ),
                   ),
@@ -1470,9 +1879,10 @@ class _PickingCustomerSharedScreenState
           body: Obx(() {
             final uiState = c.routeUi.value;
             final activeTarget = sharedRideController.activeTarget.value;
-            final initialBookingRider = sharedRideController.riders
-                .firstWhereOrNull((r) => r.bookingId == widget.bookingId);
-            final resolvedTarget = activeTarget ?? initialBookingRider;
+
+            // ✅ Use ALL active riders (shared pool may have multiple booking IDs)
+            final allRiders = sharedRideController.getAllActiveRiders();
+            final resolvedTarget = activeTarget ?? allRiders.firstOrNull;
             final rawTarget =
                 resolvedTarget == null
                     ? widget.pickupLocation
@@ -1481,16 +1891,14 @@ class _PickingCustomerSharedScreenState
                         : resolvedTarget.pickupLatLng);
             final currentTarget = c.adjustedStopLocation.value ?? rawTarget;
 
+            // Match single ride (and the shared DROP screen): the destination is
+            // shown by the route polyline + the map's pickup indicator (pulse) +
+            // the car marker, NOT a large overlaid `loc` teardrop. Drawing the
+            // 32dp stop pin here made the "location image" look oversized — and
+            // when the driver is at/near the target it sat right on top of the
+            // car. Single-ride screens pass no extra destination marker, so drop
+            // it for parity; keep only the turn-by-turn maneuver arrows.
             final extraMarkers = <Marker>{
-              if (c.stopPinIcon.value != null)
-                Marker(
-                  markerId: const MarkerId('stop'),
-                  position: currentTarget,
-                  icon: c.stopPinIcon.value!,
-                  anchor: const Offset(0.5, 1.0),
-                  infoWindow: InfoWindow.noText,
-                  zIndexInt: 7,
-                ),
               ...c.maneuverMarkers,
             };
 

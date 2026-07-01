@@ -12,6 +12,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Services/driver_background_location_service.dart';
+import 'package:hopper/Core/Services/driver_location_bus.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/models/driver_active_booking_response.dart';
@@ -97,6 +98,9 @@ class RideStatsController extends GetxController
   final RxList<LatLng> polylinePoints = <LatLng>[].obs;
   final RxString directionText = ''.obs;
   final RxString distanceText = ''.obs;
+  // Locally-computed driver->drop ETA (minutes) from the route fetch. Fallback
+  // for the header "min" when the server socket dropDurationInMin is 0/missing.
+  final RxDouble routeDurationMin = 0.0.obs;
   final RxString maneuver = ''.obs;
   final RxList<Marker> maneuverMarkers = <Marker>[].obs;
   int _maneuverGen = 0;
@@ -161,6 +165,14 @@ class RideStatsController extends GetxController
     _setupBackgroundServiceListener();
     // Ensure the BG isolate is always aligned to the current (drop-phase) booking id.
     unawaited(DriverBackgroundLocationService.updateRidePhase(bookingId));
+    // Also align the FOREGROUND emitter so it streams at the smooth ~1Hz
+    // active-trip cadence (with bookingId on every packet) for the whole drop
+    // leg. Without this the foreground loop could sit in idle mode (5–8s, no
+    // bookingId) and the customer's car marker would update slowly/jerkily
+    // while the driver heads to the drop. See setActiveTripBookingId().
+    if (Get.isRegistered<DriverMainController>()) {
+      Get.find<DriverMainController>().setActiveTripBookingId(bookingId);
+    }
     DirectionsConfig.apiKey = ApiConstents.googleMapApiKey;
     _markerController = AnimationController(
       vsync: this,
@@ -738,6 +750,9 @@ class RideStatsController extends GetxController
     }
     directionText.value = nextDirection;
     distanceText.value = nextDistance;
+    if (result['durationMin'] is num) {
+      routeDurationMin.value = (result['durationMin'] as num).toDouble();
+    }
     maneuver.value = nextManeuver;
     polylinePoints.assignAll(pts);
 
@@ -1011,15 +1026,10 @@ class RideStatsController extends GetxController
   // ---------------- LOCATION STREAM ----------------
 
   void _startLocationStream() {
-    _positionStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        // 5 -> 0: this stream only runs during an active ride, so don't let the
-        // OS withhold fixes at low speed — the driver's own map (route +
-        // reached-destination + vehicle marker) stays smooth in slow traffic.
-        distanceFilter: 0,
-      ),
-    ).listen((Position position) async {
+    // Shared foreground GPS bus (one OS stream for all driver map screens). The
+    // bus runs at distanceFilter 0 / bestForNavigation, matching what this
+    // active-ride stream requested, so the driver's own map stays smooth.
+    _positionStream = DriverLocationBus.instance.stream.listen((Position position) async {
       if (_shouldRenderSocketDriverLocationDirectly()) {
         return;
       }

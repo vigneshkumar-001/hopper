@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
@@ -35,12 +35,9 @@ class WalletPaymentScreens extends StatefulWidget {
 class _WalletPaymentScreensState extends State<WalletPaymentScreens> {
   final RideHistoryController Controller = Get.put(RideHistoryController());
 
-  bool _isLoading = false;
   bool payStackLoading = false;
   bool flutterWaveLoading = false;
   bool payPalLoading = false;
-
-  Map<String, dynamic>? paymentIntentData;
 
   Future<void> payPall() async {
     // Navigator.push(
@@ -55,144 +52,6 @@ class _WalletPaymentScreensState extends State<WalletPaymentScreens> {
     // );
   }
 
-  Future<void> makePayment() async {
-    try {
-      // 1️⃣ Create Payment Intent
-      paymentIntentData = await createPaymentIntent(widget.amount) ?? {};
-
-      final publishableKey = paymentIntentData!['publishableKey'];
-      final clientSecret = paymentIntentData!['clientSecret'];
-
-      if (publishableKey == null || clientSecret == null) {
-        CommonLogger.log.e("❌ Missing publishableKey or clientSecret");
-        return;
-      }
-
-      // 2️⃣ Set the publishable key
-      Stripe.publishableKey = publishableKey;
-      await Stripe.instance.applySettings();
-
-      // 3️⃣ Initialize the payment sheet
-      await Stripe.instance.initPaymentSheet(
-        paymentSheetParameters: SetupPaymentSheetParameters(
-          paymentIntentClientSecret: clientSecret,
-          merchantDisplayName: 'Hoppr',
-          style: ThemeMode.light,
-          allowsDelayedPaymentMethods: false,
-        ),
-      );
-
-      CommonLogger.log.i("✅ Payment sheet initialized successfully");
-
-      // 4️⃣ Present the payment sheet (only once!)
-      await Stripe.instance.presentPaymentSheet();
-      CommonLogger.log.i("✅ Payment sheet presented successfully");
-
-      // 5️⃣ Confirm payment on backend
-      await confirmPaymentBackend();
-    } catch (e, s) {
-      CommonLogger.log.e('❌ Stripe makePayment error: $e');
-      CommonLogger.log.e('Stack trace: $s');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Payment failed: $e")));
-    }
-  }
-
-  // ✅ Backend confirmation only — no presentPaymentSheet here
-  Future<void> confirmPaymentBackend() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-
-    if (token == null) {
-      CommonLogger.log.e('⚠️ Token not found');
-      return;
-    }
-
-    try {
-      final transactionId = paymentIntentData?['transactionId'];
-      final clientSecret = paymentIntentData?['clientSecret'];
-      final paymentIntentId = clientSecret?.split('_secret').first;
-
-      if (transactionId == null || paymentIntentId == null) {
-        CommonLogger.log.e('❌ Missing transactionId or paymentIntentId');
-        return;
-      }
-
-      final body = jsonEncode({
-        "transactionId": transactionId,
-        "paymentIntentId": paymentIntentId,
-      });
-
-      final response = await http.post(
-        Uri.parse(ApiConstents.addToWalletResponse),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: body,
-      );
-
-      CommonLogger.log.i('Confirm Payment Response: ${response.body}');
-
-      if (response.statusCode == 200) {
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => WalletScreen()),
-            (route) => false,
-          );
-          await Controller.customerWalletHistory();
-
-          CommonLogger.log.i("✅ Payment successful");
-
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text("Payment Successful")));
-        });
-      } else {
-        CommonLogger.log.e('❌ Failed to confirm payment: ${response.body}');
-      }
-    } catch (e, s) {
-      CommonLogger.log.e('❌ Error confirming payment: $e');
-      CommonLogger.log.e('Stack: $s');
-    }
-  }
-
-  Future<Map<String, dynamic>?> createPaymentIntent(int? amount) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
-
-      if (token == null) {
-        CommonLogger.log.e('⚠️ Token not found');
-        return null;
-      }
-
-      final response = await http.post(
-        Uri.parse(ApiConstents.addToWallet),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({'amount': amount, 'method': "STRIPE"}),
-      );
-
-      CommonLogger.log.i('Status code: ${response.statusCode}');
-      CommonLogger.log.i('Response body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        CommonLogger.log.i('Decoded payment intent response: $decoded');
-        return decoded;
-      } else {
-        throw Exception('Failed to create payment intent');
-      }
-    } catch (err) {
-      CommonLogger.log.e('err charging user: $err');
-      return null;
-    }
-  }
 
   Future<void> payWithFlutterWave() async {
     final prefs = await SharedPreferences.getInstance();
@@ -227,7 +86,7 @@ class _WalletPaymentScreensState extends State<WalletPaymentScreens> {
     setState(() => flutterWaveLoading = true);
 
     try {
-      String? token = prefs.getString('token');
+      String? token = await SharedPrefHelper.getToken();
       final response = await http.post(
         Uri.parse(
           'https://bk.myhoppr.com/api/users/flutterwave/wallet/initialize',
@@ -458,7 +317,7 @@ class _WalletPaymentScreensState extends State<WalletPaymentScreens> {
     setState(() => payStackLoading = true);
 
     try {
-      String? token = prefs.getString('token');
+      String? token = await SharedPrefHelper.getToken();
       final response = await http.post(
         Uri.parse(
           'https://bk.myhoppr.com/api/users/paystack/wallet/initialize',
@@ -698,49 +557,6 @@ class _WalletPaymentScreensState extends State<WalletPaymentScreens> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      InkWell(
-                        borderRadius: BorderRadius.circular(30),
-                        onTap:
-                            _isLoading
-                                ? null
-                                : () async {
-                                  setState(() {
-                                    selectedPaymentMethod = "Stripe";
-                                    _isLoading = true;
-                                  });
-
-                                  await makePayment();
-
-                                  setState(() {
-                                    _isLoading = false;
-                                  });
-                                },
-                        child: Container(
-                          height: 50,
-                          width: 170,
-                          padding: EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.commonWhite,
-                            border: Border.all(color: AppColors.containerColor),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child:
-                              _isLoading
-                                  ? Center(child: AppLoader.circularLoader())
-                                  : Row(
-                                    children: [
-                                      Image.asset(AppImages.stripe),
-                                      SizedBox(width: 10),
-                                      CustomTextfield.textWithStylesSmall(
-                                        'Stripe',
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w500,
-                                        colors: AppColors.commonBlack,
-                                      ),
-                                    ],
-                                  ),
-                        ),
-                      ),
                       InkWell(
                         borderRadius: BorderRadius.circular(30),
                         onTap:

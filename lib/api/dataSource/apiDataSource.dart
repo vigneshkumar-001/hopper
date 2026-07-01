@@ -1501,6 +1501,34 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
+  /// Driver-initiated "Resend OTP to rider" (Ride/Parcel). Returns the response
+  /// body on success (carries `message`, `nextResendInSec`, `attemptsLeft`); a
+  /// Left with the server message otherwise (cooldown / limit reached).
+  Future<Either<Failure, Map<String, dynamic>>> resendRideOtpRequest({
+    required String bookingId,
+  }) async {
+    try {
+      final response = await Request.sendRequest(
+        ApiConstents.resendRideOtp,
+        {"bookingId": bookingId},
+        'Post',
+        false,
+      );
+      final data = (response is Response && response.data is Map)
+          ? Map<String, dynamic>.from(response.data as Map)
+          : <String, dynamic>{};
+      if (response is Response && response.statusCode == 200) {
+        return Right(data);
+      }
+      return Left(
+        ServerFailure((data['message'] ?? 'Could not resend OTP').toString()),
+      );
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
   Future<Either<Failure, BookingAcceptModel>> otpInsert({
     required String bookingId,
     required String enteredOtp,
@@ -1668,6 +1696,86 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
+  /// Shared-ride PER-PASSENGER cancel. Hits the same cancel-booking endpoint but
+  /// returns the backend's `data` block (shouldNavigateHome,
+  /// remainingActivePassengers, routeVersion, status) so the driver app never
+  /// decides navigation blindly. Single-ride cancel keeps using [cancelBooking].
+  Future<Either<Failure, Map<String, dynamic>>> cancelSharedPassenger({
+    required String reason,
+    required String bookingId,
+  }) async {
+    try {
+      final driverId = await SharedPrefHelper.getDriverId();
+      final String url = ApiConstents.cancelBooking(bookingId: bookingId);
+
+      final response = await Request.sendRequest(
+        url,
+        {
+          "rejectedReason": reason,
+          "driverId": driverId,
+          "cancelledBy": "driver",
+        },
+        'Post',
+        false,
+      );
+
+      if (response is Response && response.statusCode == 200) {
+        final body = response.data;
+        final data = (body is Map && body['data'] is Map)
+            ? Map<String, dynamic>.from(body['data'] as Map)
+            : <String, dynamic>{};
+        data['message'] =
+            (body is Map ? body['message'] : null) ?? 'Passenger cancelled';
+        return Right(data);
+      } else if (response is Response) {
+        return Left(ServerFailure(
+          (response.data is Map ? response.data['message'] : null) ??
+              'Could not cancel passenger',
+        ));
+      }
+      return Left(ServerFailure('Unexpected error'));
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  /// Cancel every active shared-ride passenger for the driver in one atomic call.
+  /// Returns the backend's human-readable message on success.
+  Future<Either<Failure, String>> cancelSharedAll({
+    required String reason,
+    String? sharedId,
+  }) async {
+    try {
+      final String url = ApiConstents.cancelSharedAll;
+      final Map<String, dynamic> body = {"rejectedReason": reason};
+      if (sharedId != null && sharedId.trim().isNotEmpty) {
+        body["sharedId"] = sharedId.trim();
+      }
+
+      final response = await Request.sendRequest(url, body, 'Post', false);
+
+      if (response is Response && response.statusCode == 200) {
+        final data = response.data;
+        final msg = (data is Map && data['message'] != null)
+            ? data['message'].toString()
+            : 'All shared rides cancelled';
+        return Right(msg);
+      } else if (response is Response) {
+        final data = response.data;
+        final msg = (data is Map && data['message'] != null)
+            ? data['message'].toString()
+            : 'Could not cancel the shared rides';
+        return Left(ServerFailure(msg));
+      } else {
+        return Left(ServerFailure("Unexpected error"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
   Future<Either<Failure, BookingAcceptModel>> driverArrived({
     required String bookingId,
   }) async {
@@ -1779,10 +1887,21 @@ class ApiDataSource extends BaseApiDataSource {
 
   Future<Either<Failure, RideActivityHistoryResponse>> rideHistory({
     required int page,
+    String? status, // all | completed | cancelled
+    String? rideType, // all | single | shared | parcel
+    String? from, // ISO / yyyy-mm-dd
+    String? to, // ISO / yyyy-mm-dd
   }) async {
     try {
       String url = ApiConstents.rideHistory;
-      final payLoad = {"page": page.toString(), "limit": "10"};
+      final payLoad = <String, String>{
+        "page": page.toString(),
+        "limit": "10",
+        if (status != null && status.isNotEmpty) "status": status,
+        if (rideType != null && rideType.isNotEmpty) "rideType": rideType,
+        if (from != null && from.isNotEmpty) "from": from,
+        if (to != null && to.isNotEmpty) "to": to,
+      };
       CommonLogger.log.i(payLoad);
       final response = await Request.sendRequest(url, payLoad, 'Post', false);
 

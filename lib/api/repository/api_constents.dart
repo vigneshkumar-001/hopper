@@ -62,6 +62,7 @@ class ApiConstents {
   static String get getUserDetails => _u('/users/getUserDetailsById');
   static String get generateOtp => _u('/users/generate-otp');
   static String get rideVerifyOtp => _u('/users/ride-verify-otp');
+  static String get resendRideOtp => _u('/users/resend-ride-otp');
   static String get todayParcel => _u('/users/today-parcel');
   static String get rideHistory => _u('/users/ride-history');
   static String get addToWallet => _u('/users/add-to-wallet');
@@ -107,6 +108,9 @@ class ApiConstents {
   static String cancelBooking({required String bookingId}) {
     return _u('/users/cancel-booking/$bookingId');
   }
+
+  /// Cancel ALL active shared-ride passengers for the authenticated driver in one call.
+  static String get cancelSharedAll => _u('/users/cancel-shared-all');
 
   static String todayStatus() => _u('/users/today');
 

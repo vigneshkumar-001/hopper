@@ -28,6 +28,26 @@ const Duration _bgActiveTripPollInterval = Duration(seconds: 1);
 const Duration _bgActiveTripMinEmitGap = Duration(seconds: 1);
 const Duration _bgIdleMinEmitGap = Duration(seconds: 18);
 
+// Freshness guard: never emit a GPS fix older than this. Android can hand the
+// position stream a BACKLOG of buffered fixes after a stall; emitting them in
+// order (gated to ~1/s) drains the backlog one-per-second, so the customer
+// tracks the driver's position from N seconds ago. We compare `now` to the
+// fix's OWN timestamp (same device clock) — immune to clock skew / timezone —
+// and drop anything stale so only the genuinely current fix is sent. Generous
+// enough to allow normal GPS provider latency (sub-second to ~2s).
+const Duration _bgMaxFixAge = Duration(seconds: 5);
+
+// Mirrors the foreground emit's `_STATIONARY_EMIT_M` (driver_main_controller).
+// When the car physically moved less than this since the last emitted fix we
+// send speed 0 instead of the raw (often phantom) GPS speed, so the customer
+// HOLDS the marker instead of dead-reckoning it forward. Without this the
+// background feed — the one that's live on the DROP leg, where the driver is
+// navigating in Google Maps with the app backgrounded — made the customer's
+// car creep ahead on a stopped/crawling driver and then snap back on the next
+// fix (the "moves but jerky on drop" symptom). Pickup stayed smooth because it
+// runs foreground, which already zeroes speed this way.
+const double _bgStationaryEmitMeters = 1.5;
+
 bool isBackgroundTrackingEnabled() {
   // Enabled for production: this app needs to send driver location even when the
   // app is backgrounded / screen-locked (Android foreground service).
@@ -202,6 +222,9 @@ void onStart(ServiceInstance service) async {
   String? deviceId;
   StreamSubscription<Position>? positionSub;
   Timer? pollTimer;
+  // C9: grace timer + bounded reclaim counter for the active-ride revoke safety.
+  Timer? revokeGraceTimer;
+  int revokeReclaimAttempts = 0;
   int clientSeq = 0;
   int emitCountWindow = 0;
   DateTime emitWindowStartedAt = DateTime.now();
@@ -397,6 +420,58 @@ void onStart(ServiceInstance service) async {
   }
 
   void attachSocketListeners(IO.Socket activeSocket) {
+    // C9: a bare `session-revoked` / namespace-disconnect must NOT permanently kill
+    // background tracking mid-ride. The LEGITIMATE foreground reclaim sends an
+    // explicit `stopService` action (which stopSelf()s this isolate). So when an
+    // active ride exists we suppress reconnect (avoid revoke-war) but DEFER the
+    // stop: if no explicit stopService arrives within the grace window, the
+    // foreground is not actually tracking -> reclaim so the customer marker doesn't
+    // freeze. Bounded by revokeReclaimAttempts so the service never runs forever.
+    void handleSessionRevoke(String label) {
+      sessionRevoked = true;
+      try {
+        activeSocket.disconnect();
+      } catch (_) {}
+
+      final hasActiveBooking =
+          currentBookingId != null && currentBookingId!.trim().isNotEmpty;
+      if (!hasActiveBooking || revokeReclaimAttempts >= 2) {
+        // No active ride, or already reclaimed twice (foreground truly owns the
+        // session) -> stop now (original behavior, bounded).
+        try {
+          service.stopSelf();
+        } catch (_) {}
+        return;
+      }
+
+      revokeGraceTimer?.cancel();
+      revokeGraceTimer = Timer(const Duration(seconds: 8), () async {
+        revokeGraceTimer = null;
+        var stillActive = true;
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          stillActive = (prefs.getString('bg_ride_id') ?? '').trim().isNotEmpty;
+        } catch (_) {}
+        if (!stillActive) {
+          // Ride completed / cancelled / cleared by foreground -> safe to stop.
+          try {
+            service.stopSelf();
+          } catch (_) {}
+          return;
+        }
+        // Ride still active and we were NOT explicitly stopped -> reclaim tracking.
+        revokeReclaimAttempts += 1;
+        sessionRevoked = false;
+        CommonLogger.log.w(
+          "[BG_SOCKET] Revoke grace elapsed, ride still active — reclaiming BG "
+          "tracking (attempt $revokeReclaimAttempts) label=$label",
+        );
+        try {
+          activeSocket.connect();
+        } catch (_) {}
+      });
+    }
+
     activeSocket.onConnect((_) {
       if (!identical(activeSocket, socket)) return;
       safeRegisterAndFlush();
@@ -421,17 +496,10 @@ void onStart(ServiceInstance service) async {
       // reconnect (that revokes the foreground -> revoke-war). Stop this service.
       final rl = (reason?.toString() ?? '').toLowerCase();
       if (rl.contains('server namespace disconnect')) {
-        sessionRevoked = true;
         CommonLogger.log.w(
-          "[BG_SOCKET] Session revoked (namespace) — foreground owns the "
-          "session; stopping BG service",
+          "[BG_SOCKET] Session revoked (namespace) — checking active ride before stop",
         );
-        try {
-          activeSocket.disconnect();
-        } catch (_) {}
-        try {
-          service.stopSelf();
-        } catch (_) {}
+        handleSessionRevoke('namespace-disconnect');
         return;
       }
 
@@ -455,17 +523,10 @@ void onStart(ServiceInstance service) async {
     // stop the background service instead of reconnecting and fighting it.
     activeSocket.on('session-revoked', (_) {
       if (!identical(activeSocket, socket)) return;
-      sessionRevoked = true;
       CommonLogger.log.w(
-        "[BG_SOCKET] session-revoked — foreground owns the session; stopping "
-        "BG service",
+        "[BG_SOCKET] session-revoked — checking active ride before stop",
       );
-      try {
-        activeSocket.disconnect();
-      } catch (_) {}
-      try {
-        service.stopSelf();
-      } catch (_) {}
+      handleSessionRevoke('session-revoked-event');
     });
   }
 
@@ -513,7 +574,7 @@ void onStart(ServiceInstance service) async {
     if (currentBookingId != null && currentBookingId!.trim().isNotEmpty) {
       try {
         final last = await Geolocator.getLastKnownPosition();
-        if (last != null && socket.connected) {
+        if (last != null) {
           final accFast = last.accuracy.isFinite ? last.accuracy : 9999.0;
           if (accFast <= maxAccuracyM) {
             final nowFast = DateTime.now();
@@ -545,14 +606,28 @@ void onStart(ServiceInstance service) async {
               'deviceTimestamp': nowFast.toUtc().toIso8601String(),
               'clientSentAt': nowFast.toUtc().toIso8601String(),
             };
-            socket.emit('updateLocation', fastData);
-            noteEmit('updateLocation');
-            unawaited(persistLastBgEmit(currentBookingId));
+            if (socket.connected) {
+              socket.emit('updateLocation', fastData);
+              noteEmit('updateLocation');
+              unawaited(persistLastBgEmit(currentBookingId));
+            } else {
+              // COLD START: the socket (created moments ago in onStart) is still
+              // connecting. Queue the cached fix as the pending payload so the
+              // onConnect handler (safeRegisterAndFlush) emits it the INSTANT the
+              // socket connects — well before the getCurrentPosition fix below.
+              // This makes the background's first emit (and `bg_last_emit_at`)
+              // land at ~socket-connect time, so the foreground hand-off sees the
+              // background as alive quickly and the customer's marker never goes
+              // dark when the driver opens Google Maps.
+              _pendingEvent = 'updateLocation';
+              _pendingPayload = fastData;
+            }
             if (kDebugMode) {
               CommonLogger.log.i(
                 '[BG_SOCKET_EMIT] event=updateLocation '
                 'bookingId=${maskIdForLog(currentBookingId)} '
-                'seq=${fastData['seq']} source=$reason-bridge',
+                'seq=${fastData['seq']} source=$reason-bridge '
+                'connected=${socket.connected}',
               );
             }
           }
@@ -570,6 +645,22 @@ void onStart(ServiceInstance service) async {
           timeLimit: Duration(seconds: 8),
         ),
       );
+      // FRAUD (CRIT-5): drop mock/fake-GPS fixes in the background path too, so a driver
+      // can't spoof location while the app is backgrounded. Report once so the server flags it.
+      if (position.isMocked) {
+        try {
+          if (socket.connected) {
+            socket.emit('driver-integrity', {
+              'driverId': driverId,
+              if (currentBookingId != null) 'bookingId': currentBookingId,
+              'mock': true,
+              'source': 'background',
+            });
+          }
+        } catch (_) {}
+        return;
+      }
+
       final acc = position.accuracy.isFinite ? position.accuracy : 9999.0;
       if (acc > maxAccuracyM) return;
 
@@ -634,6 +725,7 @@ void onStart(ServiceInstance service) async {
     if (event == null) return;
 
     if (event['action'] == 'stopService') {
+      revokeGraceTimer?.cancel(); // C9: explicit foreground stop overrides grace
       heartbeatTimer?.cancel();
       pollTimer?.cancel();
       unawaited(positionSub?.cancel());
@@ -720,26 +812,35 @@ void onStart(ServiceInstance service) async {
     if (driverId == null || driverId!.trim().isEmpty) return;
 
     final now = DateTime.now();
+    // Freshness guard (skew-immune: same device clock for `now` and the fix).
+    // Drop a stale/buffered fix so we never relay the driver's old position; a
+    // backlog burst is discarded and only the current fix reaches the customer.
+    if (now.difference(position.timestamp) > _bgMaxFixAge) {
+      return;
+    }
     if (now.difference(lastEmitAt) < minEmitInterval) return;
 
     final acc = position.accuracy.isFinite ? position.accuracy : 9999.0;
     if (acc > maxAccuracyM) return;
 
-    if (lastLat != null && lastLng != null) {
-      final movedMeters = Geolocator.distanceBetween(
-        lastLat!,
-        lastLng!,
-        position.latitude,
-        position.longitude,
-      );
+    final double? movedSinceLast =
+        (lastLat != null && lastLng != null)
+            ? Geolocator.distanceBetween(
+              lastLat!,
+              lastLng!,
+              position.latitude,
+              position.longitude,
+            )
+            : null;
 
+    if (movedSinceLast != null) {
       final speedMs =
           (position.speed.isFinite && position.speed >= 0)
               ? position.speed
               : 0.0;
 
       if (speedMs < 1.0 &&
-          movedMeters >= stationaryJumpM &&
+          movedSinceLast >= stationaryJumpM &&
           acc > jumpAcceptAccuracyM) {
         return;
       }
@@ -747,7 +848,7 @@ void onStart(ServiceInstance service) async {
       double driftGate = 8.0;
       final adaptive = (acc * 0.8).clamp(0.0, 20.0);
       if (adaptive > driftGate) driftGate = adaptive;
-      if (speedMs < 1.0 && movedMeters < driftGate) return;
+      if (speedMs < 1.0 && movedSinceLast < driftGate) return;
     }
 
     lastLat = position.latitude;
@@ -765,6 +866,15 @@ void onStart(ServiceInstance service) async {
       lastEmitBearing = position.heading;
     }
 
+    // Trust position over GPS-reported speed (mirrors the foreground emit): if
+    // the car barely moved since the last emitted fix, send speed 0 so the
+    // customer holds the marker instead of dead-reckoning it forward on a
+    // phantom speed. See [_bgStationaryEmitMeters].
+    final double bgEmitSpeed =
+        (movedSinceLast != null && movedSinceLast < _bgStationaryEmitMeters)
+            ? 0.0
+            : bgSpeedMs;
+
     final locationData = {
       'userId': driverId,
       'driverId': driverId,
@@ -777,7 +887,7 @@ void onStart(ServiceInstance service) async {
       // Omit when null so the backend (which gates bearing by speed) treats it
       // as "no heading" and keeps the last good one — never sends 0/north.
       if (lastEmitBearing != null) 'bearing': lastEmitBearing,
-      'speed': position.speed,
+      'speed': bgEmitSpeed,
       'accuracy': position.accuracy,
       if (currentBookingId != null) 'bookingId': currentBookingId,
       if (currentBookingId != null) 'rideId': currentBookingId,
@@ -804,7 +914,7 @@ void onStart(ServiceInstance service) async {
         'lat': position.latitude,
         'lng': position.longitude,
         'bearing': lastEmitBearing ?? position.heading,
-        'speed': position.speed,
+        'speed': bgEmitSpeed,
         'accuracy': position.accuracy,
         if (currentBookingId != null) 'bookingId': currentBookingId,
         if (driverId != null) 'driverId': driverId,
@@ -818,7 +928,12 @@ void onStart(ServiceInstance service) async {
         'bookingId=${maskIdForLog(currentBookingId)} seq=${locationData['seq']}',
       );
     }
-  });
+  }, onError: (Object e, StackTrace st) {
+    // CRASH FIX: a denied/revoked location permission emits a stream error in
+    // the background isolate. Without onError it became an unhandled crash.
+    // Swallow it so the background service stays alive.
+    if (kDebugMode) CommonLogger.log.w('bg location stream error: $e');
+  }, cancelOnError: false);
 
   if (currentBookingId != null && currentBookingId!.trim().isNotEmpty) {
     unawaited(emitBootstrapPosition('startup'));
@@ -879,6 +994,15 @@ void onStart(ServiceInstance service) async {
         lastEmitBearing = position.heading;
       }
 
+      // Trust position over GPS-reported speed (mirrors the foreground emit):
+      // send speed 0 when the car barely moved since the last emitted fix, so
+      // the customer holds the marker instead of dead-reckoning a phantom
+      // speed. See [_bgStationaryEmitMeters].
+      final double pollEmitSpeed =
+          (movedMeters != null && movedMeters < _bgStationaryEmitMeters)
+              ? 0.0
+              : speedMs;
+
       final locationData = {
         'userId': driverId,
         'driverId': driverId,
@@ -887,7 +1011,7 @@ void onStart(ServiceInstance service) async {
         'lat': position.latitude,
         'lng': position.longitude,
         if (lastEmitBearing != null) 'bearing': lastEmitBearing,
-        'speed': position.speed,
+        'speed': pollEmitSpeed,
         'accuracy': position.accuracy,
         if (currentBookingId != null) 'bookingId': currentBookingId,
         if (currentBookingId != null) 'rideId': currentBookingId,
@@ -918,7 +1042,7 @@ void onStart(ServiceInstance service) async {
           'lat': position.latitude,
           'lng': position.longitude,
           'bearing': lastEmitBearing ?? position.heading,
-          'speed': position.speed,
+          'speed': pollEmitSpeed,
           'accuracy': position.accuracy,
           if (currentBookingId != null) 'bookingId': currentBookingId,
           if (driverId != null) 'driverId': driverId,

@@ -249,13 +249,37 @@ class _ChatScreenState extends State<ChatScreen> {
 
     socketService.initSocket(cfg.socketUrl);
 
+    final String roomBookingId = widget.bookingId.trim();
+
+    // Join the chat room for THIS booking so the customer's messages arrive
+    // instantly. `socketService` is the shared singleton already registered as
+    // a *driver* by the ride flow, so we must NOT call `registerUser` here:
+    // that re-registers the live socket as a "customer" (type is hardcoded) and
+    // disrupts dispatch/tracking — and it still wouldn't join the room.
+    //
+    // All the driver needs is to be in `booking-<id>`: the backend relays every
+    // `booking-message` to the sockets in that room. Previously the driver only
+    // landed in the room AFTER sending the first message (the backend joins the
+    // sender), so the customer's messages weren't delivered to the driver until
+    // the driver replied — i.e. "could not send instantly".
+    void joinChatRoom() {
+      if (roomBookingId.isEmpty) return;
+      socketService.joinBooking(roomBookingId, userId: driverId ?? '');
+    }
+
     socketService.onConnect(() {
-      socketService.registerUser(driverId ?? '');
+      joinChatRoom();
       socketService.onReconnect(() {
         CommonLogger.log.i("🔄 Reconnected");
-        socketService.registerUser(driverId ?? '');
+        joinChatRoom();
       });
     });
+
+    // The singleton socket is usually ALREADY connected from the ride screen,
+    // so `onConnect` won't fire again here — join explicitly.
+    if (socketService.connected) {
+      joinChatRoom();
+    }
 
     socketService.on('registered', (data) {
       CommonLogger.log.i("✅ Registered → $data");
@@ -264,7 +288,9 @@ class _ChatScreenState extends State<ChatScreen> {
     socketService.on("typing", (data) {
       if (!mounted) return;
 
-      final senderType = (data["senderType"] ?? '').toString().toLowerCase();
+      final payload = _coerceSocketPayload(data);
+      final senderType =
+          (payload["senderType"] ?? '').toString().toLowerCase();
       if (senderType == 'driver') return; // ignore my own typing
 
       setState(() {
@@ -290,18 +316,25 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     _bookingMessageHandler = (data) {
-      CommonLogger.log.i('Chat Msg $data');
+      // socket.io can deliver the event payload either as the Map itself or as a
+      // List of args ([payload, ackId, ...]). Indexing a List with a String key
+      // throws "String is not a subtype of int of 'index'", which crashed the
+      // chat the moment the driver actually started receiving messages. Normalize
+      // to a Map first so either shape is safe.
+      final payload = _coerceSocketPayload(data);
+      CommonLogger.log.i('Chat Msg $payload');
       // ignore echo from me
-      final sender = (data['senderId'] ?? '').toString();
+      final sender = (payload['senderId'] ?? '').toString();
       if (sender == (driverId ?? '')) return;
 
-      final List<dynamic> contents = data['contents'] ?? [];
+      final List<dynamic> contents =
+          (payload['contents'] is List) ? payload['contents'] as List : const [];
       if (contents.isEmpty || !mounted) return;
 
       // these are customer messages
       const bool isMe = false;
 
-      final socketImg = _normalizeUrl((data['senderImage'] ?? '').toString());
+      final socketImg = _normalizeUrl((payload['senderImage'] ?? '').toString());
       final avatarForBubble = socketImg.isNotEmpty ? socketImg : customerAvatar;
 
       final timeLabel = _relativeFromDateTime(DateTime.now());
@@ -329,6 +362,25 @@ class _ChatScreenState extends State<ChatScreen> {
     };
 
     socketService.on('booking-message', _bookingMessageHandler);
+  }
+
+  /// Normalize a socket.io event payload into a `Map<String, dynamic>`.
+  /// Depending on how the server emits (and the socket_io_client arg handling),
+  /// `data` can arrive as the Map itself OR as a List of args
+  /// (e.g. `[payload, ackId]`). Returns an empty map for anything unexpected so
+  /// callers can safely use `payload['key']` without a runtime type crash.
+  Map<String, dynamic> _coerceSocketPayload(dynamic data) {
+    dynamic d = data;
+    if (d is List) {
+      d = d.firstWhere(
+        (e) => e is Map,
+        orElse: () => const <String, dynamic>{},
+      );
+    }
+    if (d is Map) {
+      return d.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return <String, dynamic>{};
   }
 
   Future<void> _loadIdsAndAvatars() async {

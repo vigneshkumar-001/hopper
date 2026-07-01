@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:hopper/Core/Constants/log.dart';
+import 'package:hopper/Core/Services/socket_logger_util.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 class SocketService {
@@ -40,6 +41,17 @@ class SocketService {
   final Map<String, String> _lastHighFreqEmitSigByKey = <String, String>{};
   int _clientLocationSeq = 0;
 
+  // C8: small in-memory buffer of the most recent `updateLocation` payloads that
+  // were emitted while the socket was disconnected during an active ride. Flushed
+  // (latest-first, capped) AFTER rooms are rejoined on reconnect, so a few seconds
+  // of drop no longer silently loses the driver's trail / freezes the customer
+  // marker. In-memory only — never persisted. Heartbeat is NOT buffered (it is a
+  // keepalive; only the latest matters).
+  static const int _MAX_LOCATION_BUFFER = 40;
+  static const int _MAX_LOCATION_FLUSH = 10;
+  final List<Map<String, dynamic>> _locationBuffer = <Map<String, dynamic>>[];
+  bool _flushingBuffer = false;
+
   // Single-session coordination. The backend enforces ONE active socket per
   // userId: when a newer socket registers (the background-tracking isolate
   // taking over on app-pause, a reconnect that opened a fresh connection, or the
@@ -52,6 +64,19 @@ class SocketService {
   // (re)connect — app resume, go-online, screen init, URL switch — reclaims the
   // session and clears this flag.
   bool _sessionRevoked = false;
+
+  // Explicit handoff suspension. Set by the foreground controller the moment it
+  // begins handing the live session to the background-tracking isolate (driver
+  // taps "Navigate" / app pauses). Unlike `_sessionRevoked` — which is only set
+  // when the backend's `session-revoked` EVENT is delivered — this is set
+  // SYNCHRONOUSLY before the background socket can register, closing the race
+  // where the foreground processes its "io server disconnect" (from the backend
+  // revoking it for the new background session) BEFORE the buffered
+  // `session-revoked` event arrives, and therefore auto-reconnects + re-registers
+  // — which then revokes the background socket (revoke-war) and freezes customer
+  // tracking while Google Maps is open. Cleared by an intentional reclaim
+  // (connect()/initSocket()/switchUrl()) on app resume.
+  bool _autoReconnectSuspended = false;
 
   // Debug-only: log every socket emit (very chatty).
   // Always enabled in debug builds as requested.
@@ -88,6 +113,7 @@ class SocketService {
     _joinedRooms.clear();
     _lastHighFreqEmitAtByKey.clear();
     _lastHighFreqEmitSigByKey.clear();
+    _locationBuffer.clear(); // C8: ride ended — drop any buffered trail
   }
 
   void setSingleActiveBookingRoom(String bookingId) {
@@ -121,7 +147,13 @@ class SocketService {
     CommonLogger.log.w("♻️ [SOCKET] Recreate socket url=$url reason=$reason");
 
     try {
-      _socket?.offAny();
+      // Remove ALL listeners (not just onAny) BEFORE disconnecting/disposing.
+      // `offAny()` leaves the named `onDisconnect` handler bound, so the dying
+      // socket's "forced close" would re-enter `_safeManualReconnect` → recreate
+      // → a fresh socket → which dies → a self-sustaining reconnect storm (the
+      // ~2s loop seen on return from Google Maps). Clearing listeners first makes
+      // teardown silent so only an intentional reclaim brings the socket back.
+      _socket?.clearListeners();
       _socket?.disconnect();
       _socket?.dispose();
     } catch (_) {}
@@ -140,6 +172,7 @@ class SocketService {
     );
 
     _bindCoreEvents();
+    SocketLoggerUtil.setupSocketLogging(_socket!);
     _socket!.connect();
   }
 
@@ -222,6 +255,7 @@ class SocketService {
     );
 
     _bindCoreEvents();
+    SocketLoggerUtil.setupSocketLogging(_socket!);
     _socket!.connect();
   }
 
@@ -240,7 +274,11 @@ class SocketService {
 
     // dispose old socket but keep state (ids, rooms, callbacks)
     try {
-      _socket?.offAny();
+      // Clear ALL listeners first (see _recreateSocket): `offAny()` alone leaves
+      // the named onDisconnect bound, so the old socket's teardown "forced close"
+      // could trigger a reconnect on the controller and fight the new URL's
+      // socket — a revoke/reconnect war. Silent teardown avoids that.
+      _socket?.clearListeners();
       _socket?.disconnect();
       _socket?.dispose();
     } catch (_) {}
@@ -278,6 +316,10 @@ class SocketService {
       _restoreRegistration();
       _restoreJoinedRooms();
       _restoreEventListeners();
+      // C8: rooms are rejoined above — now flush any locations buffered while down.
+      _flushLocationBuffer();
+      // H8: single stored external connect callback (never stacked).
+      _externalConnectCb?.call();
     });
 
     s.onDisconnect((reason) {
@@ -334,6 +376,10 @@ class SocketService {
       _restoreRegistration();
       _restoreJoinedRooms();
       _restoreEventListeners();
+      // C8: flush buffered locations after rooms are rejoined on reconnect.
+      _flushLocationBuffer();
+      // H8: single stored external reconnect callback (never stacked).
+      _externalReconnectCb?.call();
     });
 
     s.onConnectError((err) {
@@ -378,12 +424,24 @@ class SocketService {
   // ✅ Manual connect
   // ---------------------------------------------------------
   void connect() {
-    // Intentional (re)claim of the session: clear any prior revoke so this
-    // socket is allowed to reconnect and become the active session again.
+    // Intentional (re)claim of the session: clear any prior revoke / handoff
+    // suspension so this socket is allowed to reconnect and become the active
+    // session again (app resume reclaims the foreground after Maps).
     _sessionRevoked = false;
+    _autoReconnectSuspended = false;
     if (_initialized && _socket != null && _socket!.disconnected) {
       _socket!.connect();
     }
+  }
+
+  /// Suspend ALL auto-reconnect for this (foreground) socket while the live
+  /// session is handed off to the background-tracking isolate. Call this BEFORE
+  /// starting the background service so a backend revoke of this socket can never
+  /// race the `session-revoked` event into an auto-reconnect → revoke-war that
+  /// kills the background socket and freezes customer tracking. Reversed by the
+  /// intentional reclaim in connect() on app resume.
+  void suspendAutoReconnect() {
+    _autoReconnectSuspended = true;
   }
 
   void disconnect() {
@@ -393,12 +451,13 @@ class SocketService {
   }
 
   void _safeManualReconnect() {
-    // Session was revoked by a newer socket for this userId. Reconnecting here
-    // would re-register and revoke that newer socket -> revoke-war. Stay down
-    // until an intentional reclaim (connect()/initSocket()/switchUrl()).
-    if (_sessionRevoked) {
+    // Session was revoked by a newer socket for this userId, OR we are mid-handoff
+    // to the background isolate. Reconnecting here would re-register and revoke
+    // that newer/background socket -> revoke-war (the Google-Maps freeze). Stay
+    // down until an intentional reclaim (connect()/initSocket()/switchUrl()).
+    if (_sessionRevoked || _autoReconnectSuspended) {
       CommonLogger.log.w(
-        "🚫 [SOCKET] Reconnect suppressed (session revoked) url=$_socketUrl",
+        "🚫 [SOCKET] Reconnect suppressed (revoked=$_sessionRevoked handoff=$_autoReconnectSuspended) url=$_socketUrl",
       );
       return;
     }
@@ -438,13 +497,16 @@ class SocketService {
   // ---------------------------------------------------------
   // ✅ BACKWARD COMPATIBILITY (so your old code won't error)
   // ---------------------------------------------------------
-  void onConnect(Function() callback) {
-    _socket?.onConnect((_) => callback());
-  }
+  // H8: external connect/reconnect callbacks are STORED (single slot each) and
+  // fanned out from the internal handlers in _bindCoreEvents — never re-registered
+  // on the raw socket. This stops connect/reconnect handlers from STACKING on
+  // controller recreate / reconnect / app resume (the raw `_socket.onConnect`
+  // added a new listener on every call). `on()` already dedupes per event.
+  Function()? _externalConnectCb;
+  Function()? _externalReconnectCb;
 
-  void onReconnect(Function() callback) {
-    _socket?.onReconnect((_) => callback());
-  }
+  void onConnect(Function() callback) => _externalConnectCb = callback;
+  void onReconnect(Function() callback) => _externalReconnectCb = callback;
 
   // ---------------------------------------------------------
   // ✅ Register customer
@@ -629,6 +691,11 @@ class SocketService {
       // Nudge reconnect so when internet comes back we recover without requiring
       // a manual action/screen re-init.
       _safeManualReconnect();
+      // C8: buffer location (NOT heartbeat) so a short disconnect during an active
+      // ride doesn't lose the trail — it is flushed after reconnect + room restore.
+      if (event == 'updateLocation') {
+        _bufferLocation(Map<String, dynamic>.from(data));
+      }
       _maybeLogDroppedEmit(
         event: event,
         payload: Map<String, dynamic>.from(data),
@@ -707,6 +774,43 @@ class SocketService {
       if (kDebugMode) {
         CommonLogger.log.i('[SOCKET_EMIT_ALL] url=$_socketUrl event=$event data=$data');
       }
+    }
+  }
+
+  // C8: append a location fix to the disconnect buffer. Only valid fixes are kept,
+  // newest wins when the cap is exceeded (drop the oldest tail).
+  void _bufferLocation(Map<String, dynamic> payload) {
+    final lat = payload['latitude'];
+    final lng = payload['longitude'];
+    if (lat is! num || lng is! num || !lat.isFinite || !lng.isFinite) return;
+    _locationBuffer.add(payload);
+    if (_locationBuffer.length > _MAX_LOCATION_BUFFER) {
+      _locationBuffer.removeRange(0, _locationBuffer.length - _MAX_LOCATION_BUFFER);
+    }
+  }
+
+  // C8: flush buffered locations after reconnect. Call ONLY after rooms are
+  // rejoined. Sends at most the latest `_MAX_LOCATION_FLUSH` fixes in chronological
+  // order (so the customer's seq-gate accepts them and the marker resumes smoothly)
+  // and never spams a long stale trail. Re-entrancy guarded against double flush.
+  void _flushLocationBuffer() {
+    if (_flushingBuffer || _locationBuffer.isEmpty || !connected) return;
+    _flushingBuffer = true;
+    try {
+      final pending = List<Map<String, dynamic>>.from(_locationBuffer);
+      _locationBuffer.clear();
+      final start = pending.length > _MAX_LOCATION_FLUSH
+          ? pending.length - _MAX_LOCATION_FLUSH
+          : 0;
+      final toSend = pending.sublist(start); // oldest -> newest of the latest N
+      for (final payload in toSend) {
+        emit('updateLocation', payload);
+      }
+      CommonLogger.log.i(
+        '🔁 [SOCKET] Flushed ${toSend.length} buffered location(s) after reconnect url=$_socketUrl',
+      );
+    } finally {
+      _flushingBuffer = false;
     }
   }
 
@@ -857,6 +961,7 @@ class SocketService {
     _bookingId = null;
     _joinedRooms.clear();
     _callbacks.clear();
+    _locationBuffer.clear(); // C8
   }
 
   // ---------------------------------------------------------

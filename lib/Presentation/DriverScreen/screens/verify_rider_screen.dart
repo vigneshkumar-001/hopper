@@ -10,6 +10,7 @@ import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/bottomNavigation.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/ride_stats_screen.dart';
@@ -51,7 +52,13 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
   bool otpVerified = false;
   bool _isNavigating = false;
 
-  Color enableColor = AppColors.containerColor1;
+  // "Resend OTP to rider": client cooldown + busy flag mirror the server's
+  // 30s / 5-attempt policy so the button can't be spammed.
+  bool _resending = false;
+  int _resendCooldown = 0;
+  Timer? _resendTimer;
+
+  Color enableColor = AppColors.commonBlack.withOpacity(0.35);
   late final StreamController<ErrorAnimationType> errorController;
 
   @override
@@ -62,6 +69,7 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
     errorController.close();
     if (!_isNavigating) {
       otp.dispose();
@@ -70,20 +78,56 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
     super.dispose();
   }
 
+  /// Driver taps "Resend OTP to rider" when the customer didn't get the PIN.
+  /// Server re-delivers over socket + push + SMS; cooldown/limits are enforced
+  /// server-side, with an immediate client cooldown to prevent spam.
+  Future<void> _onResendTap() async {
+    if (_resending || _resendCooldown > 0) return;
+    setState(() => _resending = true);
+    _startResendCooldown(30);
+    final result = await driverStatusController.resendRideOtp(
+      bookingId: widget.bookingId,
+    );
+    if (!mounted) return;
+    setState(() => _resending = false);
+    if (result.success) {
+      CustomSnackBar.showSuccess(result.message);
+    } else {
+      CustomSnackBar.showError(result.message);
+    }
+  }
+
+  void _startResendCooldown(int seconds) {
+    _resendTimer?.cancel();
+    setState(() => _resendCooldown = seconds);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      if (_resendCooldown <= 1) {
+        setState(() => _resendCooldown = 0);
+        t.cancel();
+      } else {
+        setState(() => _resendCooldown -= 1);
+      }
+    });
+  }
+
   Future<void> _onVerifyTap() async {
     final enteredOtp = otp.text.trim();
 
     if (enteredOtp.isEmpty) {
       setState(() {
         otpError = "Please enter the OTP";
-        enableColor = AppColors.containerColor1;
+        enableColor = AppColors.commonBlack.withOpacity(0.35);
       });
       errorController.add(ErrorAnimationType.shake);
       return;
     } else if (enteredOtp.length != 4) {
       setState(() {
         otpError = "OTP must be 4 digits";
-        enableColor = AppColors.containerColor1;
+        enableColor = AppColors.commonBlack.withOpacity(0.35);
       });
       errorController.add(ErrorAnimationType.shake);
       return;
@@ -106,7 +150,7 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
       setState(() {
         otpError =
             result.message.trim().isEmpty ? 'Invalid OTP. Please try again.' : result.message;
-        enableColor = AppColors.containerColor1;
+        enableColor = AppColors.commonBlack.withOpacity(0.35);
       });
       errorController.add(ErrorAnimationType.shake);
       return;
@@ -144,9 +188,9 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
         resizeToAvoidBottomInset: true,
         body: SafeArea(
           child: Obx(() {
-            if (driverStatusController.isLoading.value) {
-              return Center(child: AppLoader.appLoader());
-            }
+            // Show the spinner ON the Verify button instead of blanking the whole
+            // screen, so the driver keeps seeing the OTP boxes while verifying.
+            final verifying = driverStatusController.isLoading.value;
 
             return Padding(
               padding: const EdgeInsets.symmetric(
@@ -259,11 +303,14 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                       // Clear error state once user edits again.
                                       if (otpError != null) otpError = null;
 
-                                      // Only enable the button color when OTP is fully entered.
+                                      // Full black when OTP complete; muted-but-
+                                      // VISIBLE black (not near-white) otherwise,
+                                      // so the bottom button is always readable.
                                       enableColor =
                                           value.trim().length == 4
-                                              ? Colors.black
-                                              : AppColors.containerColor1;
+                                              ? AppColors.commonBlack
+                                              : AppColors.commonBlack
+                                                  .withOpacity(0.35);
                                     });
                                   },
                                   beforeTextPaste: (text) => true,
@@ -294,11 +341,39 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                     child: Buttons.button(
                       borderRadius: 7,
                       buttonColor: enableColor,
-                      onTap: () async {
-                        if (driverStatusController.isLoading.value) return;
-                        await _onVerifyTap();
-                      },
+                      isLoading: verifying,
+                      onTap: verifying
+                          ? null
+                          : () async {
+                              await _onVerifyTap();
+                            },
                       text: Text('Verify ${widget.custName}'),
+                    ),
+                  ),
+
+                  // "Didn't get the OTP?" — resend to the rider (socket+push+SMS).
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 4),
+                    child: Center(
+                      child: TextButton(
+                        onPressed: (_resending || _resendCooldown > 0)
+                            ? null
+                            : _onResendTap,
+                        child: Text(
+                          _resendCooldown > 0
+                              ? 'Resend OTP to rider in ${_resendCooldown}s'
+                              : (_resending
+                                  ? 'Resending…'
+                                  : "Rider didn't get it? Resend OTP"),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: (_resending || _resendCooldown > 0)
+                                ? AppColors.containerColor1
+                                : AppColors.commonBlack,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -361,7 +436,7 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
   String email = '';
   bool otpVerified = false;
 
-  Color enableColor = AppColors.containerColor1;
+  Color enableColor = AppColors.commonBlack.withOpacity(0.35);
   late StreamController<ErrorAnimationType> errorController;
 
   @override
@@ -501,7 +576,7 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
                                   //       enableColor = Colors.black;
                                   //       isButtonDisabled = true;
                                   //     } else {
-                                  //       enableColor = AppColors.containerColor1;
+                                  //       enableColor = AppColors.commonBlack.withOpacity(0.35);
                                   //       isButtonDisabled = false;
                                   //     }
                                   //   });
@@ -513,11 +588,11 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
 
                                       if (value.isEmpty) {
                                         otpError = "Please enter the OTP";
-                                        enableColor = AppColors.containerColor1;
+                                        enableColor = AppColors.commonBlack.withOpacity(0.35);
                                         isButtonDisabled = true;
                                       } else if (value.length != 4) {
                                         otpError = "OTP must be 4 digits";
-                                        enableColor = AppColors.containerColor1;
+                                        enableColor = AppColors.commonBlack.withOpacity(0.35);
                                         isButtonDisabled = true;
                                       } else {
                                         otpError = null;

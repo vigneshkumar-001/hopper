@@ -3,6 +3,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:hopper/Core/Services/log_manager.dart';
 
 enum SharedRiderStage {
   waitingPickup, // not in car yet
@@ -22,6 +23,14 @@ class SharedRiderItem {
 
   num amount;
 
+  /// How many seats THIS booking reserved (a single customer can book 2-4).
+  /// Drives the driver's occupied/free seat count (sum of seats, not riders).
+  int seatCount;
+
+  /// The exact seat numbers this booking occupies (e.g. [3, 4]) so the driver's
+  /// car layout shows the SAME seats the customer picked. Empty until known.
+  List<int> seatNumbers;
+
   final LatLng pickupLatLng;
   final LatLng dropLatLng;
 
@@ -30,6 +39,18 @@ class SharedRiderItem {
   int secondsLeft;
   final ActionSliderController sliderController;
   SharedRiderStage stage;
+
+  /// True when THIS passenger cancelled their own seat. We keep the rider in the
+  /// list (so the driver sees a disabled "Cancelled by customer" card) but treat
+  /// them as inactive for routing/targeting.
+  bool cancelledByCustomer;
+
+  /// Reason the customer gave when cancelling — shown on the disabled card.
+  String cancelReason;
+
+  /// Customer-authored "Directions to reach" note. Empty until the customer adds
+  /// one; updated live via the `pickup_instruction_updated` socket event.
+  String pickupInstruction;
 
   SharedRiderItem({
     required this.bookingId,
@@ -41,11 +62,21 @@ class SharedRiderItem {
     required this.amount,
     required this.pickupLatLng,
     required this.dropLatLng,
+    this.seatCount = 1,
+    this.seatNumbers = const [],
     this.arrived = false,
     this.secondsLeft = 0,
     this.stage = SharedRiderStage.waitingPickup,
+    this.cancelledByCustomer = false,
+    this.cancelReason = '',
+    this.pickupInstruction = '',
     ActionSliderController? sliderController,
   }) : sliderController = sliderController ?? ActionSliderController();
+
+  String get firstName {
+    final parts = name.trim().split(' ');
+    return parts.isNotEmpty && parts[0].isNotEmpty ? parts[0] : 'Guest';
+  }
 }
 
 class SharedRideController extends GetxController {
@@ -59,8 +90,12 @@ class SharedRideController extends GetxController {
   final Rxn<LatLng> driverLocation = Rxn<LatLng>();
 
   // -------------------- radius gates (UI only) --------------------
-  static const double _ARRIVED_PICKUP_RADIUS_M = 500.0;
-  static const double _ARRIVED_PICKUP_EXIT_RADIUS_M = 650.0; // hysteresis
+  // The "Arrived" button arms only when the driver is genuinely AT the pickup —
+  // within 150 m. (Was 500 m, which let "Arrived" show from far away.) The exit
+  // radius is wider (hysteresis) so GPS jitter near the boundary doesn't flicker
+  // the button: once shown at ≤150 m it stays until the driver moves past 230 m.
+  static const double _ARRIVED_PICKUP_RADIUS_M = 150.0;
+  static const double _ARRIVED_PICKUP_EXIT_RADIUS_M = 230.0; // hysteresis
   static const double _COMPLETE_DROP_RADIUS_M = 200.0;
   static const double _COMPLETE_DROP_EXIT_RADIUS_M = 320.0; // hysteresis
 
@@ -80,6 +115,46 @@ class SharedRideController extends GetxController {
   }
 
   String _safeString(dynamic v) => (v ?? '').toString();
+
+  /// Resolve the customer's display name from the many shapes the backend may
+  /// send it in (shared-ride payloads are not always consistent). Returns an
+  /// empty string when nothing usable is found so callers can decide on a
+  /// fallback without clobbering an already-known name.
+  String _resolveCustomerName(Map data) {
+    String pick(dynamic v) => _safeString(v).trim();
+
+    final direct = [
+      data['customerName'],
+      data['name'],
+      data['userName'],
+      data['fullName'],
+      data['passengerName'],
+    ];
+    for (final c in direct) {
+      final s = pick(c);
+      if (s.isNotEmpty) return s;
+    }
+
+    // first + last name pair
+    final first = pick(data['firstName']);
+    final last = pick(data['lastName']);
+    final joined = [first, last].where((s) => s.isNotEmpty).join(' ').trim();
+    if (joined.isNotEmpty) return joined;
+
+    // nested customer / user objects
+    for (final key in ['customer', 'user', 'passenger']) {
+      final nested = data[key];
+      if (nested is Map) {
+        final n = pick(nested['name']);
+        if (n.isNotEmpty) return n;
+        final f = pick(nested['firstName']);
+        final l = pick(nested['lastName']);
+        final j = [f, l].where((s) => s.isNotEmpty).join(' ').trim();
+        if (j.isNotEmpty) return j;
+      }
+    }
+    return '';
+  }
 
   Future<String> _addressFromLatLng(double lat, double lng) async {
     try {
@@ -125,10 +200,29 @@ class SharedRideController extends GetxController {
       return;
     }
 
-    final customerName = _safeString(data['customerName']);
+    final resolvedName = _resolveCustomerName(data);
     final customerPhone = _safeString(data['customerPhone']);
     final customerProfilePic = _safeString(data['customerProfilePic']);
     final amount = (data['amount'] is num) ? (data['amount'] as num) : 0;
+
+    // How many seats this booking reserved, and the exact seat numbers (e.g.
+    // [3,4]) so the driver shows the SAME seats the customer picked.
+    final dynamic rawSeatCount =
+        data['seatCount'] ?? data['sharedCount'] ?? data['numberOfSeats'];
+    int parsedSeatCount = int.tryParse((rawSeatCount ?? '').toString()) ?? 0;
+
+    final List<int> parsedSeatNumbers = <int>[];
+    final seatsRaw = data['seats'];
+    if (seatsRaw is List) {
+      for (final e in seatsRaw) {
+        final n = int.tryParse(e.toString());
+        if (n != null && n > 0) parsedSeatNumbers.add(n);
+      }
+    }
+    if (parsedSeatCount <= 0 && parsedSeatNumbers.isNotEmpty) {
+      parsedSeatCount = parsedSeatNumbers.length;
+    }
+    if (parsedSeatCount <= 0) parsedSeatCount = 1;
 
     // ✅ Support both formats (if backend sends later)
     String pickupAddrs = _safeString(
@@ -137,6 +231,8 @@ class SharedRideController extends GetxController {
     String dropoffAddrs = _safeString(
       data['dropLocationAddress'] ?? data['dropoffAddress'],
     );
+    // Customer's "Directions to reach" note (shown on the driver pickup card).
+    final String parsedInstr = _safeString(data['pickupInstruction']);
 
     // ✅ fallback: reverse geocode if empty
     if (pickupAddrs.trim().isEmpty) {
@@ -151,28 +247,64 @@ class SharedRideController extends GetxController {
     if (idx >= 0) {
       final r = riders[idx];
       r
-        ..name = customerName
+        // Never overwrite a known name with an empty payload.
+        ..name = resolvedName.isNotEmpty ? resolvedName : r.name
         ..phone = customerPhone
         ..profilePic = customerProfilePic
         ..pickupAddress = pickupAddrs
         ..dropoffAddress = dropoffAddrs
-        ..amount = amount;
+        // Don't overwrite a known instruction with an empty payload.
+        ..pickupInstruction =
+            parsedInstr.isNotEmpty ? parsedInstr : r.pickupInstruction
+        ..amount = amount
+        // Keep a known multi-seat count; never downgrade to 1 on a thin payload.
+        ..seatCount = parsedSeatCount > 1 ? parsedSeatCount : r.seatCount
+        // Keep known seat numbers if this payload doesn't carry them.
+        ..seatNumbers =
+            parsedSeatNumbers.isNotEmpty ? parsedSeatNumbers : r.seatNumbers;
 
       riders.refresh();
+
+      // 📊 Log rider update
+      logManager.logRider(
+        action: 'RIDER_UPDATED',
+        bookingId: bookingIdStr,
+        riderData: {
+          'name': r.name,
+          'phone': customerPhone,
+          'pickup': pickupAddrs,
+          'dropoff': dropoffAddrs,
+        },
+      );
     } else {
       final newRider = SharedRiderItem(
         bookingId: bookingIdStr,
-        name: customerName,
+        name: resolvedName.isNotEmpty ? resolvedName : 'Customer',
         phone: customerPhone,
         profilePic: customerProfilePic,
         pickupAddress: pickupAddrs,
         dropoffAddress: dropoffAddrs,
+        pickupInstruction: parsedInstr,
         amount: amount,
+        seatCount: parsedSeatCount,
+        seatNumbers: parsedSeatNumbers,
         pickupLatLng: LatLng(fromLat, fromLng),
         dropLatLng: LatLng(toLat, toLng),
       );
 
       riders.add(newRider);
+
+      // 📊 Log new rider added
+      logManager.logRider(
+        action: 'RIDER_ADDED',
+        bookingId: bookingIdStr,
+        riderData: {
+          'name': newRider.name,
+          'totalRiders': riders.length,
+          'pickup': pickupAddrs,
+          'dropoff': dropoffAddrs,
+        },
+      );
 
       // ✅ if nothing active yet, make first rider active pickup
       activeTarget.value ??= newRider;
@@ -185,9 +317,17 @@ class SharedRideController extends GetxController {
   void markArrived(String bookingId) {
     final idx = riders.indexWhere((r) => r.bookingId == bookingId);
     if (idx == -1) return;
+
     riders[idx].arrived = true;
     riders.refresh();
     _recomputeRadiusGates(driverLocation.value);
+
+    // 📊 Log arrival
+    logManager.logRider(
+      action: 'RIDER_ARRIVED',
+      bookingId: bookingId,
+      riderData: {'name': riders[idx].name},
+    );
   }
 
   void markOnboard(String bookingId) {
@@ -200,11 +340,23 @@ class SharedRideController extends GetxController {
     activeTarget.value = riders[idx];
     riders.refresh();
     _recomputeRadiusGates(driverLocation.value);
+
+    // 📊 Log onboard
+    logManager.logRider(
+      action: 'RIDER_ONBOARD',
+      bookingId: bookingId,
+      riderData: {
+        'name': riders[idx].name,
+        'dropoff': riders[idx].dropoffAddress,
+      },
+    );
   }
 
   void markDropped(String bookingId) {
     final idx = riders.indexWhere((r) => r.bookingId == bookingId);
     if (idx == -1) return;
+
+    final riderName = riders[idx].name;
 
     riders[idx].stage = SharedRiderStage.dropped;
     riders[idx].secondsLeft = 0;
@@ -216,6 +368,81 @@ class SharedRideController extends GetxController {
     riders.refresh();
     recomputeNextTarget();
     _recomputeRadiusGates(driverLocation.value);
+
+    // 📊 Log dropped
+    logManager.logRider(
+      action: 'RIDER_DROPPED',
+      bookingId: bookingId,
+      riderData: {
+        'name': riderName,
+        'remainingRiders': riders.where((r) => r.stage != SharedRiderStage.dropped).length,
+      },
+    );
+  }
+
+  /// Removes a rider from the pool (e.g., due to cancellation).
+  /// Returns the name of the removed rider, or null if not found.
+  String? removeRider(String bookingId) {
+    final idx = riders.indexWhere((r) => r.bookingId == bookingId);
+    if (idx == -1) return null;
+
+    final removedRider = riders.removeAt(idx);
+    riders.refresh();
+
+    logManager.logRider(
+      action: 'RIDER_REMOVED',
+      bookingId: bookingId,
+      riderData: {
+        'name': removedRider.name,
+        'reason': 'Cancelled',
+        'remainingRiders': riders.length,
+      },
+    );
+
+    recomputeNextTarget();
+    return removedRider.name;
+  }
+
+  /// Marks a rider as cancelled-by-customer WITHOUT removing them, so the driver
+  /// keeps seeing a disabled "Cancelled by customer" card for the rest of the
+  /// trip. The backend has already freed the seat; here we only flip the rider to
+  /// an inactive/disabled state and move the active target on if needed.
+  /// Returns the rider name, or null if not found.
+  String? markCancelledByCustomer(String bookingId, {String? reason}) {
+    final idx = riders.indexWhere((r) => r.bookingId == bookingId);
+    if (idx == -1) return null;
+
+    final r = riders[idx];
+    if (r.cancelledByCustomer) {
+      // Already handled — but capture a reason if we didn't have one yet.
+      if ((r.cancelReason).trim().isEmpty && (reason ?? '').trim().isNotEmpty) {
+        r.cancelReason = reason!.trim();
+        riders.refresh();
+      }
+      return r.name;
+    }
+
+    r.cancelledByCustomer = true;
+    r.cancelReason = (reason ?? '').trim();
+
+    // If they were the active stop, drop the selection so we re-pick a valid one.
+    if (activeTarget.value?.bookingId == bookingId) {
+      activeTarget.value = null;
+    }
+
+    riders.refresh();
+    recomputeNextTarget();
+
+    logManager.logRider(
+      action: 'RIDER_CANCELLED_BY_CUSTOMER',
+      bookingId: bookingId,
+      riderData: {
+        'name': r.name,
+        'activeRiders': getAllActiveRiders().length,
+      },
+    );
+
+    return r.name;
   }
 
   void setActiveTarget(String bookingId, SharedRiderStage stage) {
@@ -231,6 +458,18 @@ class SharedRideController extends GetxController {
   void updateDriverLocation(LatLng loc) {
     driverLocation.value = loc;
     _recomputeRadiusGates(loc);
+  }
+
+  /// Wipes all pooled rider state. MUST be called when a shared-ride session
+  /// fully ends (ride cancelled or all legs completed and the driver returns to
+  /// home) so a brand-new shared ride never inherits stale/old riders.
+  void reset() {
+    riders.clear();
+    activeTarget.value = null;
+    driverLocation.value = null;
+    canArriveAtActivePickup.value = false;
+    canCompleteActiveDrop.value = false;
+    riders.refresh();
   }
 
   void _recomputeRadiusGates(LatLng? loc) {
@@ -289,11 +528,77 @@ class SharedRideController extends GetxController {
 
   // -------------------- HELPERS --------------------
 
+  /// Defensive guard for the destructive "complete drop" action.
+  ///
+  /// Re-validates — independent of whatever `activeTarget` currently is — that
+  /// THIS specific rider is still a legitimate onboard drop within the
+  /// completion radius. The swipe UI captures a rider at build time, but the
+  /// active target can change underneath it (socket re-pick / cancellation)
+  /// before the swipe is released; without this check the driver could mark the
+  /// WRONG passenger dropped (one still in the car). Call this immediately
+  /// before invoking the completion API.
+  bool canSafelyCompleteDropFor(String bookingId) {
+    final loc = driverLocation.value;
+    if (loc == null) return false;
+    final idx = riders.indexWhere((r) => r.bookingId == bookingId);
+    if (idx == -1) return false;
+    final r = riders[idx];
+    if (r.cancelledByCustomer) return false;
+    if (r.stage != SharedRiderStage.onboardDrop) return false;
+    final d = Geolocator.distanceBetween(
+      loc.latitude,
+      loc.longitude,
+      r.dropLatLng.latitude,
+      r.dropLatLng.longitude,
+    );
+    return d <= _COMPLETE_DROP_RADIUS_M;
+  }
+
+  /// Onboard, non-cancelled riders whose drop is within [radiusM] of [anchor].
+  List<SharedRiderItem> onboardRidersNearDrop(LatLng anchor,
+      {double radiusM = 80}) {
+    return riders.where((r) {
+      if (r.cancelledByCustomer) return false;
+      if (r.stage != SharedRiderStage.onboardDrop) return false;
+      final d = Geolocator.distanceBetween(
+        anchor.latitude,
+        anchor.longitude,
+        r.dropLatLng.latitude,
+        r.dropLatLng.longitude,
+      );
+      return d <= radiusM;
+    }).toList();
+  }
+
+  /// Onboard riders SHARING the active drop point AND reachable right now (the
+  /// driver is within the completion radius). Returns the cluster ONLY when 2+
+  /// riders qualify, so the grouped "complete drops here" UI shows strictly when
+  /// it helps. This NEVER completes anyone — it only lists who is eligible for a
+  /// one-tap that still completes each booking SEPARATELY & atomically.
+  List<SharedRiderItem> completableDropClusterAtActive(
+      {double clusterRadiusM = 80}) {
+    final active = activeTarget.value;
+    final loc = driverLocation.value;
+    if (active == null || loc == null) return const [];
+    if (active.stage != SharedRiderStage.onboardDrop) return const [];
+    final dDriver = Geolocator.distanceBetween(
+      loc.latitude,
+      loc.longitude,
+      active.dropLatLng.latitude,
+      active.dropLatLng.longitude,
+    );
+    if (dDriver > _COMPLETE_DROP_RADIUS_M) return const [];
+    final cluster =
+        onboardRidersNearDrop(active.dropLatLng, radiusM: clusterRadiusM);
+    return cluster.length >= 2 ? cluster : const [];
+  }
+
   bool hasPendingOrOnboard() {
     return riders.any(
       (r) =>
-          r.stage == SharedRiderStage.waitingPickup ||
-          r.stage == SharedRiderStage.onboardDrop,
+          !r.cancelledByCustomer &&
+          (r.stage == SharedRiderStage.waitingPickup ||
+              r.stage == SharedRiderStage.onboardDrop),
     );
   }
 
@@ -305,6 +610,7 @@ class SharedRideController extends GetxController {
     double best = double.infinity;
 
     for (final r in riders) {
+      if (r.cancelledByCustomer) continue;
       if (r.stage != SharedRiderStage.waitingPickup) continue;
 
       final d = Geolocator.distanceBetween(
@@ -322,10 +628,19 @@ class SharedRideController extends GetxController {
     return nearest;
   }
 
-  /// ✅ Priority rule:
-  /// 1) If any onboardDrop exists -> must drop first
-  /// 2) Else nearest waitingPickup
-  /// 3) Else null (no pending)
+  /// ✅ NEAREST-FIRST legal stop — mirrors the backend `buildStopSequence` so the
+  /// driver's active target == backend stops[0] == the customer's shared_my_state
+  /// "next stop" (no driver/customer contradiction).
+  ///
+  /// Legal stops: a `waitingPickup` rider's PICKUP, or an `onboardDrop` rider's
+  /// DROP (a drop is legal ONLY after pickup → no drop-before-pickup). Cancelled
+  /// and dropped riders contribute nothing. The NEAREST legal stop from the
+  /// driver's current location wins; on a <=1m tie a DROP is preferred (offload
+  /// first), matching the backend's tie-break. Always exactly one activeTarget.
+  ///
+  /// NOTE: previously this dropped any onboard rider FIRST, which could send the
+  /// driver to a drop while a much closer pickup was pending — diverging from the
+  /// backend queue and making the customer's "you are next" wrong.
   SharedRiderItem? recomputeNextTarget() {
     if (!hasPendingOrOnboard()) {
       activeTarget.value = null;
@@ -333,28 +648,97 @@ class SharedRideController extends GetxController {
       return null;
     }
 
-    final onboard = riders.firstWhereOrNull(
-      (r) => r.stage == SharedRiderStage.onboardDrop,
-    );
-    if (onboard != null) {
-      activeTarget.value = onboard;
-      _recomputeRadiusGates(driverLocation.value);
-      return onboard;
+    final loc = driverLocation.value;
+    SharedRiderItem? best;
+    double bestDist = double.infinity;
+    bool bestIsDrop = false;
+
+    for (final r in riders) {
+      if (r.cancelledByCustomer) continue;
+      final bool isDrop;
+      final LatLng target;
+      if (r.stage == SharedRiderStage.waitingPickup) {
+        isDrop = false;
+        target = r.pickupLatLng;
+      } else if (r.stage == SharedRiderStage.onboardDrop) {
+        isDrop = true;
+        target = r.dropLatLng;
+      } else {
+        continue; // dropped — never a legal stop
+      }
+
+      if (loc == null) {
+        // No GPS yet: stable list order, drop preferred on a tie.
+        if (best == null || (isDrop && !bestIsDrop)) {
+          best = r;
+          bestIsDrop = isDrop;
+        }
+        continue;
+      }
+
+      final d = Geolocator.distanceBetween(
+        loc.latitude,
+        loc.longitude,
+        target.latitude,
+        target.longitude,
+      );
+      final bool nearer = d < bestDist - 1.0; // ~1m grid, same as backend
+      final bool tieDropWins =
+          (d - bestDist).abs() <= 1.0 && isDrop && !bestIsDrop;
+      if (best == null || nearer || tieDropWins) {
+        best = r;
+        bestDist = d;
+        bestIsDrop = isDrop;
+      }
     }
 
-    final nearestPickup = getNearestPickup();
-    if (nearestPickup != null) {
-      activeTarget.value = nearestPickup;
-      _recomputeRadiusGates(driverLocation.value);
-      return nearestPickup;
-    }
-
-    final any = riders.firstWhereOrNull(
-      (r) => r.stage != SharedRiderStage.dropped,
-    );
-    activeTarget.value = any;
+    activeTarget.value = best;
     _recomputeRadiusGates(driverLocation.value);
-    return any;
+    return best;
+  }
+
+  /// Get all active riders (not just for one booking)
+  /// ✅ Use this for shared ride pools with multiple customers
+  List<SharedRiderItem> getAllActiveRiders() {
+    return riders
+        .where((r) =>
+            !r.cancelledByCustomer && r.stage != SharedRiderStage.dropped)
+        .toList();
+  }
+
+  /// Riders that cancelled their own seat. Kept in the list so the driver can see
+  /// a disabled "Cancelled by customer" card (with reason) and swipe to dismiss.
+  List<SharedRiderItem> getCancelledRiders() {
+    return riders.where((r) => r.cancelledByCustomer).toList();
+  }
+
+  /// Get active riders for a specific booking (legacy - for single rides)
+  List<SharedRiderItem> getActiveRidersForBooking(String bookingId) {
+    return riders
+        .where((r) =>
+            r.bookingId == bookingId &&
+            r.stage != SharedRiderStage.dropped)
+        .toList();
+  }
+
+  /// Get riders by stage (waiting, onboard, etc)
+  List<SharedRiderItem> getRidersByStage(SharedRiderStage stage) {
+    return riders.where((r) => r.stage == stage).toList();
+  }
+
+  /// Get completed/dropped riders (for history)
+  List<SharedRiderItem> getDroppedRiders() {
+    return riders.where((r) => r.stage == SharedRiderStage.dropped).toList();
+  }
+
+  /// Apply a live "Directions to reach" note (backend `pickup_instruction_updated`)
+  /// to the matching rider and refresh so the pickup card rebuilds. No-op if the
+  /// booking isn't in this driver's pool.
+  void updatePickupInstruction(String bookingId, String instruction) {
+    final idx = riders.indexWhere((r) => r.bookingId == bookingId);
+    if (idx < 0) return;
+    riders[idx].pickupInstruction = instruction;
+    riders.refresh();
   }
 }
 

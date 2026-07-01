@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Utility/images.dart';
@@ -23,8 +24,7 @@ class _LandingScreensState extends State<LandingScreens> {
   // }
 
   Future<void> getUserDetail() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = (prefs.getString('token') ?? '').trim();
+    final token = (await SharedPrefHelper.getToken() ?? '').trim();
     if (token.isEmpty) return;
     // Don't trigger Rx updates during widget build.
     await controller.getUserDetails();

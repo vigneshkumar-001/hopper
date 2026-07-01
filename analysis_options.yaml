@@ -9,6 +9,14 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  exclude:
+    # Abandoned, never-wired-up shared-ride scaffolding: references an `ApiClient` class
+    # that was never created. Not in the run/build graph. Excluded so it doesn't spam
+    # `flutter analyze` with ~17 errors. Safe to DELETE this file (and its unused
+    # shared_ride_repository.dart) if the feature isn't being built.
+    - lib/api/dataSource/shared_ride_datasource.dart
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

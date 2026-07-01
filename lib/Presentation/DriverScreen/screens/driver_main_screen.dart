@@ -14,6 +14,8 @@ import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
+import 'package:hopper/api/repository/api_config_controller.dart';
+import 'package:hopper/utils/websocket/secondary_dispatch_socket.dart';
 import 'package:hopper/utils/ride_map/ride_map_view.dart';
 import '../../../utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
@@ -45,6 +47,14 @@ class _DriverMainScreenState extends State<DriverMainScreen>
     // Ã¢Å“â€¦ create once (or reuse if already exists)
     if (Get.isRegistered<DriverMainController>()) {
       c = Get.find<DriverMainController>();
+      // DUAL-CONNECT: returning to home (e.g. after a ride completed and the cash
+      // screen did Get.offAll(DriverMainScreen)) reuses the permanent controller,
+      // so _prepare does NOT re-run. Reconcile the dual-connect state here:
+      // release any stale active-ride backend binding and restore the secondary
+      // single-ride dispatch socket if the driver is idle + shared-enabled.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        c.reconcileDualConnectAfterNavigation();
+      });
     } else {
       c = Get.put(DriverMainController(), permanent: true);
     }
@@ -204,6 +214,11 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                           child: Obx(() {
                             final visible = c.showActiveBookingCard.value;
                             final data = c.activeBookingData.value;
+                            // Driver must be online to interact with the active
+                            // booking card. While offline the Resume action is
+                            // disabled so the driver cannot navigate into a ride
+                            // screen from the home screen.
+                            final isOnlineNow = c.statusController.isOnline.value;
                             if (!visible || data == null) {
                               return const SizedBox.shrink();
                             }
@@ -354,16 +369,37 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                           ),
                                         ),
                                       ),
+                                    if (!isOnlineNow)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 8),
+                                        child: Text(
+                                          'You are offline. Go online to resume your ride.',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.red.withOpacity(0.75),
+                                          ),
+                                        ),
+                                      ),
                                     const SizedBox(height: 12),
                                     Row(
                                       children: [
                                         Expanded(
                                           child: ElevatedButton(
-                                            onPressed: c.resumeActiveBooking,
+                                            onPressed: isOnlineNow
+                                                ? () => c.resumeActiveBooking(
+                                                      userInitiated: true,
+                                                    )
+                                                : null,
                                             style: ElevatedButton.styleFrom(
                                               backgroundColor:
                                                   AppColors.commonBlack,
                                               foregroundColor: Colors.white,
+                                              disabledBackgroundColor:
+                                                  AppColors.commonBlack
+                                                      .withOpacity(0.35),
+                                              disabledForegroundColor:
+                                                  Colors.white70,
                                               padding:
                                                   const EdgeInsets.symmetric(
                                                     vertical: 12,
@@ -2572,6 +2608,19 @@ class _CarBookingCardUI extends StatelessWidget {
                                       (pickupLoc['longitude'] as num)
                                           .toDouble(),
                                     );
+                                    // DUAL-CONNECT: bind this ride to the backend
+                                    // that owns it BEFORE the accept call so the
+                                    // API + primary socket target the right
+                                    // backend (bk for single, bck for shared).
+                                    // Single requests carry no `sharedBooking`,
+                                    // so isShared=false binds to single. Then drop
+                                    // the secondary dispatch socket for the ride.
+                                    try {
+                                      await Get.find<ApiConfigController>()
+                                          .bindActiveRideBackend(isShared);
+                                    } catch (_) {}
+                                    SecondaryDispatchSocket().stop();
+
                                     if (isShared) {
                                       CommonLogger.log.w(isShared);
                                       await statusController

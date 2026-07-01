@@ -28,6 +28,47 @@ class RideHistoryController extends GetxController {
   var hasMore = true.obs;
   var isMoreLoading = false.obs;
 
+  // Ride Activity filters (backend-driven). Defaults show everything.
+  final RxString filterStatus = 'all'.obs; // all | completed | cancelled
+  final RxString filterRideType = 'all'.obs; // all | single | shared | parcel
+  final Rxn<DateTime> filterFrom = Rxn<DateTime>();
+  final Rxn<DateTime> filterTo = Rxn<DateTime>();
+
+  /// True when any non-default filter is active (drives the "clear" chip).
+  bool get hasActiveFilter =>
+      filterStatus.value != 'all' ||
+      filterRideType.value != 'all' ||
+      filterFrom.value != null ||
+      filterTo.value != null;
+
+  /// Apply new filter selections and reload from page 1 (backend filters).
+  Future<void> applyFilters({
+    String? status,
+    String? rideType,
+    DateTime? from,
+    DateTime? to,
+    bool clearDates = false,
+    bool clearAll = false,
+  }) async {
+    if (clearAll) {
+      filterStatus.value = 'all';
+      filterRideType.value = 'all';
+      filterFrom.value = null;
+      filterTo.value = null;
+    } else {
+      if (status != null) filterStatus.value = status;
+      if (rideType != null) filterRideType.value = rideType;
+      if (clearDates) {
+        filterFrom.value = null;
+        filterTo.value = null;
+      } else {
+        if (from != null) filterFrom.value = from;
+        if (to != null) filterTo.value = to;
+      }
+    }
+    await rideHistory(isRefresh: true);
+  }
+
   @override
   void onInit() {
     super.onInit();
@@ -49,7 +90,13 @@ class RideHistoryController extends GetxController {
     }
 
     try {
-      final result = await apiDataSource.rideHistory(page: page);
+      final result = await apiDataSource.rideHistory(
+        page: page,
+        status: filterStatus.value == 'all' ? null : filterStatus.value,
+        rideType: filterRideType.value == 'all' ? null : filterRideType.value,
+        from: filterFrom.value?.toIso8601String(),
+        to: filterTo.value?.toIso8601String(),
+      );
 
       result.fold(
             (failure) {

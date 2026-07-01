@@ -149,6 +149,21 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
         : const Color(0xFFD93025);
   }
 
+  /// ONLINE payment (Paystack/Flutterwave/PayPal/etc.) — anything that isn't
+  /// cash/COD. The backend releases the driver on payment_success, so there is
+  /// NO cash to collect; showing "Cash Collected" here would be wrong/confusing.
+  bool _isOnlinePaymentMethod() {
+    final t = driverStatusController.paymentType.value.toUpperCase().trim();
+    if (t.isEmpty) return false; // unknown yet → treat as cash (safe default)
+    return t != 'CASH' && t != 'COD';
+  }
+
+  /// Payment already settled (online webhook marked it, or cash was collected).
+  bool _isPaymentSettled() {
+    final s = driverStatusController.paymentStatus.value.toUpperCase().trim();
+    return s == 'PAID' || s == 'SUCCESS' || s == 'COMPLETED';
+  }
+
   Widget _buildPaymentInfoTile({
     required IconData icon,
     required String title,
@@ -457,31 +472,58 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                   const SizedBox(height: 16),
                   SafeArea(
                     top: false,
-                    child: Buttons.button(
-                      borderRadius: 18,
-                      buttonColor: AppColors.commonBlack,
-                      onTap: _isSubmittingCash ? null : _submitCashCollected,
-                      text:
-                          _isSubmittingCash
-                              ? const HopprCircularLoader(
-                                size: 20,
-                                radius: 10,
+                    child: Obx(() {
+                      // ONLINE or already-settled → no cash to collect. Show a
+                      // Finish action instead of "Cash Collected" (which would
+                      // wrongly imply the driver must collect cash for a ride the
+                      // customer already paid online).
+                      if (_isOnlinePaymentMethod() || _isPaymentSettled()) {
+                        return Buttons.button(
+                          borderRadius: 18,
+                          buttonColor: AppColors.commonBlack,
+                          onTap: () => _showRatingBottomSheet(context),
+                          text: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.check_circle_outline_rounded,
+                                size: 18,
                                 color: Colors.white,
-                              )
-                              : const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.check_circle_outline_rounded,
-                                    size: 18,
-                                    color: Colors.white,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Text('Cash Collected'),
-                                ],
                               ),
-                    ),
+                              SizedBox(width: 8),
+                              Text('Payment completed · Finish'),
+                            ],
+                          ),
+                        );
+                      }
+                      // CASH and not yet paid → collect cash.
+                      return Buttons.button(
+                        borderRadius: 18,
+                        buttonColor: AppColors.commonBlack,
+                        onTap: _isSubmittingCash ? null : _submitCashCollected,
+                        text:
+                            _isSubmittingCash
+                                ? const HopprCircularLoader(
+                                  size: 20,
+                                  radius: 10,
+                                  color: Colors.white,
+                                )
+                                : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle_outline_rounded,
+                                      size: 18,
+                                      color: Colors.white,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text('Cash Collected'),
+                                  ],
+                                ),
+                      );
+                    }),
                   ),
                 ],
               ),

@@ -314,16 +314,29 @@ class DriverStatusController extends GetxController {
 
           CommonLogger.log.i("ðŸ“¤ Join booking data: $bookingData");
 
-          if (socketService.connected) {
-            socketService.emit('join-booking', bookingData);
-            CommonLogger.log.i(
-              "âœ… Socket already connected, emitted join-booking",
-            );
-          } else {
-            socketService.onConnect(() {
-              CommonLogger.log.i("âœ… Socket connected, emitting join-booking");
+          // IMPORTANT: When we navigate to PickingCustomerScreen, its controller
+          // (PickingCustomerController) registers the 'joined-booking' listener
+          // FIRST and only THEN emits join-booking. If we ALSO emit here, the
+          // controller's emit lands inside the backend's 2s duplicate-join window
+          // (socket.ts) and is suppressed -> the server sends NO 'joined-booking'
+          // reply to the socket whose listener is ready. This premature emit's
+          // own reply usually arrives before the (heavy) map screen finishes
+          // building its listener, so it is missed too. The net effect was a
+          // blank customer (no name/phone -> dead call button) and no pickup
+          // distance/ETA. So only join from here when we are NOT navigating to
+          // the pickup screen (then no controller exists to join the room).
+          if (!navigateToPickup) {
+            if (socketService.connected) {
               socketService.emit('join-booking', bookingData);
-            });
+              CommonLogger.log.i(
+                "âœ… Socket already connected, emitted join-booking",
+              );
+            } else {
+              socketService.onConnect(() {
+                CommonLogger.log.i("âœ… Socket connected, emitting join-booking");
+                socketService.emit('join-booking', bookingData);
+              });
+            }
           }
 
           CommonLogger.log.i(response.data);
@@ -569,6 +582,27 @@ class DriverStatusController extends GetxController {
     }
   }
 
+  /// Driver-initiated "Resend OTP to rider" (Ride/Parcel). Deliberately does NOT
+  /// toggle [isLoading] — it's a lightweight button action, not a full-screen
+  /// load. Cooldown / max-attempt enforcement is server-side.
+  Future<({bool success, String message})> resendRideOtp({
+    required String bookingId,
+  }) async {
+    try {
+      final results =
+          await apiDataSource.resendRideOtpRequest(bookingId: bookingId);
+      return results.fold(
+        (failure) => (success: false, message: failure.message),
+        (data) => (
+          success: true,
+          message: (data['message'] ?? 'OTP resent to rider').toString(),
+        ),
+      );
+    } catch (_) {
+      return (success: false, message: 'Something went wrong');
+    }
+  }
+
   Future<String?> bookingReject({required String bookingId}) async {
     isBookingRejectLoading.value = true;
     try {
@@ -734,6 +768,46 @@ class DriverStatusController extends GetxController {
     return '';
   }
 
+  /// Cancel ALL active shared-ride passengers for this driver in one server call.
+  /// Returns the success message (non-null) on success, or null on failure so the
+  /// caller can decide whether to navigate home.
+  Future<String?> cancelAllSharedRides(
+    BuildContext context, {
+    required String reason,
+    String? sharedId,
+  }) async {
+    String? successMsg;
+
+    try {
+      isLoading.value = true;
+
+      final results = await apiDataSource.cancelSharedAll(
+        reason: reason,
+        sharedId: sharedId,
+      );
+
+      results.fold(
+        (failure) {
+          successMsg = null;
+          CommonLogger.log.e(
+            "cancelAllSharedRides failure: ${failure.message}",
+          );
+        },
+        (message) {
+          successMsg = message;
+          CommonLogger.log.i("cancelAllSharedRides success: $message");
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.e("cancelAllSharedRides exception: $e");
+      successMsg = null;
+    } finally {
+      isLoading.value = false;
+    }
+
+    return successMsg;
+  }
+
   Future<String?> cancelBooking(
     BuildContext context, {
     required String reason,
@@ -791,6 +865,71 @@ class DriverStatusController extends GetxController {
     }
 
     return msg;
+  }
+
+  bool _sharedCancelInFlight = false;
+
+  /// Shared-ride PER-PASSENGER cancel. Unlike [cancelBooking] this NEVER
+  /// navigates — it returns the backend's decision so the SCREEN decides whether
+  /// to stay (passengers remain) or go Home (`shouldNavigateHome`). Guards
+  /// against double-taps. Single-ride cancellation still uses [cancelBooking].
+  Future<({bool success, bool shouldNavigateHome, int remaining, String message})>
+      cancelSharedPassenger({
+    required String reason,
+    required String bookingId,
+  }) async {
+    if (_sharedCancelInFlight) {
+      return (
+        success: false,
+        shouldNavigateHome: false,
+        remaining: -1,
+        message: 'Please wait…',
+      );
+    }
+    _sharedCancelInFlight = true;
+    isLoading.value = true;
+    try {
+      final results = await apiDataSource.cancelSharedPassenger(
+        reason: reason,
+        bookingId: bookingId,
+      );
+      return results.fold(
+        (failure) => (
+          success: false,
+          shouldNavigateHome: false,
+          remaining: -1,
+          message: failure.message,
+        ),
+        (data) {
+          try {
+            Get.find<DriverAnalyticsController>()
+                .trackCancel(bookingId: bookingId);
+          } catch (_) {}
+          final remaining = (data['remainingActivePassengers'] is num)
+              ? (data['remainingActivePassengers'] as num).toInt()
+              : 0;
+          final goHome = data['shouldNavigateHome'] == true;
+          final msg = (data['message'] ?? 'Passenger cancelled').toString();
+          return (
+            success: true,
+            shouldNavigateHome: goHome,
+            remaining: remaining,
+            message: msg,
+          );
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.e("cancelSharedPassenger exception: $e");
+      return (
+        success: false,
+        shouldNavigateHome: false,
+        remaining: -1,
+        message: 'Something went wrong',
+      );
+    } finally {
+      _sharedCancelInFlight = false;
+      isLoading.value = false;
+    }
   }
 
   /*

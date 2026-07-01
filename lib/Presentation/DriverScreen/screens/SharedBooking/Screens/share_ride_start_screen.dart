@@ -22,6 +22,7 @@ import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Controller/shared_ride_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Screens/booking_overlay_request.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/SharedBooking/Widgets/driver_seats_card.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/cash_collected_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
@@ -42,6 +43,8 @@ import 'package:hopper/utils/widgets/hoppr_swipe_slider.dart';
 import 'package:hopper/utils/netWorkHandling/network_handling_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/api/repository/api_config_controller.dart';
+import 'package:hopper/Core/Services/driver_background_location_service.dart';
+import 'package:hopper/Core/Services/navigation_service.dart';
 import 'package:hopper/utils/phone/call_launcher.dart';
 
 import '../../../../../utils/websocket/socket_io_client.dart';
@@ -217,6 +220,10 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   late SocketService socketService;
   Worker? _serviceTypeWorker;
 
+  // External Google-Maps navigation (handoff keeps live tracking alive).
+  final NavigationService _navigationService = NavigationService();
+  bool _backgroundServiceActive = false;
+
   bool driverCompletedRide = false;
   bool _leavingScreen = false;
   bool _isNetworkOffline = false;
@@ -224,10 +231,18 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   int _pendingQueueCount = 0;
   double _followZoom = 14.4;
   bool _isDisposing = false;
+  // True while the "Complete drops here" batch runs (same-drop cluster). Prevents
+  // double-taps; each booking inside the loop is still completed SEPARATELY.
+  bool _isBatchDropping = false;
 
   late final _MarkerAnimator _markerAnimator;
 
   DateTime? _lastUiUpdate;
+  // Throttle for the LOCAL ETA/distance fallback (see _maybeFillLocalEta) and the
+  // last time the SERVER supplied a positive ETA over driver-location (server is
+  // authoritative while fresh; the local fallback only fills when it goes quiet).
+  DateTime? _lastLocalEtaAt;
+  DateTime? _lastServerEtaAt;
   List<LatLng>? _lastPolyline;
   LatLng? _adjustedTargetPos;
   String _lastDirectionText = '';
@@ -261,6 +276,15 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   Future<void> _exitToHomeSafely() async {
     if (_leavingScreen) return;
     _leavingScreen = true;
+    // RESOURCE FIX: stop the background GPS isolate when the shared ride ends or
+    // the driver exits. Previously it kept streaming after the trip was over —
+    // draining battery and emitting stale location to a completed booking room.
+    if (_backgroundServiceActive) {
+      try {
+        await DriverBackgroundLocationService.stopTracking();
+      } catch (_) {}
+      _backgroundServiceActive = false;
+    }
     try {
       Get.closeAllSnackbars();
     } catch (_) {}
@@ -279,6 +303,22 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
 
   Future<void> _loadDriverId() async {
     _driverId = await SharedPrefHelper.getDriverId();
+  }
+
+  // Align the FOREGROUND location emitter (DriverMainController.startEmitLoop) to
+  // the active shared booking. WITHOUT this the shared flow never set
+  // `currentBookingId`, so every `updateLocation`/`driver-heartbeat` packet went
+  // out with NO bookingId — the loop sat in idle mode (5–8s, and skipped entirely
+  // when the driver reads offline mid-ride) and the backend could not relay the
+  // driver's location to the customer's booking room. Result: the customer's car
+  // froze/lagged the whole shared trip. Single ride does exactly this on its
+  // pickup/drop screens (see setActiveTripBookingId), so this brings shared to
+  // parity → smooth ~1Hz movement with bookingId on every packet.
+  void _alignForegroundEmitter(String? bookingId) {
+    final id = (bookingId ?? '').trim();
+    if (id.isEmpty) return;
+    if (!Get.isRegistered<DriverMainController>()) return;
+    Get.find<DriverMainController>().setActiveTripBookingId(id);
   }
 
   void _initConnectivityWatchdog() {
@@ -351,6 +391,9 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     _listenServiceTypeForIcon();
 
     final initialTarget = sharedRideController.activeTarget.value;
+    // Stream the driver's GPS to the backend with the active booking id from the
+    // very first frame so the customer's car starts moving immediately.
+    _alignForegroundEmitter(initialTarget?.bookingId ?? widget.bookingId);
     final initialDestination =
         initialTarget == null
             ? widget.pickupLocation
@@ -395,6 +438,14 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         _animatedBearing = update.headingDeg ?? update.bearing;
         sharedRideController.updateDriverLocation(raw);
         _updateSmartAutoZoom(raw);
+
+        // DUAL local ETA/distance fallback: if the shared backend isn't sending
+        // pickup/drop ETA over driver-location, fill it locally so the card never
+        // shows "0 min / 0 km" (server values, when present, always win).
+        final etaTarget = sharedRideController.activeTarget.value;
+        if (etaTarget != null) {
+          unawaited(_maybeFillLocalEta(raw, etaTarget));
+        }
 
         _rideMap.updateVehicleLocation(
           raw,
@@ -498,6 +549,9 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       sharedRideController.activeTarget,
       (active) {
         if (active == null || !mounted || _isDisposing) return;
+        // Re-align the emitter when the active leg changes (next rider's
+        // pickup/drop) so location keeps streaming with the correct bookingId.
+        _alignForegroundEmitter(active.bookingId);
         unawaited(_syncActiveTargetRoute(active: active));
       },
     );
@@ -520,6 +574,13 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   void dispose() {
     _isDisposing = true;
     _connectivitySub?.cancel();
+    // Safety net: the drop-all completion path navigates via pushAndRemoveUntil
+    // (not _exitToHomeSafely), so stop the background GPS isolate here too if it
+    // is still running when the screen is torn down.
+    if (_backgroundServiceActive) {
+      _backgroundServiceActive = false;
+      DriverBackgroundLocationService.stopTracking().catchError((_) {});
+    }
     try {
       _serviceTypeWorker?.dispose();
     } catch (_) {}
@@ -729,6 +790,90 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     return h > 0 ? '${h}h ${m}m' : '$m min';
   }
 
+  /// Road distance along the active route polyline (sum of consecutive points) —
+  /// the SAME method the customer uses, so both sides read the same km. Falls
+  /// back to straight-line only when there's no polyline yet.
+  double _routeMetersAlongPolyline(LatLng from, LatLng to) {
+    final pts = polylinePoints;
+    if (pts.length < 2) {
+      return Geolocator.distanceBetween(
+          from.latitude, from.longitude, to.latitude, to.longitude);
+    }
+    double sum = 0;
+    for (int i = 0; i < pts.length - 1; i++) {
+      sum += Geolocator.distanceBetween(
+        pts[i].latitude,
+        pts[i].longitude,
+        pts[i + 1].latitude,
+        pts[i + 1].longitude,
+      );
+    }
+    return sum;
+  }
+
+  /// LOCAL ETA/distance fallback for the active leg, so the card never shows a
+  /// permanent "0 min / 0 km" when the shared backend's driver-location omits
+  /// pickup/drop ETA (single ride has the same resilience). The SERVER value is
+  /// authoritative: while a positive server ETA arrived in the last 6s this is a
+  /// no-op. Otherwise we fill the active leg from a straight-line distance
+  /// (instant, every GPS fix) plus an accurate road duration from a throttled
+  /// Directions lookup (≤ once / 12s), with a rough speed-based ETA in between.
+  Future<void> _maybeFillLocalEta(LatLng driverPos, SharedRiderItem active) async {
+    final lastServer = _lastServerEtaAt;
+    if (lastServer != null &&
+        DateTime.now().difference(lastServer) < const Duration(seconds: 6)) {
+      return; // server ETA is fresh and wins
+    }
+    if (active.stage == SharedRiderStage.dropped) return;
+
+    final isPickup = active.stage == SharedRiderStage.waitingPickup;
+    final target = isPickup ? active.pickupLatLng : active.dropLatLng;
+
+    // Road distance along the route polyline (matches the customer's km),
+    // NOT a straight-line haversine (which read ~40% short — 11.6 vs 17 km).
+    final straight = _routeMetersAlongPolyline(driverPos, target);
+
+    void setLeg(double meters, double minutes) {
+      if (isPickup) {
+        if (meters > 0) sharedController.pickupDistanceInMeters.value = meters;
+        if (minutes > 0) sharedController.pickupDurationInMin.value = minutes;
+      } else {
+        if (meters > 0) sharedController.dropDistanceInMeters.value = meters;
+        if (minutes > 0) sharedController.dropDurationInMin.value = minutes;
+      }
+    }
+
+    // Instant refresh: road distance + ETA at the SAME ~26 km/h (m/432 = m/7.2/60)
+    // the customer uses, so both sides show the same minutes too.
+    setLeg(straight, straight / 432.0);
+
+    final now = DateTime.now();
+    if (_lastLocalEtaAt != null &&
+        now.difference(_lastLocalEtaAt!) < const Duration(seconds: 12)) {
+      return;
+    }
+    _lastLocalEtaAt = now;
+
+    try {
+      final info = await getRouteInfo(origin: driverPos, destination: target);
+      if (!mounted || _isDisposing) return;
+      // Bail if the server became authoritative during the await.
+      final ls = _lastServerEtaAt;
+      if (ls != null &&
+          DateTime.now().difference(ls) < const Duration(seconds: 6)) {
+        return;
+      }
+      final dMeters =
+          (info['distanceToDestinationMeters'] as num?)?.toDouble() ?? 0.0;
+      // Use the road distance and derive ETA from the SAME ~26 km/h speed the
+      // customer uses (not the Directions road-time), so the two read identically.
+      final mDist = dMeters > 0 ? dMeters : straight;
+      setLeg(mDist, mDist / 432.0);
+    } catch (_) {
+      // Keep the straight-line estimate already applied.
+    }
+  }
+
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Socket ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   Future<void> _initSocket() async {
     socketService = SocketService();
@@ -825,6 +970,15 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
 
     socketService.on('booking-request', (data) async {
       if (!mounted || _isDisposing || data == null) return;
+
+      // Socket.IO sometimes delivers the payload as a List, e.g. [ {booking...}, "ackId" ].
+      // Unwrap to the first Map so the rest of the handler can treat `data` as the booking
+      // object (otherwise `data['bookingId']` indexes a List with a String and crashes).
+      if (data is List) {
+        final firstMap = data.firstWhere((e) => e is Map, orElse: () => null);
+        if (firstMap == null) return;
+        data = firstMap;
+      }
 
       // New payload shape support: { type: active-bookings, activeBookings: [...] }
       if (data is Map && data['activeBookings'] is List) {
@@ -939,12 +1093,58 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     });
 
     socketService.on('driver-cancelled', (data) async {
-      if (!Get.isRegistered<DriverMainController>()) return;
-      await Get.find<DriverMainController>().handleDriverCancelled(data);
+      if (!mounted || _isDisposing) return;
+      final bookingId = data?['bookingId']?.toString();
+      if (bookingId == null || bookingId.isEmpty) return;
+
+      // If the parent booking is cancelled, exit to home.
+      if (bookingId == widget.bookingId) {
+        if (!Get.isRegistered<DriverMainController>()) return;
+        await Get.find<DriverMainController>().handleDriverCancelled(data);
+        return;
+      }
+
+      // Otherwise, just remove the specific rider from the pool.
+      final removedName = sharedRideController.removeRider(bookingId);
+      if (removedName != null) {
+        CustomSnackBar.showInfo('Ride for $removedName has been cancelled.');
+        if (sharedRideController.riders.isEmpty) {
+          await _exitToHomeSafely();
+        }
+      }
     });
     socketService.on('customer-cancelled', (data) async {
-      if (!Get.isRegistered<DriverMainController>()) return;
-      await Get.find<DriverMainController>().handleCustomerCancelled(data);
+      if (!mounted || _isDisposing) return;
+      final bookingId = data?['bookingId']?.toString();
+      if (bookingId == null || bookingId.isEmpty) return;
+
+      // If the parent booking is cancelled, exit to home.
+      if (bookingId == widget.bookingId) {
+        if (!Get.isRegistered<DriverMainController>()) return;
+        await Get.find<DriverMainController>().handleCustomerCancelled(data);
+        return;
+      }
+
+      // A shared passenger cancelled their own seat. Per UX: DON'T remove them —
+      // keep a disabled "Cancelled by customer" card visible for the rest of the
+      // trip so the driver always sees what happened. The backend has already
+      // freed the seat for new matches, and the controller drops them from the
+      // active route/target.
+      // Prefer the customer's actual reason over the generic system message.
+      final reason =
+          (data?['reason'] ?? data?['message'] ?? '').toString().trim();
+      final name = sharedRideController.markCancelledByCustomer(
+        bookingId,
+        reason: reason,
+      );
+      if (name != null) {
+        final who = name.trim().isEmpty ? 'A customer' : name;
+        CustomSnackBar.showInfo(
+          '$who cancelled their ride${reason.isEmpty ? '' : ' ($reason)'}. Their stop was removed from your route.',
+        );
+      }
+      if (!mounted || _isDisposing) return;
+      setState(() {});
     });
 
     socketService.on('driver-reached-destination', (data) {
@@ -966,17 +1166,43 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         data['timestamp'] ?? data['ts'],
       );
 
-      final dropM = _safeNum(data['dropDistanceInMeters']) ?? 0.0;
-      final dropMin = _safeNum(data['dropDurationInMin']) ?? 0.0;
-      sharedController.dropDistanceInMeters.value = dropM;
-      sharedController.dropDurationInMin.value = dropMin;
+      // Only adopt server drop ETA/distance when actually present AND positive.
+      // Previously this used `?? 0.0` and always assigned, so whenever the shared
+      // backend's driver-location omitted these fields it CLOBBERED a good value
+      // with 0 -> the permanent "0 min / 0 km". Mirrors single ride, which only
+      // sets when present and otherwise keeps the last (server or local) value.
+      final dropM = _safeNum(data['dropDistanceInMeters']);
+      final dropMin = _safeNum(data['dropDurationInMin']);
+      if (dropM != null && dropM > 0) {
+        sharedController.dropDistanceInMeters.value = dropM;
+        _lastServerEtaAt = DateTime.now();
+      }
+      if (dropMin != null && dropMin > 0) {
+        sharedController.dropDurationInMin.value = dropMin;
+        _lastServerEtaAt = DateTime.now();
+      }
 
       final pickupM = _safeNum(data['pickupDistanceInMeters']);
       final pickupMin = _safeNum(data['pickupDurationInMin']);
-      if (pickupM != null)
+      if (pickupM != null && pickupM > 0) {
         sharedController.pickupDistanceInMeters.value = pickupM;
-      if (pickupMin != null)
+        _lastServerEtaAt = DateTime.now();
+      }
+      if (pickupMin != null && pickupMin > 0) {
         sharedController.pickupDurationInMin.value = pickupMin;
+        _lastServerEtaAt = DateTime.now();
+      }
+    });
+
+    // Live "Directions to reach" note from the customer (booking room only).
+    socketService.off('pickup_instruction_updated');
+    socketService.on('pickup_instruction_updated', (data) {
+      if (data == null || !mounted) return;
+      if (data is! Map) return;
+      final bId = (data['bookingId'] ?? '').toString();
+      final instr = (data['pickupInstruction'] ?? '').toString();
+      if (bId.isEmpty) return;
+      sharedRideController.updatePickupInstruction(bId, instr);
     });
 
     if (!socketService.connected) {
@@ -1087,9 +1313,118 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     setState(() {});
   }
 
+  /// SAME-DROP BATCH: completes EVERY onboard rider clustered at the active drop,
+  /// one booking at a time. Each iteration is the SAME per-booking completion as
+  /// the single swipe (atomic on the backend; emits 'ride-completed' to ONLY that
+  /// passenger's room). Driver convenience only — it never GPS-completes, and a
+  /// failure on one rider never aborts the others.
+  Future<void> _completeDropsHere() async {
+    if (_isBatchDropping) return;
+    final cluster = sharedRideController.completableDropClusterAtActive();
+    if (cluster.length < 2) return;
+    setState(() => _isBatchDropping = true);
+    int done = 0;
+    try {
+      for (final r in cluster) {
+        if (!mounted || _isDisposing) break;
+        // Re-validate THIS booking right before completing it (stage + radius).
+        if (!sharedRideController.canSafelyCompleteDropFor(r.bookingId)) continue;
+        try {
+          final msg = await driverStatusController
+              .completeRideRequest(
+                context,
+                Amount: r.amount,
+                bookingId: r.bookingId,
+                navigateToCashScreen: false,
+                isSharedRide: true,
+              )
+              .timeout(const Duration(seconds: 20));
+          if (msg != null) {
+            done++;
+            await _onCurrentLegCompleted(r);
+          }
+        } catch (_) {
+          // Skip this rider; keep completing the rest of the cluster.
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _isBatchDropping = false);
+    }
+    if (mounted && !_isDisposing) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Completed $done drop${done == 1 ? '' : 's'} here'),
+        ),
+      );
+    }
+  }
+
+  /// Optional grouped same-drop banner shown above the single swipe slider.
+  Widget _buildCompleteDropsHereCard(int count) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _C.green.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _C.green.withOpacity(0.30)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.groups_rounded, size: 20, color: _C.green),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$count riders dropping here',
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+                color: _C.green,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _isBatchDropping
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: _C.green,
+                  ),
+                )
+              : TextButton(
+                  onPressed: _completeDropsHere,
+                  style: TextButton.styleFrom(
+                    backgroundColor: _C.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    'Complete drops here',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _onCurrentLegCompleted(SharedRiderItem completedRider) async {
     if (!mounted || _isDisposing) return;
-    final bool? cashCollected = await Navigator.push<bool>(
+    // The booking is ALREADY completed on the backend (the swipe called
+    // completeRideRequest → the customer's payment is triggered), so this leg is
+    // done no matter what. The cash screen is just a COD-collection confirmation.
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder:
@@ -1103,7 +1438,10 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       ),
     );
     if (!mounted || _isDisposing) return;
-    if (cashCollected != true) return;
+    // ALWAYS advance to the next passenger. Gating this on `cashCollected == true`
+    // previously left the NEXT customer's full UI + complete button HIDDEN when the
+    // driver simply backed out of the cash screen — the ride got stuck on the
+    // already-finished customer.
     sharedRideController.markDropped(completedRider.bookingId);
     try {
       (completedRider.sliderController as ActionSliderController?)?.reset();
@@ -1123,6 +1461,56 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     await _syncActiveTargetRoute(active: next, focusMap: false);
     if (!mounted || _isDisposing) return;
     setState(() {});
+  }
+
+  /// Cancel a single customer (one leg) of the shared pool. The backend cancel
+  /// broadcasts `driver-cancelled` to that booking's room so the affected
+  /// customer's app reacts (exits the trip); locally we remove just that rider
+  /// and keep serving the rest. If it was the last active rider, return home.
+  Future<void> _cancelRider(SharedRiderItem r) async {
+    if (!mounted || _isDisposing) return;
+    Buttons.showCancelRideBottomSheet(
+      context,
+      onConfirmCancel: (reason) async {
+        if (Get.isBottomSheetOpen == true) Get.back();
+        final msg = await driverStatusController.cancelBooking(
+          context,
+          bookingId: r.bookingId,
+          reason: reason,
+          silent: true,
+          navigate: false,
+        );
+        if (!mounted || _isDisposing) return;
+        if (msg != null) {
+          // Backend already notified the customer over the socket; drop the
+          // rider from the local pool and re-pick the next target.
+          sharedRideController.removeRider(r.bookingId);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Cancelled ${r.name.trim().isEmpty ? 'customer' : r.name}\'s booking',
+              ),
+            ),
+          );
+          // No active riders left -> the shared ride is over, go home.
+          if (sharedRideController.getAllActiveRiders().isEmpty) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const DriverMainScreen()),
+              (route) => false,
+            );
+          } else {
+            setState(() {});
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not cancel this customer. Please try again.'),
+            ),
+          );
+        }
+      },
+    );
   }
 
   // ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
@@ -1592,6 +1980,32 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                             fontWeight: FontWeight.w500,
                           ),
                         ),
+                        // Customer's "Directions to reach" note (live-updated).
+                        if (active.pickupInstruction.trim().isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.info_outline_rounded,
+                                  size: 14, color: Color(0xFF185FA5)),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  active.pickupInstruction.trim(),
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: _C.text,
+                                    height: 1.3,
+                                    fontWeight: FontWeight.w600,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         const Text(
                           'DROP OFF',
@@ -1624,6 +2038,8 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
           const SizedBox(height: 12),
           _buildQuickReplies(active),
           const SizedBox(height: 12),
+          _buildNavigateBtn(active),
+          const SizedBox(height: 10),
           _buildActiveActionArea(active, inCard: true),
         ],
       ),
@@ -1787,6 +2203,118 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     });
   }
 
+  // ── External navigation (Google Maps) ────────────────────────────────────
+  // Mirrors the single-ride flow (picking_customer_screen._onNavigatePressed):
+  // request perms → arm the return-bubble → hand off the socket session to the
+  // background service → launch Google Maps. The handoff keeps the customer-side
+  // car marker moving while the driver is inside Google Maps.
+  Future<void> _onNavigatePressed(
+    LatLng dest, {
+    required String label,
+    required String source,
+    required String rideId,
+  }) async {
+    final ok = await _navigationService.requestPermissions();
+    if (!ok) {
+      Get.snackbar(
+        'Permission Required',
+        'Please allow background location for tracking',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    final driverId = (await SharedPrefHelper.getDriverId())?.trim() ?? '';
+    if (driverId.isEmpty) {
+      Get.snackbar(
+        'Error',
+        'Driver ID missing. Please re-login.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    final socketUrl = Get.isRegistered<ApiConfigController>()
+        ? Get.find<ApiConfigController>().socketUrl
+        : ApiConfigController.sharedSocket;
+
+    final proceed = await _navigationService.prepareReturnBubble();
+    if (!proceed) {
+      Get.snackbar(
+        'One-time setup',
+        'Allow "Display over other apps" so Hoppr can show a quick return '
+            'button on the map while you navigate. Then tap Navigate again.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: const Color(0xFF111827),
+        colorText: Colors.white,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+
+    await _navigationService.markExternalNavigationReturnPending(source: source);
+
+    if (Get.isRegistered<DriverMainController>()) {
+      await Get.find<DriverMainController>().onAppPaused();
+    }
+
+    await DriverBackgroundLocationService.startTracking(
+      socketUrl: socketUrl,
+      rideId: rideId,
+      driverId: driverId,
+    );
+    _backgroundServiceActive = true;
+
+    await _navigationService.openGoogleMapsNavigation(
+      destLat: dest.latitude,
+      destLng: dest.longitude,
+      destinationLabel: label,
+    );
+  }
+
+  // Stage-aware Google-Maps button: routes to the active rider's pickup while
+  // en-route to pickup, then to their drop once they are onboard.
+  Widget _buildNavigateBtn(SharedRiderItem active) {
+    if (active.stage == SharedRiderStage.dropped) {
+      return const SizedBox.shrink();
+    }
+    final isPickup = active.stage == SharedRiderStage.waitingPickup;
+    final dest = isPickup ? active.pickupLatLng : active.dropLatLng;
+    final label = isPickup ? 'Navigate to Pickup' : 'Navigate to Drop';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      child: SizedBox(
+        width: double.infinity,
+        height: 50,
+        child: ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _C.green,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          icon: const Icon(Icons.navigation_rounded, size: 18),
+          label: Text(
+            label,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          onPressed: () => _onNavigatePressed(
+            dest,
+            label: '$label - ${active.name}',
+            source: isPickup
+                ? 'shared_pickup_google_maps'
+                : 'shared_drop_google_maps',
+            rideId: active.bookingId,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildActiveActionArea(SharedRiderItem active, {bool inCard = false}) {
     final areaPadding =
         inCard
@@ -1944,14 +2472,19 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
               onAction: (controller) async {
                 try {
                   controller.loading();
-                  final msg = await driverStatusController.otpRequest(
-                    context,
-                    bookingId: active.bookingId,
-                    custName: active.name,
-                    pickupAddress: active.pickupAddress,
-                    dropAddress: active.dropoffAddress,
-                  );
-                  if (!mounted || _isDisposing) return;
+                  final msg = await driverStatusController
+                      .otpRequest(
+                        context,
+                        bookingId: active.bookingId,
+                        custName: active.name,
+                        pickupAddress: active.pickupAddress,
+                        dropAddress: active.dropoffAddress,
+                      )
+                      .timeout(const Duration(seconds: 20));
+                  if (!mounted || _isDisposing) {
+                    controller.reset();
+                    return;
+                  }
                   if (msg == null) {
                     controller.failure();
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1974,7 +2507,10 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                           ),
                     ),
                   );
-                  if (!mounted || _isDisposing) return;
+                  if (!mounted || _isDisposing) {
+                    controller.reset();
+                    return;
+                  }
                   if (verified == true) {
                     controller.success();
                     sharedRideController.markOnboard(active.bookingId);
@@ -2007,6 +2543,11 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
       final riderSlider = active.sliderController as ActionSliderController;
       return Obx(() {
         final canShow = sharedRideController.canCompleteActiveDrop.value;
+        // Same-drop cluster (2+ onboard riders sharing this drop) → show the
+        // optional grouped "complete drops here" banner above the single swipe.
+        final cluster = canShow
+            ? sharedRideController.completableDropClusterAtActive()
+            : const <SharedRiderItem>[];
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 220),
           switchInCurve: Curves.easeOut,
@@ -2016,7 +2557,14 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                   ? Padding(
                     key: ValueKey('complete-${active.bookingId}'),
                     padding: areaPadding,
-                    child: Container(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (cluster.length >= 2) ...[
+                          _buildCompleteDropsHereCard(cluster.length),
+                          const SizedBox(height: 10),
+                        ],
+                        Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
@@ -2056,6 +2604,35 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                               await Future.delayed(
                                 const Duration(milliseconds: 200),
                               );
+                              // WRONG-STOP GUARD: re-validate (independent of the
+                              // captured `active`) that this exact rider is still
+                              // an onboard drop within the completion radius. The
+                              // active target can change between the swipe being
+                              // shown and released; without this the driver could
+                              // complete the wrong passenger's leg.
+                              if (!sharedRideController
+                                  .canSafelyCompleteDropFor(active.bookingId)) {
+                                controller.failure();
+                                if (mounted && !_isDisposing) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        "You're not at ${active.name}'s drop point yet",
+                                      ),
+                                    ),
+                                  );
+                                }
+                                await Future.delayed(
+                                  const Duration(milliseconds: 700),
+                                );
+                                controller.reset();
+                                return;
+                              }
+                              // Timeout so a hung/slow network can NEVER leave the
+                              // slider stuck spinning (which is why "drop completed"
+                              // but the button wouldn't swipe again). On timeout the
+                              // catch resets it; the backend drop-completed socket
+                              // still advances the leg (backend = source of truth).
                               final msg = await driverStatusController
                                   .completeRideRequest(
                                     context,
@@ -2063,8 +2640,15 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                                     bookingId: active.bookingId,
                                     navigateToCashScreen: false,
                                     isSharedRide: true,
-                                  );
-                              if (!mounted || _isDisposing) return;
+                                  )
+                                  .timeout(const Duration(seconds: 20));
+                              // Even if the screen unmounted mid-call, reset the
+                              // PERSISTED controller so it's idle (swipeable) next
+                              // time instead of frozen in loading.
+                              if (!mounted || _isDisposing) {
+                                controller.reset();
+                                return;
+                              }
                               if (msg != null) {
                                 controller.success();
                                 await _onCurrentLegCompleted(active);
@@ -2102,9 +2686,47 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                           },
                         ),
                       ),
+                        ),
+                      ],
                     ),
                   )
-                  : const SizedBox.shrink(key: ValueKey('complete-hidden')),
+                  : Padding(
+                    key: const ValueKey('complete-hint'),
+                    padding: areaPadding,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _C.green.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: _C.green.withOpacity(0.25),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.directions_car_rounded,
+                            size: 18,
+                            color: _C.green,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Drive closer to ${active.name}\'s drop-off to complete the stop.',
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: _C.green,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
         );
       });
     }
@@ -2113,9 +2735,59 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   }
 
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Rider list row ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+  /// Uber-style grouped passenger sections (replaces the flat all-riders list):
+  /// Onboard → Upcoming pickups → Completed → Cancelled. Empty groups are hidden.
+  Widget _buildGroupedRiders() {
+    final c = sharedRideController;
+    final onboard = c
+        .getRidersByStage(SharedRiderStage.onboardDrop)
+        .where((r) => !r.cancelledByCustomer)
+        .toList();
+    final upcoming = c
+        .getRidersByStage(SharedRiderStage.waitingPickup)
+        .where((r) => !r.cancelledByCustomer)
+        .toList();
+    final completed = c.getDroppedRiders();
+    final cancelled = c.getCancelledRiders();
+
+    Widget section(String title, List<SharedRiderItem> list) {
+      if (list.isEmpty) return const SizedBox.shrink();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 10, 4, 4),
+            child: Text(
+              '$title (${list.length})',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: _C.textSub,
+              ),
+            ),
+          ),
+          ...list.map(_buildRiderRow),
+        ],
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          section('Onboard', onboard),
+          section('Upcoming pickups', upcoming),
+          section('Completed', completed),
+          section('Cancelled', cancelled),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRiderRow(SharedRiderItem r) {
     final active = sharedRideController.activeTarget.value;
-    final isActive = active?.bookingId == r.bookingId;
+    final isCancelled = r.cancelledByCustomer;
+    final isActive = !isCancelled && active?.bookingId == r.bookingId;
     final isDropped = r.stage == SharedRiderStage.dropped;
     final isExpanded = _expandedCards.contains(r.bookingId);
 
@@ -2136,8 +2808,15 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
         break;
     }
 
-    return Opacity(
-      opacity: isDropped ? 0.45 : 1.0,
+    // A customer who cancelled their own seat overrides the stage badge: we keep
+    // the card but show it disabled so the driver knows what happened.
+    if (isCancelled) {
+      stageLabel = 'Cancelled by customer';
+      stageColor = _C.red;
+    }
+
+    final Widget card = Opacity(
+      opacity: (isDropped || isCancelled) ? 0.55 : 1.0,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         margin: const EdgeInsets.symmetric(vertical: 5),
@@ -2212,7 +2891,9 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                       children: [
                         Expanded(
                           child: Text(
-                            r.name,
+                            r.name.trim().isEmpty ? 'Customer' : r.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -2250,6 +2931,27 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                         ),
                       ],
                     ),
+                    if (isCancelled && r.cancelReason.trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(
+                          'Reason: ${r.cancelReason.trim()}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: _C.textSub,
+                          ),
+                        ),
+                      ),
+                    if (isCancelled)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Swipe left to remove',
+                          style: TextStyle(fontSize: 10, color: _C.textMuted),
+                        ),
+                      ),
                     AnimatedCrossFade(
                       duration: const Duration(milliseconds: 220),
                       crossFadeState:
@@ -2273,6 +2975,39 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                               _C.red,
                               'Drop: ${r.dropoffAddress}',
                             ),
+                            if (!isDropped && !isCancelled) ...[
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _cancelRider(r),
+                                  icon: const Icon(
+                                    Icons.cancel_outlined,
+                                    size: 18,
+                                    color: _C.red,
+                                  ),
+                                  label: const Text(
+                                    'Cancel this customer',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: _C.red,
+                                    ),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    side: BorderSide(
+                                      color: _C.red.withOpacity(0.5),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -2284,7 +3019,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
             const SizedBox(width: 8),
 
             // Set as next button
-            if (!isDropped)
+            if (!isDropped && !isCancelled)
               GestureDetector(
                 onTap: () => _setAsNextStop(r),
                 child: Container(
@@ -2315,6 +3050,40 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
           ],
         ),
       ),
+    );
+
+    // Active/normal rows render as-is. A cancelled rider's card can be swiped
+    // left to remove it from the list.
+    if (!isCancelled) return card;
+    return Dismissible(
+      key: ValueKey('cancelled-row-${r.bookingId}'),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) {
+        sharedRideController.removeRider(r.bookingId);
+        if (mounted && !_isDisposing) setState(() {});
+      },
+      background: Container(
+        alignment: Alignment.centerRight,
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: _C.red,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(
+              'Remove',
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+            ),
+            SizedBox(width: 6),
+            Icon(Icons.delete_outline, color: Colors.white),
+          ],
+        ),
+      ),
+      child: card,
     );
   }
 
@@ -2357,6 +3126,12 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // Seat occupancy (collapsible "Seats n/3" → full car layout).
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: DriverSeatsCard(controller: sharedRideController),
+                ),
 
                 if (!driverCompletedRide && active != null) ...[
                   // Active info card
@@ -2414,15 +3189,7 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                     ),
                   )
                 else
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      children:
-                          sharedRideController.riders
-                              .map(_buildRiderRow)
-                              .toList(),
-                    ),
-                  ),
+                  _buildGroupedRiders(),
 
                 // Bottom actions
                 const SizedBox(height: 8),
@@ -2475,21 +3242,58 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
           Buttons.button(
             borderRadius: 8,
             buttonColor: AppColors.red,
-            onTap:
-                () => Buttons.showCancelRideBottomSheet(
-                  context,
-                  onConfirmCancel: (reason) async {
-                    if (Get.isBottomSheetOpen == true) Get.back();
-                    await driverStatusController.cancelBooking(
-                      context,
-                      bookingId: widget.bookingId,
-                      reason: reason,
-                      silent: true,
-                      navigate: true,
+            onTap: () => Buttons.showSharedRideCancelSheet(
+              context,
+              riders: sharedRideController
+                  .getAllActiveRiders()
+                  .map((r) => (bookingId: r.bookingId, name: r.name))
+                  .toList(),
+              // Cancel ONE passenger: mirror _cancelRider — drop them locally,
+              // re-pick the next target, and exit home only if none remain.
+              onCancelOne: (bookingId, reason) async {
+                // Backend-driven: navigate Home only when the server confirms no
+                // active passengers remain (shouldNavigateHome).
+                final res = await driverStatusController.cancelSharedPassenger(
+                  bookingId: bookingId,
+                  reason: reason,
+                );
+                if (!mounted || _isDisposing) return;
+                if (res.success) {
+                  sharedRideController.removeRider(bookingId);
+                  final goHome = res.shouldNavigateHome ||
+                      sharedRideController.getAllActiveRiders().isEmpty;
+                  if (goHome) {
+                    sharedRideController.reset();
+                    await _exitToHomeSafely();
+                  } else {
+                    setState(() {});
+                    CustomSnackBar.showSuccess(
+                      'Passenger cancelled. Ride continued with remaining passenger.',
                     );
-                  },
-                ),
-            text: const Text('Cancel this Shared Ride'),
+                  }
+                } else {
+                  CustomSnackBar.showError(res.message);
+                }
+              },
+              // Cancel ALL: atomic server-side cancel of every active passenger;
+              // each customer gets their own driver-cancelled event, then home.
+              onCancelAll: (reason) async {
+                final msg = await driverStatusController
+                    .cancelAllSharedRides(context, reason: reason);
+                if (!mounted || _isDisposing) return;
+                if (msg != null ||
+                    sharedRideController.getAllActiveRiders().isEmpty) {
+                  sharedRideController.reset();
+                  CustomSnackBar.showSuccess(msg ?? 'Shared ride ended.');
+                  await _exitToHomeSafely();
+                } else {
+                  CustomSnackBar.showError(
+                    'Could not cancel the rides. Please try again.',
+                  );
+                }
+              },
+            ),
+            text: const Text('Cancel Ride'),
           ),
           const SizedBox(height: 16),
         ],
@@ -2500,6 +3304,21 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Build ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   @override
   Widget build(BuildContext context) {
+    // RIDE-OVER GUARD: there ARE riders but none are active any more — every
+    // passenger is dropped/cancelled — so the shared ride is finished. Return home
+    // instead of leaving the driver stuck on a "Completed" screen with no active
+    // stop (the case in the screenshot, incl. resuming into an already-finished
+    // ride). _exitToHomeSafely() is idempotent (the _leavingScreen guard), so it's
+    // safe to evaluate every rebuild.
+    if (sharedRideController.riders.isNotEmpty &&
+        sharedRideController.getAllActiveRiders().isEmpty &&
+        !_leavingScreen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _isDisposing) return;
+        sharedRideController.reset();
+        _exitToHomeSafely();
+      });
+    }
     final active = sharedRideController.activeTarget.value;
     final rawTargetPos =
         active == null
@@ -2509,16 +3328,12 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                 : active.dropLatLng);
     final targetPos = _adjustedTargetPos ?? rawTargetPos;
 
+    // Match single ride: the destination is shown by the route polyline (and the
+    // car marker), NOT a large overlaid stop pin. The single-ride screens pass no
+    // extra destination marker, so the giant `loc` teardrop here looked oversized
+    // and inconsistent. Drop it for parity; keep only the turn-by-turn maneuver
+    // arrows. (`_stopPinIcon` is intentionally no longer drawn.)
     final extraMarkers = <Marker>{
-      if (_stopPinIcon != null)
-        Marker(
-          markerId: const MarkerId('stop'),
-          position: targetPos,
-          icon: _stopPinIcon!,
-          anchor: const Offset(0.5, 1.0),
-          infoWindow: InfoWindow.noText,
-          zIndexInt: 7,
-        ),
       ..._maneuverMarkers,
     };
 

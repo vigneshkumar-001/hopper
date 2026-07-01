@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -10,7 +11,6 @@ import 'package:hopper/Presentation/Authentication/screens/Landing_Screens.dart'
 import 'package:hopper/Presentation/Authentication/screens/Otp_Screens.dart';
 import 'package:hopper/Presentation/Authentication/screens/Terms_Screen.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
 import 'package:hopper/utils/session/logout_cleanup.dart';
 
@@ -147,8 +147,7 @@ class AuthController extends GetxController {
             ),
           );
           accessToken = response.data.token;
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('token', response.data.token);
+          await SharedPrefHelper.setToken(response.data.token);
           // CustomSnackBar.showSuccess(response.message.toString());
 
           return ' ';
@@ -164,8 +163,7 @@ class AuthController extends GetxController {
   }
 
   Future<void> logout(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = await SharedPrefHelper.getToken();
 
     // Try to call logout API before clearing token; never block UI too long.
     try {
@@ -175,7 +173,7 @@ class AuthController extends GetxController {
     } catch (_) {}
 
     await performLogoutCleanup();
-    await prefs.clear();
+    await SharedPrefHelper.clearAll();
     if (Get.isRegistered<DriverAnalyticsController>()) {
       await Get.find<DriverAnalyticsController>().reset(clearPersisted: false);
     }

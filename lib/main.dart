@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'Core/Constants/log.dart';
 import 'Core/Firebase/firebase_service.dart';
 import 'Core/Services/driver_background_location_service.dart';
+import 'Core/Services/logger_service.dart';
 import 'Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'splash_screen.dart';
 import 'utils/init_Controller.dart';
@@ -16,50 +17,71 @@ import 'utils/map/route_info.dart';
 import 'api/repository/api_constents.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // ZONE FIX: ensureInitialized() and runApp() MUST run in the same zone, otherwise Flutter
+  // reports a "Zone mismatch" (logged as a crash by our handler). So the WHOLE startup —
+  // including ensureInitialized — runs inside one runZonedGuarded. loggerService is declared
+  // out here (nullable) so the zone's error handler below can still reach it.
+  LoggerService? loggerService;
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ init GetX controllers first (your code)
-  await initController();
+    // ✅ init GetX controllers first (your code)
+    await initController();
 
-  DirectionsConfig.apiKey = ApiConstents.googleMapApiKey;
+    DirectionsConfig.apiKey = ApiConstents.googleMapApiKey;
 
-  // ✅ Configure (do not start) background tracking service
-  await DriverBackgroundLocationService.initialize();
+    // ✅ Configure (do not start) background tracking service
+    await DriverBackgroundLocationService.initialize();
 
-  // ✅ Firebase init should never crash the app
-  var firebaseReady = false;
-  try {
-    await Firebase.initializeApp();
-    firebaseReady = true;
-  } catch (e, st) {
-    CommonLogger.log.e("❌ Firebase.initializeApp failed (app continues): $e");
-    CommonLogger.log.e("STACK: $st");
-  }
+    // ✅ Initialize logging system
+    loggerService = LoggerService();
+    await loggerService!.logDeviceInfo();
 
-  // ✅ Register BG handler early (only if Firebase is ready)
-  if (firebaseReady) {
+    // ✅ Setup error/crash handling
+    FlutterError.onError = (details) {
+      loggerService?.logAppCrash(
+        details.exceptionAsString(),
+        details.stack ?? StackTrace.current,
+      );
+    };
+
+    // ✅ Firebase init should never crash the app
+    var firebaseReady = false;
     try {
-      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-    } catch (e) {
-      CommonLogger.log.e("❌ FirebaseMessaging BG handler register failed: $e");
+      await Firebase.initializeApp();
+      firebaseReady = true;
+    } catch (e, st) {
+      CommonLogger.log.e("❌ Firebase.initializeApp failed (app continues): $e");
+      CommonLogger.log.e("STACK: $st");
     }
-  }
 
-  // ✅ UI first (prevents black screen even if FCM fails)
-  runApp(const MyApp());
+    // ✅ Register BG handler early (only if Firebase is ready)
+    if (firebaseReady) {
+      try {
+        FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      } catch (e) {
+        CommonLogger.log.e("❌ FirebaseMessaging BG handler register failed: $e");
+      }
+    }
 
-  // ✅ Safe style set (non-blocking)
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.white,
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarColor: Colors.black,
-      systemNavigationBarIconBrightness: Brightness.dark,
-    ),
-  );
+    // ✅ UI (same zone as ensureInitialized — no zone mismatch)
+    runApp(const MyApp());
 
-  // ✅ Initialize notifications + token fetch AFTER UI starts
-  unawaited(_initFcmSafely());
+    // ✅ Safe style set (non-blocking)
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.white,
+        statusBarIconBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.black,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+    );
+
+    // ✅ Initialize notifications + token fetch AFTER UI starts
+    unawaited(_initFcmSafely());
+  }, (error, stack) {
+    loggerService?.logAppCrash(error.toString(), stack);
+  });
 }
 
 Future<void> _initFcmSafely() async {

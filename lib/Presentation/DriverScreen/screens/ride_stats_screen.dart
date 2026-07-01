@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:hopper/Core/Constants/Colors.dart';
 import 'package:hopper/Core/Services/driver_background_location_service.dart';
+import 'package:hopper/Core/Services/driver_location_bus.dart';
 import 'package:hopper/Core/Services/navigation_service.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/images.dart';
@@ -665,8 +666,15 @@ class RideStatsScreen extends StatelessWidget {
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 16),
                               child: Obx(() {
+                                // Prefer fresh positive server ETA; else fall
+                                // back to the local driver->drop route ETA so the
+                                // card never shows a permanent "0 min".
+                                final serverMin = driverStatusController
+                                    .dropDurationInMin.value;
                                 final eta = c.formatDuration(
-                                  driverStatusController.dropDurationInMin.value,
+                                  serverMin > 0
+                                      ? serverMin
+                                      : c.routeDurationMin.value,
                                 );
                                 final dist = c.formatDistance(
                                   driverStatusController
@@ -1418,12 +1426,8 @@ class _RideStatsScreenState extends State<RideStatsScreen>
   }
 
   void _startLocationStream() {
-    positionStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 5, // little more filtering
-      ),
-    ).listen((Position position) async {
+    // Shared foreground GPS bus (one OS stream for all driver map screens).
+    positionStream = DriverLocationBus.instance.stream.listen((Position position) async {
       final current = LatLng(position.latitude, position.longitude);
       final acc = (position.accuracy.isFinite) ? position.accuracy : 9999.0;
       final speed = (position.speed.isFinite) ? position.speed : 0.0; // m/s
@@ -2168,16 +2172,17 @@ class _RideStatsScreenState extends State<RideStatsScreen>
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Obx(
-                                () => CustomTextfield.textWithStyles600(
-                                  _formatDuration(
-                                    driverStatusController
-                                        .dropDurationInMin
-                                        .value,
-                                  ),
+                              Obx(() {
+                                final serverMin = driverStatusController
+                                    .dropDurationInMin.value;
+                                final mins = serverMin > 0
+                                    ? serverMin
+                                    : c.routeDurationMin.value;
+                                return CustomTextfield.textWithStyles600(
+                                  _formatDuration(mins),
                                   fontSize: 20,
-                                ),
-                              ),
+                                );
+                              }),
                               const SizedBox(width: 10),
                               Icon(
                                 Icons.circle,

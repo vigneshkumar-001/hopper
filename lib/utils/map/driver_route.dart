@@ -5,6 +5,7 @@ import 'dart:math' as math;
 
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:hopper/Core/Services/driver_location_bus.dart';
 
 import 'route_info.dart';
 import 'polyline_snap.dart';
@@ -178,12 +179,8 @@ class DriverRouteController {
 
   void _startLocationStream() {
     _positionSub?.cancel();
-    _positionSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 2,
-      ),
-    ).listen(_onPosition);
+    // Shared foreground GPS bus (one OS stream for all driver map screens).
+    _positionSub = DriverLocationBus.instance.stream.listen(_onPosition);
   }
 
   Future<void> _onPosition(Position position) async {

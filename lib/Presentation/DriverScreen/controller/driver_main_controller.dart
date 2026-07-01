@@ -21,6 +21,7 @@ import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
 import 'package:hopper/utils/sharedprefsHelper/booking_local_data.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
+import 'package:hopper/utils/websocket/secondary_dispatch_socket.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 import '../../../api/repository/api_config_controller.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
@@ -98,6 +99,11 @@ class DriverMainController extends GetxController
 
   // Socket + location
   final SocketService socketService = SocketService();
+
+  // FRAUD (CRIT-5): mock/fake-GPS state. Set true when a mocked fix is seen so the UI/server
+  // can react; report is throttled via _lastMockLocationReportAt.
+  final RxBool mockLocationDetected = false.obs;
+  DateTime? _lastMockLocationReportAt;
   StreamSubscription<Position>? locationSub;
   Timer? emitTimer;
   Timer? heartbeatTimer;
@@ -143,6 +149,10 @@ class DriverMainController extends GetxController
 
   // Config
   final ApiConfigController cfg = Get.find<ApiConfigController>();
+
+  // DUAL-CONNECT: stable per-install device id (FCM token) reused by the
+  // secondary single-ride dispatch socket so bk can dedupe this device.
+  String? _dispatchDeviceId;
   Worker? _sharedToggleWorker;
   Worker? _serviceTypeWorker;
   Worker? _autoOfflineWorker;
@@ -206,6 +216,14 @@ class DriverMainController extends GetxController
   // booking whose context wasn't cleared on completion from emitting 1Hz
   // indefinitely while the car is parked.
   static const Duration _activeTripIdleCutoff = Duration(minutes: 15);
+
+  // Freshness guard: never build/emit from a GPS fix older than this. Android
+  // can deliver a BACKLOG of buffered fixes after a stall; draining them makes
+  // the customer track the driver's position from N seconds ago. We compare
+  // `now` to the fix's OWN timestamp (same device clock -> immune to clock skew /
+  // timezone) and drop stale fixes so only the current location is sent.
+  // Generous enough for normal GPS provider latency (sub-second to ~2s).
+  static const Duration _maxFixAgeForEmit = Duration(seconds: 5);
 
   // Expose demand micro-interaction animations (for UI overlays).
   Listenable get demandBounceListenable => _demandBounceCtrl;
@@ -819,9 +837,35 @@ class DriverMainController extends GetxController
     }
 
     final msg =
-        (payload['message'] ?? 'Your trip has been cancelled.').toString();
+        (payload['message'] ??
+                payload['reason'] ??
+                'Your trip has been cancelled.')
+            .toString();
+
+    // Shared-ride awareness: a single passenger cancelling out of a multi-rider
+    // pool must NOT end the whole trip. Mark that passenger cancelled-by-customer
+    // (disabled card + reason on the driver UI) and, when other riders are still
+    // active, keep the driver on the ride instead of showing "Trip Cancelled".
+    if (cancelledBy == 'customer' &&
+        bookingId != null &&
+        Get.isRegistered<SharedRideController>()) {
+      final shared = Get.find<SharedRideController>();
+      final inPool = shared.riders.any((r) => r.bookingId == bookingId);
+      if (inPool) {
+        // Prefer the customer's actual reason for the disabled card.
+        final riderReason =
+            (payload['reason'] ?? payload['message'] ?? '').toString().trim();
+        shared.markCancelledByCustomer(bookingId, reason: riderReason);
+        if (shared.getAllActiveRiders().isNotEmpty) {
+          _cancelNavInFlight = false; // not a trip-ending cancellation
+          return; // keep serving remaining passengers; UI shows disabled card
+        }
+        // Last active rider cancelled -> fall through to end the trip below.
+      }
+    }
+
     _showCancellationDialog(
-      title: cancelledBy == 'customer' ? 'Trip Cancelled' : 'Trip Cancelled',
+      title: 'Trip Cancelled',
       message: msg,
     );
 
@@ -931,6 +975,18 @@ class DriverMainController extends GetxController
     currentBookingId = null;
     _lastResumedBookingId = null;
     activeBookingData.value = null;
+
+    // Wipe the shared-ride pool so a cancelled/ended shared ride never leaves
+    // stale riders that would mix into the next shared ride.
+    try {
+      if (Get.isRegistered<SharedRideController>()) {
+        Get.find<SharedRideController>().reset();
+      }
+    } catch (_) {}
+
+    // DUAL-CONNECT: ride cancelled -> release the active-ride backend binding and
+    // bring the secondary single-ride dispatch socket back if still idle+shared.
+    unawaited(onActiveRideEnded());
     _lastDismissedBookingId = null;
     showActiveBookingCard.value = false;
 
@@ -1353,6 +1409,32 @@ class DriverMainController extends GetxController
     return demandOpportunities.isNotEmpty ? demandOpportunities.first : null;
   }
 
+  /// Align the FOREGROUND location emitter to an in-progress trip (pickup or
+  /// drop). The 1s emit loop streams at the smooth ~1Hz active-trip cadence and
+  /// stamps `bookingId` on every packet ONLY while `currentBookingId` is set;
+  /// otherwise it falls back to the idle 5–8s cadence with no bookingId, so the
+  /// server cannot reliably route frames to the customer and the customer's car
+  /// marker updates slowly / jerkily (notably during the drop leg, or after an
+  /// app restart mid-ride where booking-request never re-ran). Ride screens call
+  /// this on init so the foreground stream is always trip-aligned. The 1s timer
+  /// detects the active-trip flip on its next tick and rebuilds the GPS stream
+  /// (distanceFilter 0) automatically; here we also nudge socket registration so
+  /// the booking context matches immediately. Idempotent / cheap to re-call.
+  void setActiveTripBookingId(String bookingId) {
+    final id = _normalizeBookingId(bookingId);
+    if (id == null) return;
+    if (_normalizeBookingId(currentBookingId) == id) return;
+    currentBookingId = id;
+    final did = driverId?.trim() ?? '';
+    if (did.isNotEmpty) {
+      socketService.setSingleActiveBookingRoom(id);
+      socketService.registerDriver(did, bookingId: id);
+    }
+    CommonLogger.log.i(
+      'Foreground emitter aligned to active trip bookingId=${_maskIdForLog(id)}',
+    );
+  }
+
   String? _resolveBookingIdForLocationPayload() {
     final direct = _normalizeBookingId(currentBookingId);
     if (direct != null) return direct;
@@ -1484,7 +1566,34 @@ class DriverMainController extends GetxController
       if (_disposed || isClosed) return;
       if (token != _emitLoopToken) return;
 
+      // FRAUD (CRIT-5): drop mock/fake-GPS fixes so spoofed coordinates never feed the live
+      // trip or reach the server, and report the attempt (throttled) so the backend can flag
+      // the driver. Without this a free fake-GPS app lets a driver fabricate trips/earnings.
+      if (pos.isMocked) {
+        if (mockLocationDetected.value != true) mockLocationDetected.value = true;
+        final nowMock = DateTime.now();
+        if (_lastMockLocationReportAt == null ||
+            nowMock.difference(_lastMockLocationReportAt!) >
+                const Duration(seconds: 15)) {
+          _lastMockLocationReportAt = nowMock;
+          if (socketService.connected) {
+            socketService.emit('driver-integrity', {
+              'driverId': driverId,
+              'bookingId': _resolveBookingIdForLocationPayload(),
+              'mock': true,
+            });
+          }
+        }
+        return;
+      }
+
       final now = DateTime.now();
+      // Freshness guard (skew-immune: same device clock for `now` and the fix).
+      // Drop a stale/buffered fix so `latestLocationPayload` only ever holds the
+      // current position — the customer never sees the driver lag behind.
+      if (now.difference(pos.timestamp) > _maxFixAgeForEmit) {
+        return;
+      }
       final speedMs = (pos.speed.isFinite && pos.speed >= 0) ? pos.speed : 0.0;
       final accuracyM = (pos.accuracy.isFinite) ? pos.accuracy : 9999.0;
       final holdUntil = _manualFollowZoomHoldUntil;
@@ -1601,7 +1710,14 @@ class DriverMainController extends GetxController
         accuracyM: accuracyM.isFinite ? accuracyM : null,
         timestamp: pos.timestamp,
       );
-    });
+    }, onError: (Object e, StackTrace st) {
+      // CRASH FIX: a denied/revoked location permission (or a transient platform
+      // GPS error) emits a stream error. Without an onError handler it became an
+      // unhandled "APP CRASH: User denied permissions". Swallow it so the app
+      // stays alive — the emit loop re-subscribes on its next rebuild once
+      // permission is granted again.
+      if (kDebugMode) CommonLogger.log.w('location stream error (emitter): $e');
+    }, cancelOnError: false);
 
     if (_disposed || isClosed) return;
     if (token != _emitLoopToken) return;
@@ -1611,12 +1727,21 @@ class DriverMainController extends GetxController
     final localEmitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_disposed || isClosed) return;
       if (token != _emitLoopToken) return;
-      if (!statusController.isOnline.value) return;
+      final payload = latestLocationPayload;
+      if (payload == null) return;
+      // A driver on an ACTIVE trip must keep streaming location even if the
+      // `isOnline` flag is momentarily false — it is synced from the server
+      // (`getDriverStatus.onlineStatus`) and can read false mid-ride (a booked
+      // driver, a stale sync on resume, a brief toggle). Gating the emit on it
+      // silently stopped all sends and FROZE the customer's car marker. So only
+      // the gate idle/online emits on `isOnline`; an active trip (payload has a
+      // bookingId) always streams. Mirrors the server, which keeps relaying
+      // location for an active booking regardless of the cached online flag.
+      final bool hasActiveBooking = payload['bookingId'] != null;
+      if (!hasActiveBooking && !statusController.isOnline.value) return;
       // Foreground self-heal: reclaim a revoked-and-suppressed socket so it does
       // not sit dead while the app is the rightful (foreground) owner.
       _maybeReclaimRevokedSession();
-      final payload = latestLocationPayload;
-      if (payload == null) return;
 
       final ts = payload['timestamp']?.toString();
       if (ts == null || ts.isEmpty) return;
@@ -1753,48 +1878,12 @@ class DriverMainController extends GetxController
   }
 
   // ---------------- socket init + listeners ----------------
-  void _bindSocketListeners() {
-    socketService.off('connect');
-    socketService.off('registered');
-    socketService.off('booking-request');
-    socketService.off('driver-cancelled');
-    socketService.off('customer-cancelled');
-    socketService.off('driver:demand-opportunity');
-    socketService.off('driver:demand-opportunities');
-
-    // Server-authoritative online status: register the push listener (dedup-safe)
-    // so a server-side flip (other device / inactivity / admin) reaches the UI.
-    statusController.bindOnlineStatusListener();
-
-    socketService.on('connect', (_) {
-      if (_disposed || isClosed) return;
-      socketService.registerDriver(
-        driverId ?? '',
-        bookingId: currentBookingId,
-        ack: (resp) {
-          if (kDebugMode) CommonLogger.log.i("register ack: $resp");
-        },
-      );
-      // Fires on initial connect AND every reconnect -> always pull the true
-      // online status from the server and apply it.
-      statusController.requestOnlineStatus(driverId: driverId);
-    });
-
-    socketService.on('registered', (_) async {
-      if (_disposed || isClosed) return;
-      await startEmitLoop();
-      requestDemandOpportunities(reason: 'socket_registered');
-    });
-
-    socketService.on('driver-cancelled', (data) async {
-      await handleDriverCancelled(data);
-    });
-
-    socketService.on('customer-cancelled', (data) async {
-      await handleCustomerCancelled(data);
-    });
-
-    socketService.on('booking-request', (data) async {
+  /// DUAL-CONNECT: process an incoming dispatch (booking) request from EITHER the
+  /// primary socket (shared backend while shared-enabled, or single when shared
+  /// off) OR the secondary single-ride (bk) dispatch socket. The ride's backend
+  /// is bound at ACCEPT time from the payload's `sharedBooking` flag (see the
+  /// accept button in driver_main_screen.dart), so no origin is threaded here.
+  Future<void> _processBookingRequest(dynamic data) async {
       if (_disposed || isClosed) return;
       if (data == null) return;
 
@@ -1896,6 +1985,136 @@ class DriverMainController extends GetxController
         dropAddress: dropAddr,
       );
       startCountdown();
+  }
+
+  /// DUAL-CONNECT: start/stop the secondary single-ride (bk) dispatch socket so
+  /// it runs exactly when the driver SHOULD be discoverable in customer "Ride
+  /// Only" while shared-enabled — i.e. shared preference ON, online, and NOT on
+  /// an active ride (no backend binding). In every other state it is torn down,
+  /// guaranteeing at most one socket per backend (no same-backend contention).
+  void syncSecondaryDispatchSocket() {
+    if (_disposed || isClosed) return;
+    try {
+      final did = driverId?.trim() ?? '';
+      final shouldRun =
+          cfg.isSharedEnabled.value &&
+          cfg.activeRideBackendShared.value == null &&
+          statusController.isOnline.value &&
+          did.isNotEmpty;
+      if (shouldRun) {
+        SecondaryDispatchSocket().start(
+          url: ApiConfigController.singleSocket,
+          driverId: did,
+          deviceId: _dispatchDeviceId,
+          onBookingRequest: (data) => _processBookingRequest(data),
+        );
+      } else {
+        SecondaryDispatchSocket().stop();
+      }
+    } catch (e) {
+      CommonLogger.log.e("[dual-connect] syncSecondaryDispatchSocket error: $e");
+    }
+  }
+
+  /// DUAL-CONNECT: called when the home screen is re-entered (the permanent
+  /// controller is reused, so [_prepare] does NOT re-run). Refresh the active
+  /// booking; if none remains (e.g. the ride just completed), release the
+  /// backend binding and bring the secondary dispatch socket back.
+  Future<void> reconcileDualConnectAfterNavigation() async {
+    if (_disposed || isClosed) return;
+    try {
+      await checkAndResumeActiveBooking();
+    } catch (_) {}
+    if (_disposed || isClosed) return;
+    if (activeBookingData.value == null) {
+      await onActiveRideEnded();
+    } else {
+      syncSecondaryDispatchSocket();
+    }
+  }
+
+  /// DUAL-CONNECT: an active ride has ended (completed / cancelled / driver went
+  /// offline). Release the active-ride backend binding so the IDLE backend
+  /// reverts to the user's preference, then re-evaluate the secondary socket.
+  Future<void> onActiveRideEnded() async {
+    try {
+      await cfg.clearActiveRideBackend();
+    } catch (_) {}
+    syncSecondaryDispatchSocket();
+  }
+
+  void _bindSocketListeners() {
+    socketService.off('connect');
+    socketService.off('registered');
+    socketService.off('booking-request');
+    socketService.off('driver-cancelled');
+    socketService.off('customer-cancelled');
+    socketService.off('driver:demand-opportunity');
+    socketService.off('driver:demand-opportunities');
+    // Instant active-booking cleanup signals (backend emits after final payment).
+    socketService.off('payment_success');
+    socketService.off('ride_completed');
+    socketService.off('active_booking_cleared');
+    socketService.off('driver_released');
+
+    // Server-authoritative online status: register the push listener (dedup-safe)
+    // so a server-side flip (other device / inactivity / admin) reaches the UI.
+    statusController.bindOnlineStatusListener();
+
+    socketService.on('connect', (_) {
+      if (_disposed || isClosed) return;
+      socketService.registerDriver(
+        driverId ?? '',
+        bookingId: currentBookingId,
+        ack: (resp) {
+          if (kDebugMode) CommonLogger.log.i("register ack: $resp");
+        },
+      );
+      // Fires on initial connect AND every reconnect -> always pull the true
+      // online status from the server and apply it.
+      statusController.requestOnlineStatus(driverId: driverId);
+    });
+
+    socketService.on('registered', (_) async {
+      if (_disposed || isClosed) return;
+      await startEmitLoop();
+      requestDemandOpportunities(reason: 'socket_registered');
+      // RECONNECT RECOVERY (backend = source of truth): re-fetch the active
+      // booking so the driver resumes into their active ride. THROTTLED (no
+      // `force`): the socket can emit `registered` many times/second (re-register
+      // loop), and forcing a refetch each time re-joins the shared rooms and
+      // re-processes the ride EVERY SECOND — which made the complete button + map
+      // BLINK and the swipe slider un-swipeable. The built-in 8s throttle still
+      // covers genuine reconnects without the spam.
+      await checkAndResumeActiveBooking();
+    });
+
+    socketService.on('driver-cancelled', (data) async {
+      await handleDriverCancelled(data);
+    });
+
+    socketService.on('customer-cancelled', (data) async {
+      await handleCustomerCancelled(data);
+    });
+
+    // After a final (online or cash) payment the backend releases the driver and
+    // emits these. Don't trust the socket alone: re-verify via the active-booking
+    // API so the card clears instantly but only ever reflects backend truth.
+    socketService.on('payment_success', (data) async {
+      await _handleActiveBookingTerminalEvent(data, 'payment_success');
+    });
+    socketService.on('ride_completed', (data) async {
+      await _handleActiveBookingTerminalEvent(data, 'ride_completed');
+    });
+    socketService.on('active_booking_cleared', (data) async {
+      await _handleActiveBookingTerminalEvent(data, 'active_booking_cleared');
+    });
+    socketService.on('driver_released', (data) async {
+      await _handleActiveBookingTerminalEvent(data, 'driver_released');
+    });
+
+    socketService.on('booking-request', (data) async {
+      await _processBookingRequest(data);
     });
 
     socketService.on('driver:demand-opportunities', (data) {
@@ -1940,6 +2159,30 @@ class DriverMainController extends GetxController
       unawaited(_syncDemandMarkerFromTop());
       _maybeShowDemandBanner(opp);
     });
+  }
+
+  /// Backend signalled this booking reached a terminal/paid state. We do NOT
+  /// trust the socket alone — we re-fetch the active booking and let the
+  /// backend-authoritative [checkAndResumeActiveBooking] clear the local cache
+  /// (BookingDataService / currentBookingId / booking rooms) when the API says
+  /// hasBooking=false, or restore only a backend-confirmed booking otherwise.
+  /// Ignores events for a DIFFERENT booking (e.g. another shared passenger).
+  Future<void> _handleActiveBookingTerminalEvent(
+    dynamic data,
+    String event,
+  ) async {
+    if (_disposed || isClosed) return;
+    final payload = _coerceSocketPayloadToMap(data);
+    final evtBookingId = (payload?['bookingId'] ?? '').toString().trim();
+    final cur = (currentBookingId ?? '').toString().trim();
+    // If both ids are known and differ, this concerns someone else's leg.
+    if (evtBookingId.isNotEmpty && cur.isNotEmpty && evtBookingId != cur) {
+      return;
+    }
+    if (kDebugMode) {
+      CommonLogger.log.i('[$event] re-verifying active booking via API');
+    }
+    await checkAndResumeActiveBooking();
   }
 
   LatLng? _extractLatLngFrom(
@@ -2036,9 +2279,21 @@ class DriverMainController extends GetxController
       }
       final sharedRide = Get.find<SharedRideController>();
 
-      // Reset so stale riders from previous sessions don't block UI on resume.
-      sharedRide.riders.clear();
-      sharedRide.activeTarget.value = null;
+      // When returning from external navigation, the active-booking API may only
+      // return the single rider being navigated to. To prevent data loss, we
+      // preserve the existing list of riders if a shared pool is already active.
+      final hadActiveSharedPool = sharedRide.riders.any(
+        (r) => r.stage != SharedRiderStage.dropped,
+      );
+      final previousActiveBookingId =
+          sharedRide.activeTarget.value?.bookingId.trim() ?? '';
+
+      // If a shared ride is NOT already in progress, clear the list to start fresh.
+      // This handles cases where a new shared ride is being initiated.
+      if (!hadActiveSharedPool) {
+        sharedRide.riders.clear();
+        sharedRide.activeTarget.value = null;
+      }
 
       if (latD != null && lngD != null) {
         sharedRide.driverLocation.value = LatLng(latD, lngD);
@@ -2094,6 +2349,14 @@ class DriverMainController extends GetxController
         } else if (rideStarted) {
           sharedRide.markOnboard(bid);
         }
+      }
+
+      if (hadActiveSharedPool &&
+          previousActiveBookingId.isNotEmpty &&
+          sharedRide.riders.any((r) => r.bookingId == previousActiveBookingId)) {
+        sharedRide.activeTarget.value = sharedRide.riders.firstWhereOrNull(
+          (r) => r.bookingId == previousActiveBookingId,
+        );
       }
     } catch (_) {
       // best-effort only; socket joined-booking will still hydrate in most cases
@@ -2308,6 +2571,9 @@ class DriverMainController extends GetxController
           currentBookingId = null;
           BookingDataService().clear();
           socketService.clearAllBookingRooms();
+          // DUAL-CONNECT: trip ended on the backend -> release the active-ride
+          // backend binding and restore the secondary dispatch socket if idle.
+          unawaited(onActiveRideEnded());
           if (shouldAutoResumeFromExternalNav) {
             await NavigationService().clearExternalNavigationReturnPending();
           }
@@ -2323,6 +2589,35 @@ class DriverMainController extends GetxController
         );
 
         activeBookingData.value = normalized;
+
+        // H-D1: re-arm background tracking on cold-start/resume of an IN-PROGRESS trip.
+        // Previously the BG service was only (re)started on the external-nav handoff path,
+        // so if the app was killed mid-trip the customer's car marker froze for the rest of
+        // the ride. When the resumed ride is STARTED and we're online, ensure it's running.
+        if (status.toUpperCase() == 'STARTED' && statusController.isOnline.value) {
+          driverId ??= await SharedPrefHelper.getDriverId();
+          final didRearm = driverId?.trim() ?? '';
+          if (didRearm.isNotEmpty) {
+            unawaited(
+              bg
+                  .ensureDriverTrackingServiceRunning(
+                    driverId: didRearm,
+                    bookingId: _resolveBookingIdForLocationPayload(),
+                  )
+                  .catchError((_) {}),
+            );
+          }
+        }
+
+        // DUAL-CONNECT: an active ride was resolved on launch/resume -> bind its
+        // backend (single vs shared) so the primary socket + API target the
+        // backend that owns it, then drop the secondary dispatch socket. Covers
+        // app-restart mid single-ride while shared is enabled (otherwise the
+        // primary would stay on the shared backend).
+        try {
+          await cfg.bindActiveRideBackend(isShared);
+        } catch (_) {}
+        SecondaryDispatchSocket().stop();
 
         // Keep service type in sync so map marker icon (car/bike) matches resumed booking.
         statusController.setServiceTypeFrom(data['rideType']);
@@ -2397,8 +2692,20 @@ class DriverMainController extends GetxController
     return null;
   }
 
-  Future<void> resumeActiveBooking() async {
+  Future<void> resumeActiveBooking({bool userInitiated = false}) async {
     if (_disposed || isClosed) return;
+    // Guard against resuming a ride from the home-screen card while the driver
+    // is offline. Only blocks an explicit user tap; programmatic auto-resume
+    // (e.g. returning from external navigation during an active ride) is left
+    // untouched.
+    if (userInitiated && !statusController.isOnline.value) {
+      Get.snackbar(
+        'You are offline',
+        'Go online to resume your active ride.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
     final data = activeBookingData.value;
     if (data == null) return;
 
@@ -2557,7 +2864,10 @@ class DriverMainController extends GetxController
     try {
       final prefs = await SharedPreferences.getInstance();
       final fcm = (prefs.getString('fcmToken') ?? '').trim();
-      if (fcm.isNotEmpty) socketService.setDeviceId(fcm);
+      if (fcm.isNotEmpty) {
+        socketService.setDeviceId(fcm);
+        _dispatchDeviceId = fcm;
+      }
     } catch (_) {}
     if (_disposed || isClosed) return;
 
@@ -2631,6 +2941,17 @@ class DriverMainController extends GetxController
     _appInForeground = false;
     final handoffRequestedAt = DateTime.now().millisecondsSinceEpoch;
 
+    // RACE-PROOF the foreground→background handoff. Suspend the foreground
+    // socket's auto-reconnect SYNCHRONOUSLY, before the background isolate's
+    // socket can register. When the background socket registers with a different/
+    // missing deviceId, the backend revokes THIS foreground socket (single
+    // session). The foreground would otherwise process that "io server disconnect"
+    // and auto-reconnect BEFORE the buffered `session-revoked` event sets its
+    // guard — re-registering and revoking the background socket, which then
+    // `stopSelf()`s and freezes customer tracking while Google Maps is open.
+    // Reclaimed by socketService.connect() in onAppResumed.
+    socketService.suspendAutoReconnect();
+
     // Hand off to background service ONLY when online.
     var bgRunning = false;
     if (statusController.isOnline.value) {
@@ -2648,7 +2969,46 @@ class DriverMainController extends GetxController
           );
         } catch (_) {}
         bgRunning = await bg.isDriverTrackingServiceRunning();
+        if (!bgRunning) {
+          // RACE FIX: ensureDriverTrackingServiceRunning() only waits ~350ms after
+          // startService(), but on many OEMs the foreground-service engine needs
+          // longer (cold Flutter engine spin-up) before `isRunning()` reports true.
+          // Concluding "not running" here is dangerous: the code below then KEEPS
+          // the foreground socket alive (connect()) — and the BG service comes up a
+          // moment later anyway, so BOTH end up on the same backend (bck) for this
+          // driver. That is the single-session revoke-war / connect→forced-close
+          // storm seen on return from Google Maps, AND the foreground GPS stream is
+          // throttled by the OS once backgrounded → the customer's car freezes.
+          // Poll briefly so we trust a slow-but-real BG start instead of duelling.
+          final bgWaitUntil = DateTime.now().add(const Duration(seconds: 2));
+          while (DateTime.now().isBefore(bgWaitUntil)) {
+            await Future<void>.delayed(const Duration(milliseconds: 150));
+            if (await bg.isDriverTrackingServiceRunning()) {
+              bgRunning = true;
+              break;
+            }
+          }
+        }
         if (bgRunning) {
+          // Best-effort: give the (usually COLD — onAppResumed stops the service
+          // on every return, so each Navigate starts it fresh) background isolate
+          // a moment to land its first emit BEFORE we cut the foreground, purely
+          // to minimise the hand-off gap. The foreground keeps emitting during
+          // this wait (the _backgroundServiceActive gate below is set AFTER it).
+          //
+          // CRITICAL: we must NOT demote a genuinely-running foreground service
+          // to "not running" just because this first emit is still in flight. A
+          // cold Flutter engine spin-up + socket connect + first bestForNavigation
+          // fix routinely needs >1.6s, so the old code set bgRunning=false on
+          // timeout and fell through to the "keep foreground socket" path below —
+          // WHILE the background service was also running. That left TWO sockets
+          // duelling for the backend's single session and a foreground GPS stream
+          // the OS throttles once the app is backgrounded behind Google Maps,
+          // which is exactly the "tracking freezes when the driver opens Maps"
+          // bug. The FGS-backed background isolate is the RELIABLE emitter while
+          // backgrounded; trust it once it is running. The brief sub-second gap
+          // until its first emit is absorbed by the customer-side jitter buffer /
+          // dead-reckoning.
           try {
             final prefs = await SharedPreferences.getInstance();
             final waitUntil = DateTime.now().add(
@@ -2661,13 +3021,7 @@ class DriverMainController extends GetxController
               }
               await Future<void>.delayed(const Duration(milliseconds: 150));
             }
-            final lastBgEmitAt = prefs.getInt('bg_last_emit_at') ?? 0;
-            if (lastBgEmitAt < handoffRequestedAt) {
-              bgRunning = false;
-            }
-          } catch (_) {
-            bgRunning = false;
-          }
+          } catch (_) {}
         }
       }
     }
@@ -2683,6 +3037,9 @@ class DriverMainController extends GetxController
           '[BG_HANDOFF] BG service not running; keeping foreground socket active',
         );
       }
+      // No handoff happened — the foreground stays the sole emitter, so restore
+      // its normal auto-reconnect (clear the handoff suspension set above).
+      socketService.connect();
       return;
     }
 
@@ -2758,6 +3115,11 @@ class DriverMainController extends GetxController
         );
 
         await startEmitLoop();
+
+        // DUAL-CONNECT: shared preference changed -> the primary socket just
+        // switched backends; re-evaluate the secondary single-ride dispatch
+        // socket (start when enabling+online+idle, stop when disabling).
+        syncSecondaryDispatchSocket();
 
         if (statusController.isOnline.value) {
           if (_appInForeground) {
@@ -2903,6 +3265,11 @@ class DriverMainController extends GetxController
         followDriver.value = true;
         await goToCurrentLocation();
       }
+
+      // DUAL-CONNECT: (re)evaluate the secondary single-ride dispatch socket now
+      // that online state changed — starts it when going online while shared is
+      // enabled and idle; stops it when going offline.
+      syncSecondaryDispatchSocket();
     } catch (e) {
       statusController.toggleStatus();
       CommonLogger.log.e("toggle online error: $e");
@@ -3286,6 +3653,17 @@ class DriverMainController extends GetxController
       await initSocketAndLocation();
       await checkAndResumeActiveBooking();
       await restorePendingBookingRequestFromNotification();
+
+      // DUAL-CONNECT: reconcile backend binding on launch. If there is no active
+      // ride, release any stale binding (e.g. left over from a completed single
+      // ride) so the idle backend reverts to the preference and the secondary
+      // single-ride dispatch socket comes up. If a ride WAS resumed, resolve/
+      // resumeActiveBooking already bound the correct backend.
+      if (activeBookingData.value == null) {
+        await onActiveRideEnded();
+      } else {
+        syncSecondaryDispatchSocket();
+      }
     } catch (e) {
       CommonLogger.log.e("prepare error: $e");
       ready.value = true;
@@ -3305,6 +3683,9 @@ class DriverMainController extends GetxController
     socketService.off('customer-cancelled');
     socketService.off('driver:demand-opportunity');
     socketService.off('driver:demand-opportunities');
+
+    // DUAL-CONNECT: drop the secondary single-ride dispatch socket.
+    SecondaryDispatchSocket().stop();
 
     _sharedToggleWorker?.dispose();
     _serviceTypeWorker?.dispose();

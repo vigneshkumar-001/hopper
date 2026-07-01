@@ -11,11 +11,13 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:hopper/Core/Services/driver_location_bus.dart';
 
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/verify_rider_screen.dart';
+import 'package:hopper/api/dataSource/apiDataSource.dart';
 import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/api/repository/api_constents.dart';
 import 'package:hopper/utils/map/route_info.dart';
@@ -41,6 +43,9 @@ class PickingUiState {
   final String directionText;
   final String distanceText;
   final String maneuver;
+  // Locally-computed driver->pickup ETA (minutes) from the route fetch. Used as
+  // a fallback for the header "min" when the server socket ETA is 0/missing.
+  final double routeDurationMin;
 
   const PickingUiState({
     required this.driverLocation,
@@ -49,6 +54,7 @@ class PickingUiState {
     required this.directionText,
     required this.distanceText,
     required this.maneuver,
+    this.routeDurationMin = 0.0,
   });
 
   PickingUiState copyWith({
@@ -58,6 +64,7 @@ class PickingUiState {
     String? directionText,
     String? distanceText,
     String? maneuver,
+    double? routeDurationMin,
   }) {
     return PickingUiState(
       driverLocation: driverLocation ?? this.driverLocation,
@@ -66,6 +73,7 @@ class PickingUiState {
       directionText: directionText ?? this.directionText,
       distanceText: distanceText ?? this.distanceText,
       maneuver: maneuver ?? this.maneuver,
+      routeDurationMin: routeDurationMin ?? this.routeDurationMin,
     );
   }
 }
@@ -116,6 +124,9 @@ class PickingCustomerController extends GetxController {
   // ----- socket -----
   late final SocketService socketService;
 
+  // ----- REST fallback -----
+  final ApiDataSource _restApi = ApiDataSource();
+
   // ----- rider meta -----
   final customerName = ''.obs;
   final customerPhone = ''.obs;
@@ -144,6 +155,13 @@ class PickingCustomerController extends GetxController {
   // ----- timer -----
   final secondsLeft = 0.obs;
   Timer? _timer;
+
+  // Self-heal: if the server's `joined-booking` reply (customer name/phone +
+  // pickup distance/ETA) is ever lost, re-emit join-booking AFTER the backend's
+  // 2s duplicate-join window so it is not suppressed. Bounded retries.
+  Timer? _joinedBookingRetryTimer;
+  int _joinedBookingRetries = 0;
+  static const int _maxJoinedBookingRetries = 3;
 
   // ----- UI state -----
   late final Rx<PickingUiState> ui;
@@ -218,7 +236,17 @@ class PickingCustomerController extends GetxController {
     _listenServiceTypeForVehicle();
     _initSocket();
     unawaited(_joinBookingRoom());
+    // Align the foreground emitter to this trip so it streams at the smooth
+    // ~1Hz active-trip cadence (bookingId on every packet) while approaching
+    // pickup, instead of the idle 5–8s cadence. See setActiveTripBookingId().
+    if (Get.isRegistered<DriverMainController>()) {
+      Get.find<DriverMainController>().setActiveTripBookingId(bookingId);
+    }
     _bootFromJoinedOrReverseGeocode();
+    // Reliable REST fallback for customer name / phone / photo. The socket
+    // `joined-booking` reply can be missed; this guarantees the call button,
+    // rider name and addresses are populated regardless of socket timing.
+    unawaited(_hydrateCustomerInfoFromRest());
     _startTracking();
     rideMap.setPickupDrop(pickup: pickupLocation, showPickupPin: true);
     rideMap.setShowCompletedRoute(false);
@@ -258,6 +286,7 @@ class PickingCustomerController extends GetxController {
     _connectivitySub?.cancel();
     _stopNoShowTimer();
     _routeRetryTimer?.cancel();
+    _joinedBookingRetryTimer?.cancel();
     _serviceTypeWorker?.dispose();
     _pickupMarkerWorker?.dispose();
     _sheetHeightWorker?.dispose();
@@ -514,6 +543,54 @@ class PickingCustomerController extends GetxController {
     }
   }
 
+  /// Reliable REST fallback for the rider's name / phone / profile photo and
+  /// pickup-drop addresses. These normally arrive via the `joined-booking`
+  /// socket reply, but that single shot can be missed (slow screen build, a
+  /// dropped packet, or backend de-dupe), which left the pickup screen showing
+  /// "Picking up Rider", a dead call button and no addresses. GET /active-booking
+  /// returns the same fields straight from the DB, so we fill any value that is
+  /// still empty (the socket still wins if it already populated it).
+  Future<void> _hydrateCustomerInfoFromRest() async {
+    try {
+      final result = await _restApi.getDriverActiveBooking();
+      if (isClosed) return;
+      result.fold(
+        (failure) {
+          CommonLogger.log.w(
+            'active-booking customer-info fallback failed: ${failure.message}',
+          );
+        },
+        (resp) {
+          final data = resp.data;
+          if (data == null) return;
+          // Apply only to THIS booking (ignore a stale/other active booking).
+          final id = (data['bookingId'] ?? '').toString().trim();
+          if (id.isNotEmpty && id != bookingId.trim()) return;
+
+          void fillIfEmpty(RxString field, dynamic value) {
+            if (field.value.trim().isNotEmpty) return;
+            final v = (value ?? '').toString().trim();
+            if (v.isNotEmpty) field.value = v;
+          }
+
+          fillIfEmpty(customerName, data['customerName']);
+          fillIfEmpty(customerPhone, data['customerPhone']);
+          fillIfEmpty(customerProfilePic, data['customerProfilePic']);
+          fillIfEmpty(pickupAddressText, data['pickupAddress']);
+          fillIfEmpty(dropAddressText, data['dropAddress']);
+
+          CommonLogger.log.i(
+            'Customer info hydrated from /active-booking '
+            'name=${customerName.value.isNotEmpty} '
+            'phone=${customerPhone.value.isNotEmpty}',
+          );
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.w('active-booking customer-info fallback error: $e');
+    }
+  }
+
   Future<void> _joinBookingRoom() async {
     final did =
         (_driverId ?? await SharedPrefHelper.getDriverId())
@@ -523,9 +600,43 @@ class PickingCustomerController extends GetxController {
     if (did.isNotEmpty) {
       socketService.registerDriver(did, bookingId: bookingId);
       socketService.joinBooking(bookingId, userId: did);
-      return;
+    } else {
+      socketService.joinBooking(bookingId);
     }
-    socketService.joinBooking(bookingId);
+    _scheduleJoinedBookingRetry(did);
+  }
+
+  /// Re-emit join-booking if the customer details never arrived. The backend
+  /// suppresses join-booking re-emits within a 2s window, so we wait past it.
+  void _scheduleJoinedBookingRetry(String did) {
+    _joinedBookingRetryTimer?.cancel();
+    if (_joinedBookingRetries >= _maxJoinedBookingRetries) return;
+
+    _joinedBookingRetryTimer = Timer(const Duration(milliseconds: 2600), () {
+      if (isClosed) return;
+      // Already hydrated -> nothing to do.
+      if (customerName.value.trim().isNotEmpty ||
+          customerPhone.value.trim().isNotEmpty) {
+        return;
+      }
+      if (isNetworkOffline.value || !socketService.connected) {
+        // Wait for connectivity watchdog / reconnect to restore the room first.
+        _scheduleJoinedBookingRetry(did);
+        return;
+      }
+
+      _joinedBookingRetries++;
+      CommonLogger.log.w(
+        'joined-booking not received; re-emitting join-booking '
+        '(attempt $_joinedBookingRetries) bookingId=$bookingId',
+      );
+      if (did.isNotEmpty) {
+        socketService.joinBooking(bookingId, userId: did);
+      } else {
+        socketService.joinBooking(bookingId);
+      }
+      _scheduleJoinedBookingRetry(did);
+    });
   }
 
   // ===================== BOOT DATA =====================
@@ -851,11 +962,15 @@ class PickingCustomerController extends GetxController {
       _hasRoadRoute = true;
       _poly = fixed;
 
+      final routeDurMin = (result['durationMin'] is num)
+          ? (result['durationMin'] as num).toDouble()
+          : 0.0;
       ui.value = ui.value.copyWith(
         polyline: fixed,
         directionText: _stripHtml((result['direction'] ?? '').toString()),
         distanceText: (result['distance'] ?? '').toString(),
         maneuver: (result['maneuver'] ?? '').toString(),
+        routeDurationMin: routeDurMin,
       );
 
       // Pickup marker must always equal active pickup destination.
@@ -1044,12 +1159,8 @@ class PickingCustomerController extends GetxController {
       await _fetchRoute(force: true);
     } catch (_) {}
 
-    _posSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 3,
-      ),
-    ).listen((pos) async {
+    // Shared foreground GPS bus (one OS stream for all driver map screens).
+    _posSub = DriverLocationBus.instance.stream.listen((pos) async {
       final acc = (pos.accuracy.isFinite) ? pos.accuracy : 9999.0;
       final raw = LatLng(pos.latitude, pos.longitude);
       final current = _maybeSnapToRoute(raw);

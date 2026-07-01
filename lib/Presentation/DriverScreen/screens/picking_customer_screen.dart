@@ -951,11 +951,19 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
       // Center: Duration + Customer name below
       title: Center(
         child: Obx(() {
-          final mins = driverStatusController.pickupDurationInMin.value;
+          final serverMins = driverStatusController.pickupDurationInMin.value;
+          // Prefer a fresh, positive server ETA; otherwise fall back to the
+          // LOCALLY-computed driver->pickup route ETA (same source as the
+          // distance text). The server occasionally emits pickupDurationInMin=0
+          // (e.g. when the booking phase flips it off) and there was no local
+          // fallback, so the card showed a permanent "0 min" while the km was
+          // clearly non-zero. The local route ETA fixes that without depending
+          // on any socket frame.
+          final localMins = c.ui.value.routeDurationMin;
+          final mins = serverMins > 0 ? serverMins : localMins;
           // "0 min" is only legitimate once the driver has genuinely reached
-          // pickup. While approaching, the controller holds the last good ETA,
-          // so a non-positive value here means "no fresh ETA yet" -> show '--'
-          // instead of a misleading "0 min".
+          // pickup. While approaching, a non-positive value means "no ETA yet"
+          // -> show '--' instead of a misleading "0 min".
           final text =
               (mins > 0 || c.driverReached.value) ? _formatDuration(mins) : '--';
           return CustomTextfield.textWithStyles600(text, fontSize: 20);
@@ -967,7 +975,12 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
               c.customerName.value.trim().isEmpty
                   ? 'Picking up Rider'
                   : 'Picking up ${c.customerName.value.trim()}';
-          final distLine = _routeDistanceText(driverStatusController, '');
+          // Prefer the locally-computed driver->pickup route distance (from the
+          // map route fetch, available without any socket frame); fall back to
+          // the socket-provided pickupDistanceInMeters. This stops the "--"
+          // showing when the driver-location socket frame hasn't landed yet.
+          final distLine =
+              _routeDistanceText(driverStatusController, c.ui.value.distanceText);
 
           return Column(
             mainAxisSize: MainAxisSize.min,

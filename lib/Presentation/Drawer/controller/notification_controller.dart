@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
@@ -47,6 +48,10 @@ class NotificationController extends GetxController {
 
     // ✅ Optimistic UI
     isSharedEnabled.value = enabled;
+    // Sound + haptic cue when the driver turns Shared booking ON.
+    if (enabled && !prev) {
+      _playSharedEnabledCue();
+    }
     _showSafeSnackbar(enabled, serverMessage: enabled ? 'Shared booking enabled' : 'Shared booking disabled');
     isSharedToggleLoading.value = true;
 
@@ -98,6 +103,22 @@ class NotificationController extends GetxController {
   //   // );
   // }
   //
+  /// Audible + haptic confirmation played when the driver enables Shared
+  /// booking. Uses platform system sounds so no extra audio asset/dependency
+  /// is required. Failures are swallowed so the toggle never breaks.
+  void _playSharedEnabledCue() {
+    try {
+      HapticFeedback.mediumImpact();
+      SystemSound.play(SystemSoundType.alert);
+      // A short second tone makes it read as a notification rather than a tap.
+      Future.delayed(const Duration(milliseconds: 180), () {
+        SystemSound.play(SystemSoundType.alert);
+      });
+    } catch (e) {
+      CommonLogger.log.e('Shared booking sound cue failed: $e');
+    }
+  }
+
   void _showSafeSnackbar(bool enabled, {required String serverMessage}) {
     try {
       CustomSnackBar.showStatusToggle(enabled: enabled, label: 'Shared Booking');

@@ -58,6 +58,19 @@ class SharedController extends GetxController {
     _listenJoinedBooking(); // 🔥 handle joined-booking in common place
   }
 
+  @override
+  void onClose() {
+    // LEAK/CLOBBER FIX: this controller registers global singleton-socket
+    // listeners in onInit but previously had no onClose, so the handlers
+    // outlived the controller and a later Get.put re-registration clobbered (or
+    // was clobbered by) the screen's own driver-location/joined-booking
+    // handlers, making ETA/route updates unreliable on the 2nd+ ride. Remove
+    // them on disposal.
+    socketService.off('driver-location');
+    socketService.off('joined-booking');
+    super.onClose();
+  }
+
   // ───────────────── LISTENERS ─────────────────
 
   void _listenDriverLocation() {
@@ -136,17 +149,81 @@ class SharedController extends GetxController {
       }
 
       if (data == null) return;
+      if (data is List) {
+        final bookings = <Map<String, dynamic>>[];
+        dynamic payload = data;
+        if (payload.length == 1) {
+          final first = payload.first;
+          if (first is Map || first is List) payload = first;
+        }
+        if (payload is Map) {
+          bookings.add(Map<String, dynamic>.from(payload));
+        } else if (payload is List) {
+          for (final e in payload) {
+            if (e is Map) bookings.add(Map<String, dynamic>.from(e));
+          }
+        }
+
+        if (bookings.isEmpty) return;
+        if (!Get.isRegistered<SharedRideController>()) {
+          CommonLogger.log.w('SharedRideController not registered (yet)');
+          return;
+        }
+
+        final sharedRide = Get.find<SharedRideController>();
+        for (final booking in bookings) {
+          final customerLoc = booking['customerLocation'];
+          if (customerLoc == null || customerLoc is! Map) {
+            CommonLogger.log.w('joined-booking without customerLocation');
+            continue;
+          }
+
+          // Safe coercion: backend coords may arrive as String/int/null; a hard
+          // `as num` cast threw inside this socket handler and dropped the listener.
+          final fromLat = _safeToDouble(customerLoc['fromLatitude']);
+          final fromLng = _safeToDouble(customerLoc['fromLongitude']);
+          final toLat = _safeToDouble(customerLoc['toLatitude']);
+          final toLng = _safeToDouble(customerLoc['toLongitude']);
+
+          final pickupAddr =
+              (booking['pickupLocationAddress'] ?? booking['pickupAddress'] ?? '')
+                  .toString()
+                  .trim();
+          final dropoffAddr =
+              (booking['dropLocationAddress'] ??
+                      booking['dropoffAddress'] ??
+                      booking['dropAddress'] ??
+                      '')
+                  .toString()
+                  .trim();
+
+          final normalized = Map<String, dynamic>.from(booking);
+          normalized['pickupAddress'] = pickupAddr.isNotEmpty
+              ? pickupAddr
+              : await _getAddressFromLatLng(fromLat, fromLng);
+          normalized['dropoffAddress'] = dropoffAddr.isNotEmpty
+              ? dropoffAddr
+              : await _getAddressFromLatLng(toLat, toLng);
+
+          await sharedRide.upsertFromSocket(normalized);
+        }
+        CommonLogger.log.i(
+          '${bookings.length} rider(s) upserted into SharedRideController',
+        );
+        return;
+      }
 
       final customerLoc = data['customerLocation'];
-      if (customerLoc == null) {
+      if (customerLoc == null || customerLoc is! Map) {
         CommonLogger.log.w('⚠️ joined-booking without customerLocation');
         return;
       }
 
-      final fromLat = (customerLoc['fromLatitude'] as num).toDouble();
-      final fromLng = (customerLoc['fromLongitude'] as num).toDouble();
-      final toLat = (customerLoc['toLatitude'] as num).toDouble();
-      final toLng = (customerLoc['toLongitude'] as num).toDouble();
+      // Safe coercion (see note above) — never hard-cast socket payload coords.
+      final fromLat = _safeToDouble(customerLoc['fromLatitude']);
+      final fromLng = _safeToDouble(customerLoc['fromLongitude']);
+      final toLat = _safeToDouble(customerLoc['toLatitude']);
+      final toLng = _safeToDouble(customerLoc['toLongitude']);
 
       final pickupAddr =
           (data['pickupLocationAddress'] ?? data['pickupAddress'] ?? '')

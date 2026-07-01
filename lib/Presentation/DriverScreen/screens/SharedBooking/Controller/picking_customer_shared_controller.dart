@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:hopper/Core/Services/driver_location_bus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -12,6 +13,7 @@ import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/api/repository/api_constents.dart';
 import 'package:hopper/utils/map/route_info.dart';
@@ -154,6 +156,11 @@ class PickingCustomerSharedController extends GetxController {
   SharedRouteUiState? _cachedRouteUi;
   bool _pendingRouteRetry = false;
   Timer? _routeRetryTimer;
+  // Safety net for the "Refreshing ETA…" spinner: it must NEVER hang. We clear it
+  // as soon as a driver-location for the active rider arrives, but a driver already
+  // at/near pickup reports 0m/0min, and the event's bookingId can mismatch the
+  // resolved active id — either of which previously left the spinner stuck forever.
+  Timer? _etaUpdatingTimeout;
   final List<_QueuedSocketEmit> _socketRetryQueue = <_QueuedSocketEmit>[];
   String? _driverId;
 
@@ -203,11 +210,27 @@ class PickingCustomerSharedController extends GetxController {
     rideMap.setShowCompletedRoute(false);
   }
 
+  // Start the "updating ETA" state with a hard timeout so the spinner self-clears
+  // even if no matching driver-location arrives (or it reports a 0 ETA).
+  void _beginEtaUpdating() {
+    isEtaUpdating.value = true;
+    _etaUpdatingTimeout?.cancel();
+    _etaUpdatingTimeout = Timer(const Duration(seconds: 8), () {
+      if (!isClosed) isEtaUpdating.value = false;
+    });
+  }
+
+  void _clearEtaUpdating() {
+    _etaUpdatingTimeout?.cancel();
+    if (!isClosed) isEtaUpdating.value = false;
+  }
+
   @override
   void onClose() {
     _posSub?.cancel();
     _connectivitySub?.cancel();
     _routeRetryTimer?.cancel();
+    _etaUpdatingTimeout?.cancel();
     _serviceTypeWorker?.dispose();
     try {
       socketService.socket.off('joined-booking');
@@ -331,7 +354,7 @@ class PickingCustomerSharedController extends GetxController {
 
       // ✅ if first rider, set ETA state to updating until we get driver-location
       if (sharedRideController.activeTarget.value != null) {
-        isEtaUpdating.value = true;
+        _beginEtaUpdating();
       }
 
       await _fetchRoute(force: true);
@@ -471,8 +494,11 @@ class PickingCustomerSharedController extends GetxController {
         if (meters > 0 || mins > 0) {
           etaMeters.value = meters;
           etaMinutes.value = mins;
-          isEtaUpdating.value = false;
         }
+        // Clear the spinner on ANY active-rider location event — a driver already
+        // at/near pickup legitimately reports 0m/0min, which previously kept the
+        // "Refreshing ETA…" spinner stuck forever.
+        _clearEtaUpdating();
       }
     });
     socketService.on('location-updated', (data) {
@@ -497,17 +523,28 @@ class PickingCustomerSharedController extends GetxController {
   Future<void> selectRider(SharedRiderItem rider) async {
     sharedRideController.activeTarget.value = rider;
 
+    // Align the FOREGROUND location emitter to this rider's booking so the driver
+    // streams updateLocation/driver-heartbeat WITH a bookingId at the smooth ~1Hz
+    // active-trip cadence. Without it the shared flow left currentBookingId unset,
+    // so the emit loop sat idle (no bookingId, skipped when offline mid-ride) and
+    // the backend never relayed the driver's location to the customer's pickup
+    // room → the customer's car froze/lagged. Mirrors single-ride pickup/drop.
+    final rid = (rider.bookingId).trim();
+    if (rid.isNotEmpty && Get.isRegistered<DriverMainController>()) {
+      Get.find<DriverMainController>().setActiveTripBookingId(rid);
+    }
+
     // ✅ show cached ETA immediately if available (no old customer flash)
     final cached = _etaCache[rider.bookingId];
     if (cached != null) {
       etaMeters.value = cached.meters;
       etaMinutes.value = cached.minutes;
       // still mark updating because new socket tick may come in seconds
-      isEtaUpdating.value = true;
+      _beginEtaUpdating();
     } else {
       etaMeters.value = 0;
       etaMinutes.value = 0;
-      isEtaUpdating.value = true;
+      _beginEtaUpdating();
     }
 
     await _fetchRoute(force: true);
@@ -849,12 +886,38 @@ class PickingCustomerSharedController extends GetxController {
   // ---------------- TRACKING ----------------
   Future<bool> _ensureLocationPermission() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return false;
+    if (!serviceEnabled) {
+      // Previously returned false silently → the driver looked frozen to the
+      // customer with no explanation. Tell them and open the OS location screen.
+      Get.snackbar(
+        'Location is off',
+        'Turn on location services to go online and be tracked.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      try {
+        await Geolocator.openLocationSettings();
+      } catch (_) {}
+      return false;
+    }
 
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
+
+    if (permission == LocationPermission.deniedForever) {
+      // Cannot re-prompt; the user must enable it in app settings.
+      Get.snackbar(
+        'Location permission needed',
+        'Enable location permission in Settings so the app can track your trip.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      try {
+        await Geolocator.openAppSettings();
+      } catch (_) {}
+      return false;
+    }
+
     return permission == LocationPermission.always ||
         permission == LocationPermission.whileInUse;
   }
@@ -863,12 +926,8 @@ class PickingCustomerSharedController extends GetxController {
     final ok = await _ensureLocationPermission();
     if (!ok) return;
 
-    _posSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 3,
-      ),
-    ).listen((pos) async {
+    // Shared foreground GPS bus (one OS stream for all driver map screens).
+    _posSub = DriverLocationBus.instance.stream.listen((pos) async {
       final acc = (pos.accuracy.isFinite) ? pos.accuracy : 9999.0;
       if (acc > _MAX_ACCURACY_M) return;
       _hasLiveGpsFix = true;
@@ -1455,6 +1514,17 @@ class PickingCustomerSharedController extends GetxController {
   Future<void> selectRider(SharedRiderItem rider) async {
     sharedRideController.activeTarget.value = rider;
 
+    // Align the FOREGROUND location emitter to this rider's booking so the driver
+    // streams updateLocation/driver-heartbeat WITH a bookingId at the smooth ~1Hz
+    // active-trip cadence. Without it the shared flow left currentBookingId unset,
+    // so the emit loop sat idle (no bookingId, skipped when offline mid-ride) and
+    // the backend never relayed the driver's location to the customer's pickup
+    // room → the customer's car froze/lagged. Mirrors single-ride pickup/drop.
+    final rid = (rider.bookingId).trim();
+    if (rid.isNotEmpty && Get.isRegistered<DriverMainController>()) {
+      Get.find<DriverMainController>().setActiveTripBookingId(rid);
+    }
+
     // ✅ reset so old customer values won’t show
     etaMeters.value = 0;
     etaMinutes.value = 0;
@@ -1657,12 +1727,38 @@ class PickingCustomerSharedController extends GetxController {
   // ---------------- TRACKING ----------------
   Future<bool> _ensureLocationPermission() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return false;
+    if (!serviceEnabled) {
+      // Previously returned false silently → the driver looked frozen to the
+      // customer with no explanation. Tell them and open the OS location screen.
+      Get.snackbar(
+        'Location is off',
+        'Turn on location services to go online and be tracked.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      try {
+        await Geolocator.openLocationSettings();
+      } catch (_) {}
+      return false;
+    }
 
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
+
+    if (permission == LocationPermission.deniedForever) {
+      // Cannot re-prompt; the user must enable it in app settings.
+      Get.snackbar(
+        'Location permission needed',
+        'Enable location permission in Settings so the app can track your trip.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      try {
+        await Geolocator.openAppSettings();
+      } catch (_) {}
+      return false;
+    }
+
     return permission == LocationPermission.always ||
         permission == LocationPermission.whileInUse;
   }
@@ -1671,12 +1767,8 @@ class PickingCustomerSharedController extends GetxController {
     final ok = await _ensureLocationPermission();
     if (!ok) return;
 
-    _posSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 3,
-      ),
-    ).listen((pos) async {
+    // Shared foreground GPS bus (one OS stream for all driver map screens).
+    _posSub = DriverLocationBus.instance.stream.listen((pos) async {
       final acc = (pos.accuracy.isFinite) ? pos.accuracy : 9999.0;
       if (acc > _MAX_ACCURACY_M) return;
       _hasLiveGpsFix = true;

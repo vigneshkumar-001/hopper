@@ -25,7 +25,6 @@ class AppImages {
   static String carOwnerDoc = "assets/images/carOwnerDoc.png";
   static String carOwnerShip = "assets/images/carOwnerShip.png";
   static String carDoc = "assets/images/carDoc.png";
-  static String stripe = "assets/images/stripe.png";
   static String carInterior = "assets/images/carInterior.png";
   static String consent = "assets/images/consent.png";
   static String borderAdd = "assets/images/borderAdd.png";

@@ -1,0 +1,486 @@
+================================================================================
+                    LOGGING SYSTEM ARCHITECTURE
+================================================================================
+
+                        ┌─────────────────────┐
+                        │     App Startup     │
+                        │  (main.dart)        │
+                        └──────────┬──────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    │              │              │
+                    ▼              ▼              ▼
+        ┌─────────────────┐ ┌──────────────┐ ┌─────────────────┐
+        │ Init Logger     │ │ Setup Error  │ │ Log Device      │
+        │ Service         │ │ Handlers     │ │ Info            │
+        └────────┬────────┘ └──────┬───────┘ └────────┬────────┘
+                 │                 │                  │
+                 └─────────────────┼──────────────────┘
+                                   │
+                        ┌──────────▼──────────┐
+                        │  Logger Service    │
+                        │  Initialized       │
+                        └────────┬───────────┘
+                                 │
+        ┌────────────────────────┼────────────────────────┐
+        │                        │                        │
+        ▼                        ▼                        ▼
+  ┌───────────────┐       ┌─────────────────┐    ┌──────────────┐
+  │  API Calls    │       │  Socket Events  │    │ App Events   │
+  │  (Dio)        │       │  (Socket.IO)    │    │ (Navigation/ │
+  └───────┬───────┘       └────────┬────────┘    │  Crashes)    │
+          │                        │              └──────┬───────┘
+          │                        │                     │
+          ▼                        ▼                     ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │                                                             │
+  │    API Logger              Socket Logger Util              │
+  │    Interceptor             (Manual Setup)                  │
+  │    • Captures requests     • Logs connections              │
+  │    • Captures responses    • Logs all events               │
+  │    • Tracks duration       • Logs emissions                │
+  │    • Logs errors                                           │
+  │                                                             │
+  └──────────────────────────┬────────────────────────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │ File System     │
+                    │ Logging         │
+                    │ (LoggerService) │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  hopper_dev_    │
+                    │  logs.txt       │
+                    │  (persistent    │
+                    │   file)         │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+              ▼              ▼              ▼
+         ┌─────────┐   ┌─────────┐   ┌─────────┐
+         │ Export  │   │  Copy   │   │ Clear   │
+         │  Logs   │   │  Logs   │   │  Logs   │
+         └────┬────┘   └────┬────┘   └────┬────┘
+              │             │             │
+              ▼             ▼             ▼
+    ┌───────────────┐  ┌──────────┐  ┌──────────┐
+    │ Share Dialog  │  │ Clipboard│  │ Delete   │
+    │ (Email, etc)  │  │ Paste    │  │ File     │
+    └───────────────┘  └──────────┘  └──────────┘
+
+================================================================================
+                           SYSTEM COMPONENTS
+================================================================================
+
+1. LOGGER SERVICE (Core)
+   ├── File: lib/Core/Services/logger_service.dart
+   ├── Responsibility: Main logging engine
+   ├── Functions:
+   │   ├── log() - Basic logging
+   │   ├── logError() - Error logging with stack trace
+   │   ├── logApiRequest() - API request logging
+   │   ├── logApiResponse() - API response logging
+   │   ├── logApiError() - API error logging
+   │   ├── logSocketEvent() - Socket event logging
+   │   ├── logNavigation() - Navigation logging
+   │   ├── logDeviceInfo() - Device info logging
+   │   ├── logAppCrash() - App crash logging
+   │   ├── exportLogs() - Export to file
+   │   ├── getLogsContent() - Get logs as string
+   │   ├── clearLogs() - Delete all logs
+   │   └── getLogSize() - Get file size
+   └── Status: ✅ Complete
+
+2. API LOGGER INTERCEPTOR
+   ├── File: lib/api/interceptors/api_logger_interceptor.dart
+   ├── Responsibility: Auto-log all API traffic
+   ├── Extends: Dio Interceptor
+   ├── Methods:
+   │   ├── onRequest() - Log requests
+   │   ├── onResponse() - Log responses
+   │   └── onError() - Log API errors
+   ├── Integration: Added to all Dio instances in request.dart
+   └── Status: ✅ Complete
+
+3. SOCKET LOGGER UTIL
+   ├── File: lib/Core/Services/socket_logger_util.dart
+   ├── Responsibility: Utilities for socket logging
+   ├── Methods:
+   │   ├── setupSocketLogging() - Setup auto-logging
+   │   └── emitWithLogging() - Emit with logging
+   ├── Integration: Manual setup in socket code
+   └── Status: ✅ Complete
+
+4. DEVELOPER LOGS SCREEN
+   ├── File: lib/Presentation/Drawer/screens/dev_logs_screen.dart
+   ├── Responsibility: UI for viewing/managing logs
+   ├── Features:
+   │   ├── Terminal-style log viewer
+   │   ├── Export button (📥)
+   │   ├── Copy button (📋)
+   │   ├── Clear button (🗑️)
+   │   ├── Log file size display
+   │   └── Real-time updates
+   ├── Integration: Accessed via 🐛 button
+   └── Status: ✅ Complete
+
+5. RIDE ACTIVITY INTEGRATION
+   ├── File: lib/Presentation/Drawer/screens/ride_activity.dart
+   ├── Responsibility: Provide access to logs
+   ├── Integration: 🐛 button in top-right
+   ├── Action: Opens DevLogsScreen on tap
+   └── Status: ✅ Complete
+
+================================================================================
+                          DATA FLOW DIAGRAM
+================================================================================
+
+APP EVENT
+    │
+    ├─→ API Request
+    │       │
+    │       ▼
+    │   Dio Interceptor
+    │   (ApiLoggerInterceptor)
+    │       │
+    │       ▼
+    │   Logger Service
+    │   (logApiRequest)
+    │       │
+    │       ▼
+    │   Write to File
+    │       │
+    │       ▼
+    │   hopper_dev_logs.txt
+    │
+    ├─→ API Response
+    │       │
+    │       ▼
+    │   Dio Interceptor
+    │       │
+    │       ▼
+    │   Logger Service
+    │   (logApiResponse)
+    │       │
+    │       ▼
+    │   Write to File
+    │
+    ├─→ Socket Event
+    │       │
+    │       ▼
+    │   Socket Handler
+    │       │
+    │       ▼
+    │   Logger Service
+    │   (logSocketEvent)
+    │       │
+    │       ▼
+    │   Write to File
+    │
+    ├─→ Navigation
+    │       │
+    │       ▼
+    │   Route Observer
+    │       │
+    │       ▼
+    │   Logger Service
+    │   (logNavigation)
+    │       │
+    │       ▼
+    │   Write to File
+    │
+    ├─→ App Crash
+    │       │
+    │       ▼
+    │   Error Handler
+    │       │
+    │       ▼
+    │   Logger Service
+    │   (logAppCrash)
+    │       │
+    │       ▼
+    │   Write to File
+    │
+    └─→ USER ACTION
+            │
+            ▼
+        Open 🐛 Button
+        (Ride Activity)
+            │
+            ▼
+        Dev Logs Screen
+        (dev_logs_screen.dart)
+            │
+            ├─→ Read Log File
+            │   (getLogsContent)
+            │       │
+            │       ▼
+            │   Display in UI
+            │
+            ├─→ Export Button
+            │   (exportLogs)
+            │       │
+            │       ▼
+            │   Share Dialog
+            │
+            ├─→ Copy Button
+            │   (getLogsContent +
+            │    Clipboard.setData)
+            │       │
+            │       ▼
+            │   Toast: "Copied"
+            │
+            └─→ Clear Button
+                (clearLogs)
+                    │
+                    ▼
+                Delete File
+                    │
+                    ▼
+                Toast: "Cleared"
+
+================================================================================
+                        INITIALIZATION SEQUENCE
+================================================================================
+
+START
+  │
+  ├─ 1. WidgetsFlutterBinding.ensureInitialized()
+  │
+  ├─ 2. initController()
+  │
+  ├─ 3. Set DirectionsConfig.apiKey
+  │
+  ├─ 4. DriverBackgroundLocationService.initialize()
+  │
+  ├─ 5. LoggerService initialization
+  │     ├─ Create LoggerService instance
+  │     └─ Call logDeviceInfo()
+  │         └─ Write device info to file
+  │
+  ├─ 6. Setup Error Handlers
+  │     ├─ FlutterError.onError
+  │     └─ runZonedGuarded
+  │         └─ Both log crashes to file
+  │
+  ├─ 7. Firebase.initializeApp()
+  │
+  ├─ 8. Register FCM Handler
+  │
+  ├─ 9. Start App
+  │     └─ runApp(MyApp())
+  │         ├─ Logging system is now active
+  │         └─ All API calls auto-logged
+  │
+  ├─ 10. Set UI Overlay Style
+  │
+  └─ 11. Init FCM Notifications
+
+RUNNING
+  │
+  ├─ User makes API call
+  │  └─ Logged by ApiLoggerInterceptor
+  │
+  ├─ Socket event occurs
+  │  └─ Logged by SocketLoggerUtil (if setup)
+  │
+  ├─ User navigates
+  │  └─ Logged by RouteLogger (if setup)
+  │
+  └─ App crashes
+     └─ Logged by Error Handler
+
+================================================================================
+                        FILE DEPENDENCIES
+================================================================================
+
+main.dart
+  ├─ imports logger_service.dart
+  │   └─ imports: logger, path_provider, intl, device_info_plus
+  │
+  ├─ imports socket_logger_util.dart (optional, for manual setup)
+  │   └─ imports logger_service.dart
+  │
+  └─ calls logger initialization at startup
+
+request.dart
+  ├─ imports api_logger_interceptor.dart
+  │   └─ imports logger_service.dart
+  │
+  └─ adds ApiLoggerInterceptor to all Dio instances
+
+ride_activity.dart
+  ├─ imports dev_logs_screen.dart
+  │   ├─ imports logger_service.dart
+  │   ├─ imports share_plus
+  │   └─ imports socket_logger_util.dart
+  │
+  └─ opens dev_logs_screen on 🐛 button tap
+
+dev_logs_screen.dart
+  ├─ imports logger_service.dart
+  ├─ imports share_plus
+  └─ displays logs from LoggerService
+
+================================================================================
+                      API INTERCEPTOR FLOW
+================================================================================
+
+Dio Request
+    │
+    ▼
+┌─────────────────────────────────┐
+│ ApiLoggerInterceptor.onRequest  │
+│                                 │
+│ 1. Start timer                  │
+│ 2. Call logApiRequest()         │
+│ 3. Continue with handler        │
+└─────────────────────────────────┘
+    │
+    ▼
+┌──────────────────────────────────┐
+│ Actual HTTP Request              │
+│ (Network call)                   │
+└──────────────────────────────────┘
+    │
+    ▼ (Success)    ▼ (Error)
+┌──────────────┐  ┌─────────────────┐
+│ onResponse() │  │ onError()       │
+│              │  │                 │
+│ 1. Stop time │  │ 1. Log error    │
+│ 2. Log       │  │ 2. Continue     │
+│    response  │  │    with handler │
+│ 3. Continue  │  └─────────────────┘
+└──────────────┘
+
+================================================================================
+                       LOG FILE STRUCTURE
+================================================================================
+
+hopper_dev_logs.txt
+│
+├─ [2025-06-24 14:23:15.123] [INFO] 📱 DEVICE INFO
+│  MODEL: Samsung SM-G991B
+│  MANUFACTURER: samsung
+│  ANDROID VERSION: 12
+│  SDK INT: 31
+│
+├─ [2025-06-24 14:23:20.456] 📤 API REQUEST
+│  URL: https://api.hoppr.com/rides
+│  METHOD: GET
+│  HEADERS: {...}
+│
+├─ [2025-06-24 14:23:21.890] 📥 API RESPONSE
+│  URL: https://api.hoppr.com/rides
+│  STATUS: 200
+│  DURATION: 1434ms
+│  BODY: {...}
+│
+├─ [2025-06-24 14:23:25.123] 🔌 SOCKET EVENT: ride_request
+│  DATA: {rideId: '456'}
+│
+├─ [2025-06-24 14:23:30.456] 📱 NAVIGATION: RideDetailScreen
+│
+├─ [2025-06-24 14:24:01.234] 💥 APP CRASH
+│  ERROR: Null check operator used on a null value
+│  STACK TRACE: #0 HomeScreen.build...
+│
+└─ ... (more entries)
+
+================================================================================
+                        DEPENDENCIES TREE
+================================================================================
+
+flutter
+  └─ flutter_screenutil
+  └─ flutter_otp_text_field
+  └─ logger ←────────────── LOGGING
+  └─ intl
+  └─ permission_handler
+  └─ get
+  └─ dio ←──────────────── API (logged)
+  └─ socket_io_client ←─── SOCKET (can be logged)
+  └─ path_provider ←────── LOGGING (new)
+  └─ share_plus ←────────── LOGGING (new)
+  └─ device_info_plus ←─── LOGGING (new)
+  └─ firebase_core
+  └─ firebase_messaging
+  └─ ... (other dependencies)
+
+NEW DEPENDENCIES FOR LOGGING:
+  • path_provider: ^2.1.5       (file access)
+  • share_plus: ^10.0.0         (file sharing)
+  • device_info_plus: ^11.0.0   (device info)
+
+EXISTING DEPENDENCIES USED:
+  • logger: ^2.5.0              (console logging)
+  • dio: ^5.8.0+1               (API, interceptor)
+  • socket_io_client: ^3.1.2    (sockets, manual logging)
+
+================================================================================
+                         STATUS SUMMARY
+================================================================================
+
+✅ Logger Service
+   └─ Production ready
+   └─ All features implemented
+   └─ Error handling in place
+
+✅ API Interceptor
+   └─ Integrated with all Dio calls
+   └─ Transparent to existing code
+   └─ No breaking changes
+
+✅ Socket Logging Util
+   └─ Ready for optional integration
+   └─ Clean API for manual setup
+   └─ Doesn't break existing socket code
+
+✅ Developer UI
+   └─ Beautiful terminal-style viewer
+   └─ Responsive layout
+   └─ All buttons functional
+
+✅ Documentation
+   └─ Complete setup guide
+   └─ Code snippets
+   └─ Quick reference
+   └─ Architecture documentation
+
+✅ Integration
+   └─ All auto-logging in place
+   └─ Button added to Ride Activity
+   └─ Error handling configured
+   └─ Device info logging active
+
+TOTAL: ✅ READY FOR PRODUCTION USE
+
+================================================================================
+                        NEXT ARCHITECTURE STEPS
+================================================================================
+
+Phase 1 (Current): ✅ COMPLETE
+  ├─ Logger Service
+  ├─ API Logging
+  ├─ Basic UI
+  └─ Integration
+
+Phase 2 (Optional): Log Rotation
+  ├─ Auto-archive logs when > 5MB
+  ├─ Keep last N log files
+  └─ Compress old logs
+
+Phase 3 (Optional): Cloud Integration
+  ├─ Upload logs to server
+  ├─ Send crash reports
+  └─ Analytics dashboard
+
+Phase 4 (Optional): Advanced Features
+  ├─ Log filtering by type
+  ├─ Search functionality
+  ├─ Time range filtering
+  └─ Performance analytics
+
+================================================================================

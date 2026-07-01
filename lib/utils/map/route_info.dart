@@ -50,6 +50,17 @@ Future<Map<String, dynamic>> getRouteInfo({
   final distanceToDestinationMeters = _distanceMeters(origin, destination);
   final primary = _pickNextStep(steps, origin: origin, destination: destination);
 
+  // Whole-leg ETA (origin -> destination) in minutes, straight from the route
+  // provider's `leg.duration.value` (seconds). Surfaced so screens have a
+  // LOCAL ETA fallback (mirroring the local distance text) when the server's
+  // socket `pickupDurationInMin`/`dropDurationInMin` is missing or 0 — that gap
+  // was the driver card showing a permanent "0 min" while the km was correct.
+  double legDurationMin = 0.0;
+  final durValue = leg['duration']?['value'];
+  if (durValue is num && durValue.isFinite && durValue > 0) {
+    legDurationMin = durValue.toDouble() / 60.0;
+  }
+
   String directionText = primary?['html_instructions']?.toString() ?? '';
   String distanceText = primary?['distance']?['text']?.toString() ?? '';
   final rawManeuver = primary?['maneuver']?.toString() ?? '';
@@ -59,6 +70,7 @@ Future<Map<String, dynamic>> getRouteInfo({
     directionText = 'Arrived at destination';
     distanceText = '0 m';
     maneuver = 'arrive';
+    legDurationMin = 0.0;
   }
 
   final laneGuidance = _extractLaneGuidance(primary, maneuver, directionText);
@@ -67,6 +79,7 @@ Future<Map<String, dynamic>> getRouteInfo({
   return {
     "direction": directionText,
     "distance": distanceText,
+    "durationMin": legDurationMin,
     "polyline": polyline,
     "maneuver": maneuver,
     "laneGuidance": laneGuidance,

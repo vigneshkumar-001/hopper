@@ -6,7 +6,6 @@ import 'package:hopper/Core/Utility/empty_state_view.dart';
 import 'package:hopper/Core/Utility/skeleton_loaders.dart';
 import 'package:hopper/Core/Utility/date_time_converter.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textfields.dart';
-
 import 'package:get/get.dart';
 import 'package:hopper/Presentation/Drawer/controller/ride_history_controller.dart';
 
@@ -50,6 +49,227 @@ class _RideAndPackageHistoryScreenState
     });
   }
 
+  Widget _filterChip(String label, bool selected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF006FD0) : Colors.grey[100],
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? const Color(0xFF006FD0) : Colors.grey.shade300,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : Colors.black87,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _fmtDay(DateTime d) => '${d.day}/${d.month}';
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 2),
+      lastDate: now,
+      initialDateRange:
+          controller.filterFrom.value != null && controller.filterTo.value != null
+              ? DateTimeRange(
+                  start: controller.filterFrom.value!,
+                  end: controller.filterTo.value!,
+                )
+              : null,
+    );
+    if (picked != null) {
+      final from =
+          DateTime(picked.start.year, picked.start.month, picked.start.day);
+      final to = DateTime(
+          picked.end.year, picked.end.month, picked.end.day, 23, 59, 59);
+      await controller.applyFilters(from: from, to: to);
+    }
+  }
+
+  /// Opens the filter as a bottom sheet (not a top tab/chip bar). Status + ride
+  /// type + date range; every tap applies immediately (backend refetch), "Done"
+  /// closes, "Clear all" resets.
+  void _openFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        Widget section(String label, Widget child) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87)),
+                const SizedBox(height: 10),
+                child,
+                const SizedBox(height: 18),
+              ],
+            );
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Text('Filter rides',
+                      style:
+                          TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                  const Spacer(),
+                  Obx(() => controller.hasActiveFilter
+                      ? GestureDetector(
+                          onTap: () => controller.applyFilters(clearAll: true),
+                          child: const Text('Clear all',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.red)),
+                        )
+                      : const SizedBox.shrink()),
+                ],
+              ),
+              const SizedBox(height: 18),
+              section(
+                'Status',
+                Obx(() {
+                  final s = controller.filterStatus.value;
+                  return Wrap(spacing: 8, runSpacing: 8, children: [
+                    _filterChip('All', s == 'all',
+                        () => controller.applyFilters(status: 'all')),
+                    _filterChip('Completed', s == 'completed',
+                        () => controller.applyFilters(status: 'completed')),
+                    _filterChip('Cancelled', s == 'cancelled',
+                        () => controller.applyFilters(status: 'cancelled')),
+                  ]);
+                }),
+              ),
+              section(
+                'Ride type',
+                Obx(() {
+                  final t = controller.filterRideType.value;
+                  return Wrap(spacing: 8, runSpacing: 8, children: [
+                    _filterChip('All', t == 'all',
+                        () => controller.applyFilters(rideType: 'all')),
+                    _filterChip('Single', t == 'single',
+                        () => controller.applyFilters(rideType: 'single')),
+                    _filterChip('Shared', t == 'shared',
+                        () => controller.applyFilters(rideType: 'shared')),
+                    _filterChip('Parcel', t == 'parcel',
+                        () => controller.applyFilters(rideType: 'parcel')),
+                  ]);
+                }),
+              ),
+              section(
+                'Date range',
+                Obx(() {
+                  final hasDate = controller.filterFrom.value != null;
+                  final label = hasDate
+                      ? '${_fmtDay(controller.filterFrom.value!)} - ${_fmtDay(controller.filterTo.value!)}'
+                      : 'Any date';
+                  return Row(children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _pickDateRange,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: hasDate
+                                ? const Color(0xFFEDF3FF)
+                                : Colors.grey[100],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: hasDate
+                                  ? const Color(0xFF006FD0)
+                                  : Colors.grey.shade300,
+                            ),
+                          ),
+                          child: Row(children: [
+                            Icon(Icons.calendar_today_outlined,
+                                size: 15,
+                                color: hasDate
+                                    ? const Color(0xFF006FD0)
+                                    : Colors.black54),
+                            const SizedBox(width: 8),
+                            Text(label,
+                                style: TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: hasDate
+                                        ? const Color(0xFF006FD0)
+                                        : Colors.black87)),
+                          ]),
+                        ),
+                      ),
+                    ),
+                    if (hasDate) ...[
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        onTap: () => controller.applyFilters(clearDates: true),
+                        child: const Icon(Icons.close_rounded,
+                            color: Colors.red, size: 22),
+                      ),
+                    ],
+                  ]);
+                }),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(sheetCtx),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF006FD0),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('Done',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -75,9 +295,48 @@ class _RideAndPackageHistoryScreenState
                     fontSize: 20,
                   ),
                   const Spacer(),
+                  Obx(() {
+                    final active = controller.hasActiveFilter;
+                    return GestureDetector(
+                      onTap: _openFilterSheet,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: active
+                                  ? const Color(0xFF006FD0)
+                                  : Colors.grey[200],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.tune_rounded,
+                              size: 18,
+                              color: active ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                          if (active)
+                            Positioned(
+                              right: -2,
+                              top: -2,
+                              child: Container(
+                                width: 9,
+                                height: 9,
+                                decoration: const BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  }),
                 ],
               ),
             ),
+            const SizedBox(height: 4),
             Expanded(
               child: Obx(() {
                 final data = controller.rideHistoryData;
