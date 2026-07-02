@@ -1192,6 +1192,12 @@ class _PickingCustomerSharedScreenState
               controller.success();
               sharedRideController.markOnboard(rider.bookingId);
               await Future.delayed(const Duration(milliseconds: 250));
+              // CRITICAL: this SAME per-rider controller is reused by the drop
+              // screen's "Swipe to Complete Stop" slider. Leaving it in
+              // success mode makes that slider FROZEN (ActionSlider ignores
+              // drags unless idle) — driver could never complete the stop.
+              // Reset BEFORE navigating, and even if we unmounted.
+              controller.reset();
               if (!mounted) return;
               Get.off(
                 () => ShareRideStartScreen(

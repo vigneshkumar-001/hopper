@@ -231,6 +231,12 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
   int _pendingQueueCount = 0;
   double _followZoom = 14.4;
   bool _isDisposing = false;
+  // SELF-HEAL for the per-rider swipe controllers: they are SHARED with the
+  // pickup screen's "Swipe to Start" slider, and any path that leaves one in
+  // success/loading (e.g. pickup swipe navigating here right after success)
+  // makes the slider here frozen — ActionSlider only accepts drags when idle.
+  // One post-frame reset per rider+stage guarantees a swipeable slider.
+  final Set<String> _sliderHealKeys = {};
   // True while the "Complete drops here" batch runs (same-drop cluster). Prevents
   // double-taps; each booking inside the loop is still completed SEPARATELY.
   bool _isBatchDropping = false;
@@ -2497,6 +2503,18 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     // Swipe to start
     if (active.stage == SharedRiderStage.waitingPickup && active.arrived) {
       final riderCtrl = active.sliderController as ActionSliderController;
+      // SELF-HEAL (see _sliderHealKeys): same shared-controller freeze class as
+      // the drop slider — reset once post-frame on first show of this stage.
+      final startHealKey = '${active.bookingId}-start';
+      if (!_sliderHealKeys.contains(startHealKey)) {
+        _sliderHealKeys.add(startHealKey);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _isDisposing) return;
+          try {
+            riderCtrl.reset();
+          } catch (_) {}
+        });
+      }
       return Padding(
         padding: areaPadding,
         child: Container(
@@ -2599,6 +2617,21 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
     // Complete current stop
     if (active.stage == SharedRiderStage.onboardDrop) {
       final riderSlider = active.sliderController as ActionSliderController;
+      // SELF-HEAL (see _sliderHealKeys): first time this rider's drop slider is
+      // shown, reset the shared controller post-frame so a stale success/loading
+      // state from the pickup screen can never leave it frozen. Runs once per
+      // rider+stage; a reset on an idle controller is harmless. The user's own
+      // swipe can't be in flight yet on the first frame of this stage.
+      final healKey = '${active.bookingId}-${active.stage}';
+      if (!_sliderHealKeys.contains(healKey)) {
+        _sliderHealKeys.add(healKey);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _isDisposing) return;
+          try {
+            riderSlider.reset();
+          } catch (_) {}
+        });
+      }
       return Obx(() {
         final canShow = sharedRideController.canCompleteActiveDrop.value;
         // ONE SWIPE = ONE BOOKING. The same-drop "complete all drops here" batch
@@ -2723,7 +2756,14 @@ class _ShareRideStartScreenState extends State<ShareRideStartScreen>
                                 controller.reset();
                               }
                             } catch (_) {
-                              if (!mounted || _isDisposing) return;
+                              if (!mounted || _isDisposing) {
+                                // Reset the PERSISTED controller even when the
+                                // screen is gone — otherwise it stays stuck in
+                                // loading and the slider is frozen forever the
+                                // next time it's shown.
+                                controller.reset();
+                                return;
+                              }
                               controller.failure();
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(

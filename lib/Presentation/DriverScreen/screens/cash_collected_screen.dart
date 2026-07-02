@@ -39,7 +39,7 @@ class CashCollectedScreen extends StatefulWidget {
 
 class _CashCollectedScreenState extends State<CashCollectedScreen> {
   late final DriverStatusController driverStatusController;
-  RideStartsController? _rideStartsController;
+  RideStatsController? _rideStatsController;
   Timer? _timer;
   bool _isSubmittingCash = false;
 
@@ -50,8 +50,8 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
         Get.isRegistered<DriverStatusController>()
             ? Get.find<DriverStatusController>()
             : Get.put(DriverStatusController());
-    if (Get.isRegistered<RideStartsController>()) {
-      _rideStartsController = Get.find<RideStartsController>();
+    if (Get.isRegistered<RideStatsController>()) {
+      _rideStatsController = Get.find<RideStatsController>();
     }
 
     final bookingId = widget.bookingId?.toString() ?? '';
@@ -87,7 +87,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
     if (direct.isNotEmpty && direct != 'null' && direct != '0') return direct;
 
     final controllerAmount =
-        _rideStartsController?.amount.value.toString().trim() ?? '';
+        _rideStatsController?.amount.value.toString().trim() ?? '';
     if (controllerAmount.isNotEmpty &&
         controllerAmount != 'null' &&
         controllerAmount != '0') {

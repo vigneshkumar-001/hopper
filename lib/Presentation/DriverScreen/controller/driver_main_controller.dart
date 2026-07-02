@@ -3173,6 +3173,12 @@ class DriverMainController extends GetxController
 
     unawaited(restorePendingBookingRequestFromNotification(force: true));
 
+    // DUAL-CONNECT: re-check the secondary single-ride dispatch socket on resume.
+    // The OS may have killed its connection while backgrounded; a shared-ON idle
+    // driver without it is unreachable for single-ride popups (customer still
+    // sees the car — DB presence is kept fresh by the primary's heartbeats).
+    syncSecondaryDispatchSocket();
+
     // Update home stats when returning from other screens / background.
     unawaited(refreshHomeStats());
   }
