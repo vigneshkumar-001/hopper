@@ -10,6 +10,7 @@ import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/images.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/ride_starts_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/driver_main_screen.dart';
 import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
 import 'package:hopper/utils/widgets/hoppr_circular_loader.dart';
@@ -38,6 +39,7 @@ class CashCollectedScreen extends StatefulWidget {
 
 class _CashCollectedScreenState extends State<CashCollectedScreen> {
   late final DriverStatusController driverStatusController;
+  RideStartsController? _rideStartsController;
   Timer? _timer;
   bool _isSubmittingCash = false;
 
@@ -48,6 +50,9 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
         Get.isRegistered<DriverStatusController>()
             ? Get.find<DriverStatusController>()
             : Get.put(DriverStatusController());
+    if (Get.isRegistered<RideStartsController>()) {
+      _rideStartsController = Get.find<RideStartsController>();
+    }
 
     final bookingId = widget.bookingId?.toString() ?? '';
     if (bookingId.isNotEmpty) {
@@ -75,6 +80,21 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
     if (Navigator.of(context).canPop()) {
       Navigator.pop<bool>(context, success);
     }
+  }
+
+  String _resolveAmount() {
+    final direct = widget.Amount?.toString().trim() ?? '';
+    if (direct.isNotEmpty && direct != 'null' && direct != '0') return direct;
+
+    final controllerAmount =
+        _rideStartsController?.amount.value.toString().trim() ?? '';
+    if (controllerAmount.isNotEmpty &&
+        controllerAmount != 'null' &&
+        controllerAmount != '0') {
+      return controllerAmount;
+    }
+
+    return '0';
   }
 
   Future<void> _submitCashCollected() async {
@@ -139,8 +159,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
   }
 
   String _displayAmount() {
-    final amount = widget.Amount?.toString().trim() ?? '';
-    return amount.isEmpty ? '0' : amount;
+    return _resolveAmount();
   }
 
   Color _paymentStatusColor(String value) {

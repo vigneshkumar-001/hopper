@@ -99,7 +99,10 @@ class SecondaryDispatchSocket {
     });
 
     s.on('booking-request', (data) {
-      CommonLogger.log.i("📥 [dual-connect] secondary(bk) booking-request");
+      final bid = (data is Map ? data['bookingId'] : null)?.toString() ?? '?';
+      CommonLogger.log.i(
+        "📥 [dual-connect] secondary(bk) booking-request bookingId=$bid url=$_url",
+      );
       try {
         _onBookingRequest?.call(data);
       } catch (e) {

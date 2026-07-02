@@ -2024,12 +2024,38 @@ class DriverMainController extends GetxController
           cfg.activeRideBackendShared.value == null &&
           statusController.isOnline.value &&
           did.isNotEmpty;
+      // [DUAL-CONNECT-STATE] full reachability picture in one line: which backend
+      // the primary socket is on, whether the secondary (bk) SHOULD/DOES run, and
+      // why not (each input logged). A shared-ON driver with secondary
+      // shouldRun=false or connected=false is unreachable for single-ride popups.
+      CommonLogger.log.i(
+        '[DUAL-CONNECT-STATE] sharedToggle=${cfg.isSharedEnabled.value} '
+        'activeRideBackend=${cfg.activeRideBackendShared.value} '
+        'online=${statusController.isOnline.value} '
+        'driverIdPresent=${did.isNotEmpty} '
+        'deviceIdPresent=${(_dispatchDeviceId ?? '').isNotEmpty} '
+        'primaryUrl=${cfg.socketUrl} '
+        'secondaryShouldRun=$shouldRun '
+        'secondaryActive=${SecondaryDispatchSocket().active} '
+        'secondaryConnected=${SecondaryDispatchSocket().connected}',
+      );
       if (shouldRun) {
         SecondaryDispatchSocket().start(
           url: ApiConfigController.singleSocket,
           driverId: did,
           deviceId: _dispatchDeviceId,
-          onBookingRequest: (data) => _processBookingRequest(data),
+          onBookingRequest: (data) {
+            try {
+              final bid =
+                  (data is Map ? data['bookingId'] : null)?.toString() ?? '?';
+              CommonLogger.log.i(
+                '[REQ-RECV] source=secondary url=${ApiConfigController.singleSocket} '
+                'bookingId=$bid sharedToggle=${cfg.isSharedEnabled.value} '
+                'online=${statusController.isOnline.value}',
+              );
+            } catch (_) {}
+            _processBookingRequest(data);
+          },
         );
       } else {
         SecondaryDispatchSocket().stop();
@@ -2137,6 +2163,16 @@ class DriverMainController extends GetxController
     });
 
     socketService.on('booking-request', (data) async {
+      // [REQ-RECV] which socket delivered the request — pairs with the backend's
+      // [SOCKET_DELIVERY] line to prove/deny end-to-end popup delivery.
+      try {
+        final bid = (data is Map ? data['bookingId'] : null)?.toString() ?? '?';
+        CommonLogger.log.i(
+          '[REQ-RECV] source=primary url=${cfg.socketUrl} bookingId=$bid '
+          'sharedToggle=${cfg.isSharedEnabled.value} effectiveShared=${cfg.effectiveShared} '
+          'online=${statusController.isOnline.value}',
+        );
+      } catch (_) {}
       await _processBookingRequest(data);
     });
 
