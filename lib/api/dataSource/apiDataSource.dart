@@ -1440,6 +1440,97 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
+  // ── Parcel delivery trust (Phase 1) ───────────────────────────────────────
+
+  /// Verify the RECIPIENT's delivery OTP at the drop (parcels only).
+  Future<Either<Failure, Map<String, dynamic>>> verifyParcelDeliveryOtp({
+    required String bookingId,
+    required String enteredOtp,
+  }) async {
+    try {
+      final response = await Request.sendRequest(
+        ApiConstents.parcelVerifyDeliveryOtp,
+        {"bookingId": bookingId, "enteredOtp": enteredOtp},
+        'Post',
+        false,
+      );
+      if (response is Response && response.statusCode == 200) {
+        return Right(Map<String, dynamic>.from(response.data as Map));
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(
+            (response.data is Map ? response.data['message'] : null)
+                    ?.toString() ??
+                'Delivery OTP verification failed',
+          ),
+        );
+      }
+      return Left(ServerFailure('Unexpected error'));
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  /// Re-send the delivery OTP to the recipient's phone (parcels only).
+  Future<Either<Failure, Map<String, dynamic>>> resendParcelDeliveryOtp({
+    required String bookingId,
+  }) async {
+    try {
+      final response = await Request.sendRequest(
+        ApiConstents.parcelResendDeliveryOtp,
+        {"bookingId": bookingId},
+        'Post',
+        false,
+      );
+      if (response is Response && response.statusCode == 200) {
+        return Right(Map<String, dynamic>.from(response.data as Map));
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(
+            (response.data is Map ? response.data['message'] : null)
+                    ?.toString() ??
+                'Could not resend delivery OTP',
+          ),
+        );
+      }
+      return Left(ServerFailure('Unexpected error'));
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  /// Save the proof-of-delivery photo URL (already uploaded via /upload/image).
+  Future<Either<Failure, Map<String, dynamic>>> saveParcelPodPhoto({
+    required String bookingId,
+    required String podPhotoUrl,
+  }) async {
+    try {
+      final response = await Request.sendRequest(
+        ApiConstents.parcelPodPhoto,
+        {"bookingId": bookingId, "podPhotoUrl": podPhotoUrl},
+        'Post',
+        false,
+      );
+      if (response is Response && response.statusCode == 200) {
+        return Right(Map<String, dynamic>.from(response.data as Map));
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(
+            (response.data is Map ? response.data['message'] : null)
+                    ?.toString() ??
+                'Could not save proof of delivery',
+          ),
+        );
+      }
+      return Left(ServerFailure('Unexpected error'));
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
   Future<Either<Failure, BookingAcceptModel>> otpRequest({
     required String bookingId,
   }) async {

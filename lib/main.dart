@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import 'Core/Constants/log.dart';
 import 'Core/Firebase/firebase_service.dart';
+import 'Core/Utility/snackbar.dart';
 import 'Core/Services/driver_background_location_service.dart';
 import 'Core/Services/logger_service.dart';
 import 'Presentation/DriverScreen/controller/driver_main_controller.dart';
@@ -138,6 +139,10 @@ class MyApp extends StatelessWidget {
           (context, child) => GetMaterialApp(
             theme: ThemeData(scaffoldBackgroundColor: Colors.white),
             debugShowCheckedModeBanner: false,
+            // CRASH FIX: dismiss the custom top-snack OverlayEntry on any route
+            // removal/replacement (Get.offAll etc.) — a live entry surviving a
+            // navigator teardown crashes with "Duplicate GlobalKeys detected".
+            navigatorObservers: [SnackSafeNavigatorObserver()],
             builder: (context, child) {
               final mq = MediaQuery.of(context);
               return MediaQuery(

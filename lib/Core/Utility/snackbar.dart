@@ -3,6 +3,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
+/// Register in GetMaterialApp.navigatorObservers. Any route removal or
+/// replacement (Get.offAll, pushAndRemoveUntil, back-navigation) dismisses a
+/// live top-snack first — a raw OverlayEntry that survives a navigator
+/// teardown reparents its GlobalKey into the rebuilt Overlay and crashes with
+/// "Duplicate GlobalKeys detected in widget tree".
+class SnackSafeNavigatorObserver extends NavigatorObserver {
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    CustomSnackBar.dismiss();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    CustomSnackBar.dismiss();
+  }
+}
+
 class CustomSnackBar {
   static OverlayEntry? _currentEntry;
   static Timer? _dismissTimer;
@@ -71,10 +88,21 @@ class CustomSnackBar {
     _dismissTimer = Timer(const Duration(seconds: 3), _dismissCurrent);
   }
 
+  /// Public escape hatch: call BEFORE any route-stack replacement
+  /// (Get.offAll / pushAndRemoveUntil). A live top-snack OverlayEntry that
+  /// survives a navigator teardown reparents its GlobalKey into the rebuilt
+  /// Overlay and crashes with "Duplicate GlobalKeys detected in widget tree".
+  static void dismiss() => _dismissCurrent();
+
   static void _dismissCurrent() {
     _dismissTimer?.cancel();
     _dismissTimer = null;
-    _currentEntry?.remove();
+    try {
+      _currentEntry?.remove();
+    } catch (_) {
+      // The entry's overlay was already torn down (route-stack replacement
+      // mid-display) — dropping the reference is all that's left to do.
+    }
     _currentEntry = null;
   }
 

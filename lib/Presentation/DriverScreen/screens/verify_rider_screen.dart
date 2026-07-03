@@ -164,6 +164,12 @@ class _VerifyRiderScreenState extends State<VerifyRiderScreen> {
 
     _isNavigating = true;
 
+    // CRASH FIX: a live top-snack OverlayEntry (e.g. the "OTP resent"
+    // confirmation shown seconds earlier) must not survive the route-stack
+    // replacement below — Get.offAll rebuilds the overlay and the stale entry
+    // reparents its GlobalKey ("Duplicate GlobalKeys detected" → app crash).
+    CustomSnackBar.dismiss();
+
     if (widget.isSharedRide) {
       // 👉 Shared ride flow: just tell previous screen "OTP verified"
       Get.back<bool>(result: true);

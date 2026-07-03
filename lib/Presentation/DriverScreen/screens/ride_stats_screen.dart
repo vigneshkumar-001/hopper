@@ -14,6 +14,7 @@ import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/widgets/parcel_delivery_section.dart';
 import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
 import 'package:hopper/utils/map/driver_message_suggestions.dart';
@@ -547,7 +548,9 @@ class RideStatsScreen extends StatelessWidget {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          'Dropping off passenger',
+                                          c.isParcel.value
+                                              ? 'Delivering package'
+                                              : 'Dropping off passenger',
                                           style: TextStyle(
                                             fontSize: 12.5,
                                             fontWeight: FontWeight.w600,
@@ -559,7 +562,15 @@ class RideStatsScreen extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 12),
                                   Obx(() {
-                                    final phone = c.customerPhone.value.trim();
+                                    // Parcel: at the drop leg the useful call
+                                    // target is the RECEIVER, not the sender.
+                                    final receiver =
+                                        c.receiverPhone.value.trim();
+                                    final phone =
+                                        (c.isParcel.value &&
+                                                receiver.isNotEmpty)
+                                            ? receiver
+                                            : c.customerPhone.value.trim();
                                     return _ActionIconButton(
                                       icon: Icons.call_rounded,
                                       color: const Color(0xFF00A85E),
@@ -697,15 +708,25 @@ class RideStatsScreen extends StatelessWidget {
                               }),
                             ),
                             const SizedBox(height: 14),
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              child: _rideDetails(
-                                context: context,
-                                c: c,
-                                driverStatusController: driverStatusController,
+                            // Parcels get the step-based delivery panel (info
+                            // cards + checklist preview) instead of the
+                            // generic ride details; rides are unchanged.
+                            if (c.isParcel.value)
+                              ParcelDeliverySection(
+                                controller: c,
+                                atDropLocation: false,
+                              )
+                            else
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                child: _rideDetails(
+                                  context: context,
+                                  c: c,
+                                  driverStatusController:
+                                      driverStatusController,
+                                ),
                               ),
-                            ),
                           ] else ...[
                             Column(
                               children: [
@@ -750,21 +771,59 @@ class RideStatsScreen extends StatelessWidget {
                                 const SizedBox(height: 10),
                                 CustomTextfield.textWithStylesSmall(
                                   fontWeight: FontWeight.w500,
-                                  'Dropping off ${c.custName.value}',
+                                  c.isParcel.value
+                                      ? 'Delivering package to ${c.receiverName.value.trim().isEmpty ? c.custName.value : c.receiverName.value.trim()}'
+                                      : 'Dropping off ${c.custName.value}',
                                 ),
                                 const SizedBox(height: 5),
+                                // Parcel delivery trust checklist: receiver
+                                // card + delivery OTP + POD photo. Renders
+                                // nothing for plain rides.
+                                ParcelDeliverySection(controller: c),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 20,
                                     vertical: 10,
                                   ),
-                                  child: HopprSwipeSlider(
+                                  // Parcel: the Complete slider stays LOCKED
+                                  // until receiver OTP + POD photo are done
+                                  // (backend re-validates — this is UX, not
+                                  // the gate). Rides always get the slider.
+                                  child: (c.isParcel.value &&
+                                          (!c.deliveryOtpVerified.value ||
+                                              c.podPhotoUrl.value.isEmpty))
+                                      ? const ParcelCompleteLockedBar()
+                                      : HopprSwipeSlider(
                                     height: 50,
                                     backgroundColor: AppColors.drkGreen,
                                     handleColor: Colors.white,
                                     handleIconColor: AppColors.drkGreen,
-                                    text: 'Complete Ride',
+                                    text: c.isParcel.value
+                                        ? 'Complete Delivery'
+                                        : 'Complete Ride',
                                     onAction: (controller) async {
+                                      // PARCEL GATE (UX pre-check; the backend
+                                      // re-validates and is the source of
+                                      // truth): receiver OTP must be verified
+                                      // before the swipe can complete.
+                                      if (c.isParcel.value &&
+                                          !c.deliveryOtpVerified.value) {
+                                        controller.failure();
+                                        await Future<void>.delayed(
+                                          const Duration(milliseconds: 250),
+                                        );
+                                        controller.reset();
+                                        CustomSnackBar.showError(
+                                          "Verify the receiver's delivery OTP first",
+                                        );
+                                        if (context.mounted) {
+                                          await showParcelDeliveryOtpSheet(
+                                            context,
+                                            c,
+                                          );
+                                        }
+                                        return;
+                                      }
                                       controller.loading();
                                       await Future.delayed(
                                         const Duration(milliseconds: 700),
