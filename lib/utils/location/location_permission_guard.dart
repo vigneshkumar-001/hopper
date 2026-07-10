@@ -83,12 +83,6 @@ class LocationPermissionGuard extends GetxService with WidgetsBindingObserver {
     _retryTimer = null;
   }
 
-  Future<void> _checkAndGate() async {
-    await checkAndHandle(showDialog: false);
-    final ok = await isReady();
-    if (ok) _closeDialogIfOpen();
-  }
-
   void open() {
     if (_dialogOpen) return;
 
@@ -116,14 +110,10 @@ class LocationPermissionGuard extends GetxService with WidgetsBindingObserver {
             'This includes collecting location in the background — even when the '
             'app is closed or not in use — so your trips keep tracking while you '
             'drive. You can turn this off anytime in your device Settings.\n\n'
-            'Tap “Allow” to continue and grant location access.',
-        primaryText: 'Allow',
+            'Tap “Continue” to grant location access.',
+        primaryText: 'Continue',
         onPrimary: () async {
-          await _openSettingsFlow();
-        },
-        secondaryText: 'Not now',
-        onSecondary: () async {
-          await _checkAndGate();
+          await _requestLocationPermission();
         },
         icon: Icons.location_on_rounded,
       ),
@@ -139,7 +129,7 @@ class LocationPermissionGuard extends GetxService with WidgetsBindingObserver {
     open();
   }
 
-  Future<void> _openSettingsFlow() async {
+  Future<void> _requestLocationPermission() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       await Geolocator.openLocationSettings();
@@ -167,8 +157,6 @@ Widget _locationBlockDialog({
   required String message,
   required String primaryText,
   required Future<void> Function() onPrimary,
-  required String secondaryText,
-  required Future<void> Function() onSecondary,
   required IconData icon,
 }) {
   return Dialog(
@@ -178,81 +166,58 @@ Widget _locationBlockDialog({
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
       child: SingleChildScrollView(
         child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            height: 52,
-            width: 52,
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.06),
-              shape: BoxShape.circle,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 52,
+              width: 52,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.06),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 28, color: Colors.black),
             ),
-            child: Icon(icon, size: 28, color: Colors.black),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13.5,
-              height: 1.35,
-              color: Colors.black.withOpacity(0.74),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () async => onSecondary(),
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    side: BorderSide(color: Colors.black.withOpacity(0.14)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+            const SizedBox(height: 10),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13.5,
+                height: 1.35,
+                color: Colors.black.withOpacity(0.74),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () async => onPrimary(),
+                style: ElevatedButton.styleFrom(
+                  elevation: 0,
+                  backgroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Text(
-                    secondaryText,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black,
-                    ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: Text(
+                  primaryText,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () async => onPrimary(),
-                  style: ElevatedButton.styleFrom(
-                    elevation: 0,
-                    backgroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  child: Text(
-                    primaryText,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
       ),
     ),
   );

@@ -41,9 +41,9 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
   final AuthController controller = Get.put(AuthController());
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   late final ChooseServiceController chooseServiceController =
-  Get.isRegistered<ChooseServiceController>()
-      ? Get.find<ChooseServiceController>()
-      : Get.put(ChooseServiceController(), permanent: true);
+      Get.isRegistered<ChooseServiceController>()
+          ? Get.find<ChooseServiceController>()
+          : Get.put(ChooseServiceController(), permanent: true);
   // final ChooseServiceController chooseServiceController = Get.find();
   String flag = '';
 
@@ -123,9 +123,7 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
     });
   }
 
-  List<String> scopes = <String>[
-    'email',
-  ];
+  List<String> scopes = <String>['email'];
 
   // GoogleSignIn _googleSignIn = GoogleSignIn(
   //   // Optional clientId
@@ -208,16 +206,92 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
         ],
       );
 
+      final identityToken = appleCredential.identityToken;
+      if (identityToken == null || identityToken.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              const SnackBar(
+                behavior: SnackBarBehavior.floating,
+                content: Text(
+                  'Apple sign-in could not complete. Please try again.',
+                ),
+              ),
+            );
+        }
+        return;
+      }
+
       final oauthCredential = OAuthProvider("apple.com").credential(
-        idToken: appleCredential.identityToken,
+        idToken: identityToken,
         accessToken: appleCredential.authorizationCode,
       );
 
-      await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(
+        oauthCredential,
+      );
+
+      final user = userCredential.user;
+      if (user == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+            ..clearSnackBars()
+            ..showSnackBar(
+              const SnackBar(
+                behavior: SnackBarBehavior.floating,
+                content: Text(
+                  'Apple sign-in could not complete. Please try again.',
+                ),
+              ),
+            );
+        }
+        return;
+      }
 
       CommonLogger.log.i("✅ Apple Sign-In Success!");
+
+      // Complete login against our backend and route the user into the app.
+      // Without this, Firebase auth succeeds but nothing happens and the app
+      // stays on the login page (App Store rejection 2.1(a)).
+      // Apple only returns the email on the first authorization, so fall back to
+      // the Firebase-cached email (or the relay email) on subsequent sign-ins.
+      final String uid = user.uid;
+      final String email = appleCredential.email ?? user.email ?? '';
+
+      CommonLogger.log.i('✅ Apple UID: $uid');
+      CommonLogger.log.i('✅ Apple Email: $email');
+
+      if (!mounted) return;
+      controller.appleSignInWithFirebase(context, email, uid);
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) {
+        CommonLogger.log.i("Apple Sign-In cancelled by user.");
+        return;
+      }
+      CommonLogger.log.i("❌ Apple Sign-In Authorization Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            const SnackBar(
+              behavior: SnackBarBehavior.floating,
+              content: Text('Apple sign-in failed. Please try again.'),
+            ),
+          );
+      }
     } catch (e) {
       CommonLogger.log.i("❌ Apple Sign-In Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            const SnackBar(
+              behavior: SnackBarBehavior.floating,
+              content: Text('Apple sign-in failed. Please try again.'),
+            ),
+          );
+      }
     }
   }
 
@@ -488,7 +562,7 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                           textColor: AppColors.commonBlack,
 
                           onTap: () {
-                        signInWithApple();
+                            signInWithApple();
                           },
                           text: Text('Continue with Apple'),
                         ),

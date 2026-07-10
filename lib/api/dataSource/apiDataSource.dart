@@ -223,6 +223,46 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
+  Future<Either<Failure, OtpResponse>> appleSignInWithFirebase({
+    required String uniqueId,
+    required String email,
+  }) async {
+    try {
+      String url = ApiConstents.loginApi;
+
+      dynamic response = await Request.sendRequest(
+        url,
+        {
+          "uniqueId": uniqueId, // Firebase UID for the Apple identity //Mandatory
+          "provider": "apple",
+          "type": "social",
+          "email": email,
+        },
+        'Post',
+        false,
+      );
+
+      if (response.statusCode == 200) {
+        if (response.data['status'] == 200) {
+          return Right(OtpResponse.fromJson(response.data));
+        } else {
+          return Left(
+            ServerFailure(response.data['message'] ?? "Login failed"),
+          );
+        }
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(response.data['message'] ?? "Unexpected error"),
+        );
+      } else {
+        return Left(ServerFailure("Unknown error occurred"));
+      }
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
   Future<Either<Failure, OtpResponse>> verifyOtp(String otp) async {
     try {
       String url = ApiConstents.verifyOtp;

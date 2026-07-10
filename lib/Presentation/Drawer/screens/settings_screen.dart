@@ -168,13 +168,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                 ),
                 _SettingsRowTile(
-                  icon: (() {
-                    final s = (profile?.serviceType ?? '').toString().trim().toLowerCase();
-                    if (s.contains('bike') || s.contains('2w') || s.contains('two')) {
-                      return Icons.two_wheeler;
-                    }
-                    return Icons.directions_car_filled_outlined;
-                  })(),
+                  icon:
+                      (() {
+                        final s =
+                            (profile?.serviceType ?? '')
+                                .toString()
+                                .trim()
+                                .toLowerCase();
+                        if (s.contains('bike') ||
+                            s.contains('2w') ||
+                            s.contains('two')) {
+                          return Icons.two_wheeler;
+                        }
+                        return Icons.directions_car_filled_outlined;
+                      })(),
                   title: 'Vehicles',
                   subtitle: 'Brand, model, plate and registration',
                   onTap:
@@ -207,6 +214,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                   child: _SettingsLogoutCard(
                     onTap: () => _showSettingsLogoutDialog(context),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: _SettingsDeleteCard(
+                    onTap: () => _showDeleteAccountDialog(context),
                   ),
                 ),
                 if (isLoading)
@@ -332,6 +346,115 @@ void _showSettingsLogoutDialog(BuildContext context) {
   );
 }
 
+void _showDeleteAccountDialog(BuildContext context) {
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (dialogContext) {
+      return Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 28,
+                offset: Offset(0, 16),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 72,
+                width: 72,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFE5E2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.delete_forever_rounded,
+                  color: Color(0xFFB42318),
+                  size: 34,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Delete account?',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'This will remove your Hoppr session from this device. If you signed in with Apple or Google, we will also disconnect that login from the app.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  height: 1.5,
+                  color: Color(0xFF667085),
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        foregroundColor: const Color(0xFF111827),
+                        side: const BorderSide(color: Color(0xFFD0D5DD)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(dialogContext);
+                        await _deleteAccount(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFB42318),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'Delete',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class _SettingsLogoutCard extends StatelessWidget {
   const _SettingsLogoutCard({required this.onTap});
 
@@ -359,6 +482,53 @@ class _SettingsLogoutCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   'Log out',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFB42318),
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: Color(0xFFB42318),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsDeleteCard extends StatelessWidget {
+  const _SettingsDeleteCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFFF7F6),
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFF7C7C0)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.delete_forever_rounded, color: Color(0xFFB42318)),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Delete account',
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
@@ -853,10 +1023,7 @@ class _DocumentsDetailsScreen extends StatelessWidget {
                   'Profile Photo',
                   _approved(profile?.profilePhotoStatus),
                 ),
-                _statusRow(
-                  'NIN',
-                  _approved(profile?.ninVerificationStatus),
-                ),
+                _statusRow('NIN', _approved(profile?.ninVerificationStatus)),
                 _statusRow(
                   'Driver License',
                   _approved(profile?.driversLicenseStatus),
@@ -999,8 +1166,17 @@ Future<void> _settingsLogout(BuildContext context) async {
   // - Logout API is called
   // - Socket/background services are cleaned up
   // - Navigation is consistent
-  final auth = Get.isRegistered<AuthController>()
-      ? Get.find<AuthController>()
-      : Get.put(AuthController());
+  final auth =
+      Get.isRegistered<AuthController>()
+          ? Get.find<AuthController>()
+          : Get.put(AuthController());
   await auth.logout(context);
+}
+
+Future<void> _deleteAccount(BuildContext context) async {
+  final auth =
+      Get.isRegistered<AuthController>()
+          ? Get.find<AuthController>()
+          : Get.put(AuthController());
+  await auth.deleteAccount(context);
 }

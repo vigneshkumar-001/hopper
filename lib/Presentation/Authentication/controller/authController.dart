@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hopper/Core/Constants/log.dart';
 import 'package:country_picker/country_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/screens/Landing_Screens.dart';
@@ -162,6 +163,48 @@ class AuthController extends GetxController {
     return '';
   }
 
+  Future<String?> appleSignInWithFirebase(
+    BuildContext context,
+    String email,
+    String uniqueId,
+  ) async {
+    isGoogleLoading.value = true;
+    try {
+      final results = await apiDataSource.appleSignInWithFirebase(
+        uniqueId: uniqueId,
+        email: email,
+      );
+      results.fold(
+        (failure) {
+          CustomSnackBar.showError(failure.message);
+          isGoogleLoading.value = false;
+
+          return '';
+        },
+        (response) async {
+          isGoogleLoading.value = false;
+          if (!context.mounted) return ' ';
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => TermsScreen(type: 'googleSignIn'),
+            ),
+          );
+          accessToken = response.data.token;
+          await SharedPrefHelper.setToken(response.data.token);
+
+          return ' ';
+        },
+      );
+    } catch (e) {
+      isGoogleLoading.value = false;
+      return ' ';
+    }
+
+    isGoogleLoading.value = false;
+    return '';
+  }
+
   Future<void> logout(BuildContext context) async {
     final token = await SharedPrefHelper.getToken();
 
@@ -185,6 +228,57 @@ class AuthController extends GetxController {
       MaterialPageRoute(builder: (_) => LandingScreens()),
       (route) => false,
     );
+  }
+
+  Future<bool> deleteAccount(BuildContext context) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser != null) {
+      try {
+        await currentUser.delete();
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'requires-recent-login') {
+          CustomSnackBar.showError(
+            'Please sign in again and try deleting your account.',
+          );
+          return false;
+        }
+        CommonLogger.log.e('Delete account failed: ${e.code} ${e.message}');
+        CustomSnackBar.showError(
+          'We could not delete your account right now. Please try again.',
+        );
+        return false;
+      } catch (e) {
+        CommonLogger.log.e('Delete account failed: $e');
+        CustomSnackBar.showError(
+          'We could not delete your account right now. Please try again.',
+        );
+        return false;
+      }
+    }
+
+    final token = await SharedPrefHelper.getToken();
+
+    try {
+      await apiDataSource
+          .logout(token: token)
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {}
+
+    await performLogoutCleanup();
+    await SharedPrefHelper.clearAll();
+    if (Get.isRegistered<DriverAnalyticsController>()) {
+      await Get.find<DriverAnalyticsController>().reset(clearPersisted: false);
+    }
+    accessToken = '';
+
+    if (!context.mounted) return true;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => LandingScreens()),
+      (route) => false,
+    );
+    return true;
   }
 
   Future<String?> emailLoginOtp(
