@@ -1,5 +1,8 @@
 ﻿import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
+
+import 'package:image_picker/image_picker.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -121,6 +124,27 @@ class RideStatsController extends GetxController
   final RxString customerPhone = ''.obs;
   final RxString profilePic = ''.obs;
   final RxString amount = ''.obs;
+
+  /// ---- parcel delivery trust (Phase 2) ----
+  /// Seeded from the active-booking `parcel` object; deliveryOtpVerified /
+  /// podPhotoUrl restore after an app restart so the delivery checklist keeps
+  /// its state. The backend remains the completion gate — these only drive UI.
+  final RxBool isParcel = false.obs;
+  final RxString receiverName = ''.obs;
+  final RxString receiverPhone = ''.obs;
+  final RxString deliveryInstruction = ''.obs;
+  final RxString parcelType = ''.obs;
+  final RxString parcelDescription = ''.obs;
+  final RxString parcelWeight = ''.obs;
+  final RxString parcelAddressType = ''.obs;
+  final RxString parcelPaymentMode = ''.obs;
+  final RxBool deliveryOtpVerified = false.obs;
+  final RxString podPhotoUrl = ''.obs;
+  final RxBool deliveryOtpVerifying = false.obs;
+  final RxBool deliveryOtpResending = false.obs;
+  final RxInt deliveryOtpResendCooldown = 0.obs;
+  final RxBool podUploading = false.obs;
+  Timer? _deliveryOtpResendTimer;
 
   /// icon
   final Rxn<BitmapDescriptor> carIcon = Rxn<BitmapDescriptor>();
@@ -261,6 +285,7 @@ class RideStatsController extends GetxController
     _positionStream?.cancel();
     _autoFollowTimer?.cancel();
     _routeRetryTimer?.cancel();
+    _deliveryOtpResendTimer?.cancel();
     _serviceTypeWorker?.dispose();
     _paymentStatusWorker?.dispose();
     _mapTargetWorker?.dispose();
@@ -615,6 +640,8 @@ class RideStatsController extends GetxController
               .toString();
       amount.value = (payload['amount'] ?? joined['amount'] ?? '').toString();
 
+      _applyParcelTrust(payload, joined);
+
       if ((pickupAddress ?? '').trim().isNotEmpty) {
         customerFrom.value = pickupAddress!.trim();
       } else if (pickup != null) {
@@ -648,11 +675,197 @@ class RideStatsController extends GetxController
     await _applyBookingSnapshot(joined);
   }
 
+  // ─── Parcel delivery trust (Phase 2) ──────────────────────────────────────
+
+  String _cleanStr(dynamic v) {
+    final s = (v ?? '').toString().trim();
+    return (s == 'null') ? '' : s;
+  }
+
+  /// Seed the parcel delivery-leg state from an active-booking / joined-room
+  /// snapshot. Never DOWNGRADES local progress: a snapshot without the parcel
+  /// object (older payload shape) must not clear an already-verified OTP.
+  void _applyParcelTrust(
+    Map<String, dynamic> payload,
+    Map<String, dynamic> joined,
+  ) {
+    final bookingType =
+        (payload['bookingType'] ?? joined['bookingType'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+    final rawParcel = payload['parcel'] ?? joined['parcel'];
+    if (bookingType == 'parcel' || rawParcel is Map) {
+      isParcel.value = true;
+    }
+    if (rawParcel is! Map) return;
+
+    final p = Map<String, dynamic>.from(rawParcel);
+    if (_cleanStr(p['receiverName']).isNotEmpty) {
+      receiverName.value = _cleanStr(p['receiverName']);
+    }
+    if (_cleanStr(p['receiverPhone']).isNotEmpty) {
+      receiverPhone.value = _cleanStr(p['receiverPhone']);
+    }
+    deliveryInstruction.value = _cleanStr(p['deliveryInstruction']);
+    parcelType.value = _cleanStr(p['parcelType']);
+    parcelDescription.value = _cleanStr(p['parcelDescription']);
+    parcelAddressType.value = _cleanStr(p['addressType']);
+    parcelPaymentMode.value = _cleanStr(p['paymentMode']);
+    final w = _cleanStr(p['maxWeight']);
+    parcelWeight.value = (w.isEmpty || w == '0') ? '' : w;
+    if (p['deliveryOtpVerified'] == true) deliveryOtpVerified.value = true;
+    final pod = _cleanStr(p['podPhotoUrl']);
+    if (pod.isNotEmpty) podPhotoUrl.value = pod;
+  }
+
+  /// Verify the RECEIVER's delivery OTP at the drop. Backend enforces
+  /// attempts/lock; the message is surfaced verbatim to the driver.
+  Future<({bool success, String message})> verifyDeliveryOtp(
+    String enteredOtp,
+  ) async {
+    if (deliveryOtpVerifying.value) {
+      return (success: false, message: 'Verification already in progress');
+    }
+    deliveryOtpVerifying.value = true;
+    try {
+      final result = await _apiDataSource.verifyParcelDeliveryOtp(
+        bookingId: bookingId,
+        enteredOtp: enteredOtp,
+      );
+      return result.fold(
+        (failure) => (success: false, message: failure.message),
+        (data) {
+          deliveryOtpVerified.value = true;
+          return (
+            success: true,
+            message: (data['message'] ?? 'Delivery OTP verified').toString(),
+          );
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.e('verifyDeliveryOtp failed: $e');
+      return (success: false, message: 'Something went wrong');
+    } finally {
+      deliveryOtpVerifying.value = false;
+    }
+  }
+
+  /// Re-send the delivery OTP to the receiver. Server enforces the real
+  /// cooldown/limit; the local cooldown just stops button spam.
+  Future<({bool success, String message})> resendDeliveryOtp() async {
+    if (deliveryOtpResending.value || deliveryOtpResendCooldown.value > 0) {
+      return (success: false, message: 'Please wait before resending');
+    }
+    deliveryOtpResending.value = true;
+    try {
+      final result = await _apiDataSource.resendParcelDeliveryOtp(
+        bookingId: bookingId,
+      );
+      return result.fold(
+        (failure) => (success: false, message: failure.message),
+        (data) {
+          final wait =
+              int.tryParse((data['nextResendInSec'] ?? '').toString()) ?? 30;
+          _startDeliveryOtpCooldown(wait);
+          return (
+            success: true,
+            message:
+                (data['message'] ?? 'Delivery OTP re-sent to receiver')
+                    .toString(),
+          );
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.e('resendDeliveryOtp failed: $e');
+      return (success: false, message: 'Something went wrong');
+    } finally {
+      deliveryOtpResending.value = false;
+    }
+  }
+
+  void _startDeliveryOtpCooldown(int seconds) {
+    _deliveryOtpResendTimer?.cancel();
+    deliveryOtpResendCooldown.value = seconds;
+    _deliveryOtpResendTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (isClosed) {
+        t.cancel();
+        return;
+      }
+      if (deliveryOtpResendCooldown.value <= 1) {
+        deliveryOtpResendCooldown.value = 0;
+        t.cancel();
+      } else {
+        deliveryOtpResendCooldown.value -= 1;
+      }
+    });
+  }
+
+  /// Capture (camera) or pick (gallery) the proof-of-delivery photo, upload it
+  /// through the existing image-upload endpoint, then attach the URL to the
+  /// booking. Empty message on user-cancel so callers can skip the snackbar.
+  Future<({bool success, String message})> captureAndUploadPodPhoto({
+    ImageSource source = ImageSource.camera,
+  }) async {
+    if (podUploading.value) {
+      return (success: false, message: 'Upload already in progress');
+    }
+    XFile? picked;
+    try {
+      picked = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 70,
+        maxWidth: 1440,
+      );
+    } catch (e) {
+      CommonLogger.log.e('POD photo pick failed: $e');
+      return (success: false, message: 'Could not open camera');
+    }
+    if (picked == null) return (success: false, message: '');
+
+    podUploading.value = true;
+    try {
+      final uploadResult = await _apiDataSource.userProfileUpload(
+        imageFile: File(picked.path),
+      );
+      final url = uploadResult.fold<String?>(
+        (failure) => null,
+        (model) => model.message.trim(),
+      );
+      if (url == null || !url.startsWith('http')) {
+        return (
+          success: false,
+          message: 'Photo upload failed. Check your connection and retake.',
+        );
+      }
+      final saveResult = await _apiDataSource.saveParcelPodPhoto(
+        bookingId: bookingId,
+        podPhotoUrl: url,
+      );
+      return saveResult.fold(
+        (failure) => (success: false, message: failure.message),
+        (data) {
+          podPhotoUrl.value = url;
+          return (
+            success: true,
+            message:
+                (data['message'] ?? 'Proof of delivery saved').toString(),
+          );
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.e('POD upload failed: $e');
+      return (success: false, message: 'Something went wrong');
+    } finally {
+      podUploading.value = false;
+    }
+  }
+
   Future<void> _fetchActiveBookingSnapshotIfNeeded() async {
     if (_activeBookingSnapshotFetched) return;
-    if (bookingToLocation.value != null && custName.value.trim().isNotEmpty) {
-      return;
-    }
+    // Always fetch once: joined-room payloads carry name/locations but NOT the
+    // parcel-trust object (receiver contact, deliveryOtpVerified, podPhotoUrl),
+    // so skipping this fetch would leave the parcel delivery checklist blank.
 
     _activeBookingSnapshotFetched = true;
     try {

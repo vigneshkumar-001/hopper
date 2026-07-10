@@ -77,6 +77,12 @@ class ApiConstents {
   static String get cashCollectedStatus => _u('/cashonhand/byuser/orders');
   static String get addToWalletResponse => _u('/users/add-to-wallet-reponse');
   static String get driverAccept => _u('/users/driver-response');
+  // Parcel delivery trust (Phase 1): recipient delivery-OTP + proof of delivery.
+  static String get parcelVerifyDeliveryOtp =>
+      _u('/users/parcel/verify-delivery-otp');
+  static String get parcelResendDeliveryOtp =>
+      _u('/users/parcel/resend-delivery-otp');
+  static String get parcelPodPhoto => _u('/users/parcel/pod-photo');
   static String get stopNewRequests => _u('/users/stopNewRequests');
   static String get driverStatus => _u('/users/status');
   static String get driverActiveBooking => _u('/users/active-booking');
