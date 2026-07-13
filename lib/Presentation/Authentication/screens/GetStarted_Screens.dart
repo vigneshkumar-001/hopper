@@ -1,6 +1,9 @@
 import 'dart:ui';
 import 'package:country_picker/country_picker.dart';
 import 'dart:io';
+import 'dart:convert';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
@@ -192,6 +195,22 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
     }
   }
 
+  // Cryptographically-secure random string used as the Apple sign-in nonce.
+  String _generateNonce([int length = 32]) {
+    const charset =
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._';
+    final random = Random.secure();
+    return List.generate(
+      length,
+      (_) => charset[random.nextInt(charset.length)],
+    ).join();
+  }
+
+  String _sha256ofString(String input) {
+    final bytes = utf8.encode(input);
+    return sha256.convert(bytes).toString();
+  }
+
   Future<void> signInWithApple() async {
     if (!Platform.isIOS) {
       CommonLogger.log.i("❌ Apple Sign-In not supported on this platform.");
@@ -199,11 +218,20 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
     }
 
     try {
+      // Firebase requires a nonce for Sign in with Apple: we send the SHA-256
+      // hash to Apple and pass the original (raw) value to Firebase, which
+      // matches it against the nonce claim inside the returned identity token.
+      // Without this, FirebaseAuth.signInWithCredential rejects the token and
+      // the sign-in fails on device (App Store rejection 2.1(a)).
+      final rawNonce = _generateNonce();
+      final hashedNonce = _sha256ofString(rawNonce);
+
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
           AppleIDAuthorizationScopes.fullName,
         ],
+        nonce: hashedNonce,
       );
 
       final identityToken = appleCredential.identityToken;
@@ -223,9 +251,11 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
         return;
       }
 
+      // Build the Firebase credential with idToken + rawNonce (NOT the
+      // authorization code, which is not an OAuth access token).
       final oauthCredential = OAuthProvider("apple.com").credential(
         idToken: identityToken,
-        accessToken: appleCredential.authorizationCode,
+        rawNonce: rawNonce,
       );
 
       final userCredential = await FirebaseAuth.instance.signInWithCredential(
@@ -270,6 +300,20 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
         return;
       }
       CommonLogger.log.i("❌ Apple Sign-In Authorization Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            const SnackBar(
+              behavior: SnackBarBehavior.floating,
+              content: Text('Apple sign-in failed. Please try again.'),
+            ),
+          );
+      }
+    } on FirebaseAuthException catch (e) {
+      CommonLogger.log.e(
+        "❌ Apple Firebase Auth Error: ${e.code} ${e.message}",
+      );
       if (mounted) {
         ScaffoldMessenger.of(context)
           ..clearSnackBars()
