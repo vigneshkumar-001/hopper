@@ -226,6 +226,11 @@ class FirebaseService {
   bool _tokenRefreshAttached = false;
   Timer? _tokenRetryTimer;
   int _tokenRetryCount = 0;
+  void Function(Map<String, dynamic>)? _onBookingRequestOpened;
+
+  static bool isBookingRequestNotification(Map<String, dynamic> data) {
+    return _isBookingRequestData(data);
+  }
 
   static Future<void> queueBookingRequestNotification(
     Map<String, dynamic> data,
@@ -292,7 +297,7 @@ class FirebaseService {
         onDidReceiveNotificationResponse: (response) {
           final payload = response.payload;
           if (payload != null && payload.isNotEmpty) {
-            _handleNotificationTapPayload(payload);
+            unawaited(_handleNotificationTapPayload(payload));
           }
         },
       );
@@ -303,7 +308,7 @@ class FirebaseService {
           launchDetails?.notificationResponse?.payload ?? '';
       if (launchDetails?.didNotificationLaunchApp == true &&
           launchPayload.isNotEmpty) {
-        _handleNotificationTapPayload(launchPayload);
+        await _handleNotificationTapPayload(launchPayload);
       }
     } catch (e) {
       CommonLogger.log.w('Local notifications init failed: $e');
@@ -492,18 +497,20 @@ class FirebaseService {
   void listenToMessages({
     required void Function(RemoteMessage) onMessage,
     required void Function(RemoteMessage) onMessageOpenedApp,
+    void Function(Map<String, dynamic>)? onBookingRequestOpened,
   }) {
     try {
+      _onBookingRequestOpened = onBookingRequestOpened;
       FirebaseMessaging.onMessage.listen((msg) {
         onMessage(msg);
       });
-      FirebaseMessaging.onMessageOpenedApp.listen((msg) {
-        _handleNotificationTapData(msg.data);
+      FirebaseMessaging.onMessageOpenedApp.listen((msg) async {
+        await _handleNotificationTapData(msg.data);
         onMessageOpenedApp(msg);
       });
-      FirebaseMessaging.instance.getInitialMessage().then((msg) {
+      FirebaseMessaging.instance.getInitialMessage().then((msg) async {
         if (msg != null) {
-          _handleNotificationTapData(msg.data);
+          await _handleNotificationTapData(msg.data);
           onMessageOpenedApp(msg);
         }
       });
@@ -512,7 +519,7 @@ class FirebaseService {
     }
   }
 
-  void _handleNotificationTapPayload(String payload) {
+  Future<void> _handleNotificationTapPayload(String payload) async {
     try {
       final decoded = jsonDecode(payload);
       if (decoded is Map) {
@@ -526,19 +533,19 @@ class FirebaseService {
           if (!merged.containsKey('body') && root['body'] != null) {
             merged['body'] = root['body'];
           }
-          _handleNotificationTapData(merged);
+          await _handleNotificationTapData(merged);
           return;
         }
-        _handleNotificationTapData(root);
+        await _handleNotificationTapData(root);
         return;
       }
     } catch (_) {}
-    _handleNotificationTapData(<String, dynamic>{
+    await _handleNotificationTapData(<String, dynamic>{
       'screen': payload,
     });
   }
 
-  void _handleNotificationTapData(Map<String, dynamic> data) {
+  Future<void> _handleNotificationTapData(Map<String, dynamic> data) async {
     final fallbackRoute =
         _isBookingRequestData(data) ? 'booking_request' : '';
     final route = ((data['screen'] ?? '').toString().trim().isNotEmpty
@@ -554,11 +561,12 @@ class FirebaseService {
           Get.toNamed('/attendance');
           break;
         case 'booking_request':
-          unawaited(queueBookingRequestNotification(data));
+          await queueBookingRequestNotification(data);
           CommonLogger.log.i(
             'Booking request notification opened type=$type bookingId=$bookingId '
             'payload=$data',
           );
+          _onBookingRequestOpened?.call(Map<String, dynamic>.from(data));
           break;
         default:
           CommonLogger.log.i(

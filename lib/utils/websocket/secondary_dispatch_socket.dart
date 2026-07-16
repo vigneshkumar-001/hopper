@@ -42,6 +42,27 @@ class SecondaryDispatchSocket {
   bool get connected => _socket?.connected ?? false;
   String? get currentUrl => _url;
 
+  Map<String, dynamic>? _coerceBookingPayload(dynamic data) {
+    if (data is Map) {
+      final payload = Map<String, dynamic>.from(data);
+      final nested = payload['data'];
+      if (payload['bookingId'] == null && nested is Map) {
+        final normalized = Map<String, dynamic>.from(nested);
+        for (final entry in payload.entries) {
+          if (entry.key != 'data') {
+            normalized.putIfAbsent(entry.key, () => entry.value);
+          }
+        }
+        return normalized;
+      }
+      return payload;
+    }
+    if (data is List && data.isNotEmpty) {
+      return _coerceBookingPayload(data.first);
+    }
+    return null;
+  }
+
   /// Start (or refresh) the secondary dispatch listener against [url] (bk).
   /// Idempotent: calling again with the same url just ensures it's connected.
   void start({
@@ -88,7 +109,9 @@ class SecondaryDispatchSocket {
     });
 
     s.onReconnect((_) {
-      CommonLogger.log.i("🔄 [dual-connect] secondary(bk) reconnected url=$_url");
+      CommonLogger.log.i(
+        "🔄 [dual-connect] secondary(bk) reconnected url=$_url",
+      );
       _register();
     });
 
@@ -99,14 +122,17 @@ class SecondaryDispatchSocket {
     });
 
     s.on('booking-request', (data) {
-      final bid = (data is Map ? data['bookingId'] : null)?.toString() ?? '?';
+      final payload = _coerceBookingPayload(data);
+      final bid = payload?['bookingId']?.toString() ?? '?';
       CommonLogger.log.i(
         "📥 [dual-connect] secondary(bk) booking-request bookingId=$bid url=$_url",
       );
       try {
-        _onBookingRequest?.call(data);
+        _onBookingRequest?.call(payload ?? data);
       } catch (e) {
-        CommonLogger.log.e("[dual-connect] secondary booking-request error: $e");
+        CommonLogger.log.e(
+          "[dual-connect] secondary booking-request error: $e",
+        );
       }
     });
 

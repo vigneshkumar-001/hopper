@@ -5,6 +5,18 @@ import 'package:path_provider/path_provider.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 
 class LoggerService {
+  static const String _redacted = '[REDACTED]';
+  static const Set<String> _sensitiveLogKeys = {
+    'authorization',
+    'password',
+    'token',
+    'accesstoken',
+    'refreshtoken',
+    'fcmtoken',
+    'deviceid',
+    'secret',
+  };
+
   static final Logger logger = Logger(
     printer: PrettyPrinter(
       methodCount: 2,
@@ -22,6 +34,34 @@ class LoggerService {
   }
 
   LoggerService._internal();
+
+  dynamic _sanitizeForLog(dynamic value, {String? key}) {
+    final normalizedKey =
+        key?.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (normalizedKey != null &&
+        (_sensitiveLogKeys.contains(normalizedKey) ||
+            normalizedKey.endsWith('token') ||
+            normalizedKey.endsWith('password') ||
+            normalizedKey.endsWith('secret'))) {
+      return _redacted;
+    }
+    if (value is Map) {
+      return value.map(
+        (entryKey, entryValue) => MapEntry(
+          entryKey,
+          _sanitizeForLog(entryValue, key: entryKey.toString()),
+        ),
+      );
+    }
+    if (value is Iterable) {
+      return value.map((entry) => _sanitizeForLog(entry)).toList();
+    }
+    if (value is String &&
+        value.trimLeft().toLowerCase().startsWith('bearer ')) {
+      return 'Bearer $_redacted';
+    }
+    return value;
+  }
 
   Future<String> get _logFilePath async {
     final dir = await getApplicationDocumentsDirectory();
@@ -53,14 +93,16 @@ Stack: ${stackTrace ?? 'N/A'}''';
     dynamic body,
   }) async {
     final timestamp = DateFormat('yyyy-MM-dd HH:mm:ss.SSS').format(DateTime.now());
+    final safeHeaders = _sanitizeForLog(headers);
+    final safeBody = _sanitizeForLog(body);
     final logMessage = '''
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [$timestamp] 📤 API REQUEST
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 URL: $url
 METHOD: $method
-HEADERS: $headers
-BODY: $body
+HEADERS: $safeHeaders
+BODY: $safeBody
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ''';
 
@@ -75,6 +117,7 @@ BODY: $body
     int? durationMs,
   }) async {
     final timestamp = DateFormat('yyyy-MM-dd HH:mm:ss.SSS').format(DateTime.now());
+    final safeBody = _sanitizeForLog(body);
     final logMessage = '''
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [$timestamp] 📥 API RESPONSE
@@ -82,7 +125,7 @@ BODY: $body
 URL: $url
 STATUS: $statusCode
 DURATION: ${durationMs}ms
-BODY: $body
+BODY: $safeBody
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ''';
 
@@ -96,13 +139,14 @@ BODY: $body
     dynamic errorBody,
   }) async {
     final timestamp = DateFormat('yyyy-MM-dd HH:mm:ss.SSS').format(DateTime.now());
+    final safeErrorBody = _sanitizeForLog(errorBody);
     final logMessage = '''
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [$timestamp] ❌ API ERROR
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 URL: $url
 ERROR: $error
-ERROR BODY: $errorBody
+ERROR BODY: $safeErrorBody
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ''';
 
@@ -115,8 +159,9 @@ ERROR BODY: $errorBody
     dynamic data,
   }) async {
     final timestamp = DateFormat('yyyy-MM-dd HH:mm:ss.SSS').format(DateTime.now());
+    final safeData = _sanitizeForLog(data);
     final logMessage = '''[$timestamp] 🔌 SOCKET EVENT: $eventName
-DATA: $data''';
+DATA: $safeData''';
 
     logger.i('SOCKET EVENT - $eventName');
     await _writeToFile(logMessage);

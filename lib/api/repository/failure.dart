@@ -13,6 +13,15 @@ class ServerFailure extends Failure {
   const ServerFailure(super.message);
 }
 
+class AuthenticationFailure extends Failure {
+  final String code;
+
+  const AuthenticationFailure(super.message, {required this.code});
+
+  @override
+  List<Object> get props => [message, code];
+}
+
 class DatabaseFailure extends Failure {
   const DatabaseFailure(super.message);
 }

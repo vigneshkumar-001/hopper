@@ -94,6 +94,10 @@ class Buttons {
     double? imgHeight = 24,
     double? imgWeight = 24,
     double? borderRadius = 4,
+    // Optional taller variant — default unchanged so every existing call
+    // site keeps its current 40.h sizing. Used by premium package screens
+    // that need the 52-56px touch target.
+    double? height,
 
     Color? buttonColor,
     Color? foreGroundColor,
@@ -122,7 +126,7 @@ class Buttons {
                     borderRadius: BorderRadius.circular(borderRadius!),
                   ),
           elevation: 0,
-          fixedSize: Size(150.w, 40.h),
+          fixedSize: Size(150.w, height ?? 40.h),
           backgroundColor: buttonColor,
         ),
         child: Row(
@@ -582,14 +586,19 @@ class Buttons {
               final sel = scope == value;
               return Expanded(
                 child: GestureDetector(
-                  onTap: isSubmitting ? null : () => setState(() => scope = value),
+                  onTap:
+                      isSubmitting ? null : () => setState(() => scope = value),
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 4),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
-                      color: sel ? AppColors.commonBlack : AppColors.commonWhite,
+                      color:
+                          sel ? AppColors.commonBlack : AppColors.commonWhite,
                       border: Border.all(
-                        color: sel ? AppColors.commonBlack : AppColors.buttonBorder,
+                        color:
+                            sel
+                                ? AppColors.commonBlack
+                                : AppColors.buttonBorder,
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -619,8 +628,9 @@ class Buttons {
                       child: Container(
                         decoration: const BoxDecoration(
                           color: Colors.white,
-                          borderRadius:
-                              BorderRadius.vertical(top: Radius.circular(25)),
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(25),
+                          ),
                         ),
                         padding: const EdgeInsets.all(20),
                         child: ListView(
@@ -641,15 +651,19 @@ class Buttons {
                               child: Text(
                                 'Cancel ride',
                                 style: TextStyle(
-                                    fontSize: 20, fontWeight: FontWeight.w700),
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
                             const SizedBox(height: 4),
                             const Center(
                               child: Text(
                                 'Choose what to cancel and why',
-                                style:
-                                    TextStyle(fontSize: 13, color: Colors.grey),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey,
+                                ),
                               ),
                             ),
                             const SizedBox(height: 18),
@@ -663,29 +677,39 @@ class Buttons {
                               const SizedBox(height: 16),
                             ],
                             if (scope == 'one') ...[
-                              const Text('Select passenger',
-                                  style: TextStyle(fontWeight: FontWeight.w600)),
+                              const Text(
+                                'Select passenger',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
                               const SizedBox(height: 8),
                               ...riders.map((r) {
                                 final sel = selectedBookingId == r.bookingId;
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
                                   child: GestureDetector(
-                                    onTap: isSubmitting
-                                        ? null
-                                        : () => setState(
-                                            () => selectedBookingId = r.bookingId),
+                                    onTap:
+                                        isSubmitting
+                                            ? null
+                                            : () => setState(
+                                              () =>
+                                                  selectedBookingId =
+                                                      r.bookingId,
+                                            ),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 14, vertical: 12),
+                                        horizontal: 14,
+                                        vertical: 12,
+                                      ),
                                       decoration: BoxDecoration(
-                                        color: sel
-                                            ? AppColors.containerColor
-                                            : AppColors.commonWhite,
+                                        color:
+                                            sel
+                                                ? AppColors.containerColor
+                                                : AppColors.commonWhite,
                                         border: Border.all(
-                                          color: sel
-                                              ? AppColors.commonBlack
-                                              : AppColors.buttonBorder,
+                                          color:
+                                              sel
+                                                  ? AppColors.commonBlack
+                                                  : AppColors.buttonBorder,
                                         ),
                                         borderRadius: BorderRadius.circular(8),
                                       ),
@@ -696,16 +720,18 @@ class Buttons {
                                                 ? Icons.radio_button_checked
                                                 : Icons.radio_button_off,
                                             size: 20,
-                                            color: sel
-                                                ? AppColors.commonBlack
-                                                : Colors.grey,
+                                            color:
+                                                sel
+                                                    ? AppColors.commonBlack
+                                                    : Colors.grey,
                                           ),
                                           const SizedBox(width: 10),
                                           Expanded(
                                             child: Text(
                                               r.name,
                                               style: const TextStyle(
-                                                  fontWeight: FontWeight.w500),
+                                                fontWeight: FontWeight.w500,
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -716,20 +742,24 @@ class Buttons {
                               }),
                               const SizedBox(height: 16),
                             ],
-                            const Text('Reason',
-                                style: TextStyle(fontWeight: FontWeight.w600)),
+                            const Text(
+                              'Reason',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
                             const SizedBox(height: 8),
                             ...reasons.map((reason) {
                               final sel = selectedReason == reason;
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: Buttons.button(
-                                  borderColor: sel
-                                      ? AppColors.commonBlack
-                                      : AppColors.buttonBorder,
-                                  buttonColor: sel
-                                      ? AppColors.containerColor
-                                      : AppColors.commonWhite,
+                                  borderColor:
+                                      sel
+                                          ? AppColors.commonBlack
+                                          : AppColors.buttonBorder,
+                                  buttonColor:
+                                      sel
+                                          ? AppColors.containerColor
+                                          : AppColors.commonWhite,
                                   borderRadius: 8,
                                   textColor: AppColors.commonBlack,
                                   onTap: () {
@@ -746,11 +776,13 @@ class Buttons {
                               borderRadius: 8,
                               onTap: () async {
                                 if (isSubmitting) return;
-                                if (scope == 'one' && selectedBookingId == null) {
+                                if (scope == 'one' &&
+                                    selectedBookingId == null) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content:
-                                          Text('Select a passenger to cancel'),
+                                      content: Text(
+                                        'Select a passenger to cancel',
+                                      ),
                                     ),
                                   );
                                   return;
@@ -769,9 +801,12 @@ class Buttons {
                                     await onCancelAll(selectedReason!);
                                   } else {
                                     await onCancelOne(
-                                        selectedBookingId!, selectedReason!);
+                                      selectedBookingId!,
+                                      selectedReason!,
+                                    );
                                   }
-                                  if (context.mounted) Navigator.of(context).pop();
+                                  if (context.mounted)
+                                    Navigator.of(context).pop();
                                 } finally {
                                   if (context.mounted) {
                                     setState(() => isSubmitting = false);

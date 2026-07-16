@@ -97,6 +97,7 @@ class _PickingCustomerSharedScreenState
   static const double _ARRIVED_PICKUP_RADIUS_M = 500.0;
 
   late final PickingCustomerSharedController c;
+  late final String _controllerTag;
   final SharedRideController sharedRideController =
       Get.find<SharedRideController>();
   final DriverStatusController driverStatusController =
@@ -120,6 +121,7 @@ class _PickingCustomerSharedScreenState
   @override
   void initState() {
     super.initState();
+    _controllerTag = '${widget.bookingId}:${identityHashCode(this)}';
 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(
@@ -161,7 +163,7 @@ class _PickingCustomerSharedScreenState
         driverLocation: widget.driverLocation,
         bookingId: widget.bookingId,
       ),
-      tag: widget.bookingId,
+      tag: _controllerTag,
     );
 
     c.socketService.on('driver-cancelled', (data) {
@@ -187,9 +189,9 @@ class _PickingCustomerSharedScreenState
       c.socketService.off('customer-cancelled');
     } catch (_) {}
     if (Get.isRegistered<PickingCustomerSharedController>(
-      tag: widget.bookingId,
+      tag: _controllerTag,
     )) {
-      Get.delete<PickingCustomerSharedController>(tag: widget.bookingId);
+      Get.delete<PickingCustomerSharedController>(tag: _controllerTag);
     }
     super.dispose();
   }

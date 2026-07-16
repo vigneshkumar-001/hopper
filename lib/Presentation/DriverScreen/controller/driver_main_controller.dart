@@ -20,6 +20,8 @@ import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
 import 'package:hopper/utils/sharedprefsHelper/local_data_store.dart';
 import 'package:hopper/utils/sharedprefsHelper/booking_local_data.dart';
+import 'package:hopper/utils/session/driver_session_expiry_handler.dart';
+import 'package:hopper/utils/session/jwt_expiry.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 import 'package:hopper/utils/websocket/secondary_dispatch_socket.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
@@ -59,7 +61,7 @@ class DriverMainController extends GetxController
       12.0; // allow big move if very accurate
   static const double _MOVING_SPEED_MS = 0.6;
   static const double _MOVING_METERS = 5.0;
-  // Below this much real movement since the last fix we emit speed:0 — the car
+  // Below this much real movement since the last fix we emit speed:0 ? the car
   // physically hasn't progressed, so the customer must not dead-reckon it
   // forward (GPS often reports a phantom 1-2 m/s while standing still). Actual
   // position changes still animate via the customer's segment lerp; only the
@@ -158,7 +160,7 @@ class DriverMainController extends GetxController
   Worker? _autoOfflineWorker;
   final ApiDataSource _apiDataSource = ApiDataSource();
 
-  // âœ… IMPORTANT: prevent callbacks after dispose
+  // ? IMPORTANT: prevent callbacks after dispose
   bool _disposed = false;
   bool _checkingActiveBooking = false;
   DateTime? _lastActiveBookingCheckAt;
@@ -171,6 +173,7 @@ class DriverMainController extends GetxController
   // reclaim it, without re-creating a tight revoke-war.
   DateTime _lastSessionReclaimAt = DateTime.fromMillisecondsSinceEpoch(0);
   bool _restoringPendingBookingRequest = false;
+  bool _pendingBookingRequestRestoreRequested = false;
 
   final Rxn<Map<String, dynamic>> activeBookingData =
       Rxn<Map<String, dynamic>>();
@@ -211,7 +214,7 @@ class DriverMainController extends GetxController
   static const Duration _onlineSlowEmitInterval = Duration(seconds: 8);
   static const Duration _movementIdleCutoff = Duration(seconds: 20);
   // On an active trip we keep the steady 1s feed alive through long stops
-  // (red lights / tunnels) — but not forever. After this much continuous
+  // (red lights / tunnels) ? but not forever. After this much continuous
   // no-movement we back off to the lighter 25s heartbeat. This also stops a
   // booking whose context wasn't cleared on completion from emitting 1Hz
   // indefinitely while the car is parked.
@@ -250,7 +253,7 @@ class DriverMainController extends GetxController
     if (hasActiveBooking) {
       // Steady 1s for the WHOLE active trip (driver approaching pickup +
       // passenger on board). Never downgrade to 5s/8s when the car slows in
-      // traffic / at a signal — that starves the customer motion engine and
+      // traffic / at a signal ? that starves the customer motion engine and
       // makes the marker freeze, then lurch. The speed-based downgrade is
       // intentionally bypassed here.
       return _activeTripFastEmitInterval;
@@ -405,7 +408,7 @@ class DriverMainController extends GetxController
     double? accuracyM,
     DateTime? timestamp,
   }) {
-    // âœ… stop any callbacks after close
+    // ? stop any callbacks after close
     if (_disposed || isClosed) return;
     _refreshVehicleIconIfNeeded();
     // This is the driver's live GPS stream tick (real source). Provide full
@@ -449,7 +452,7 @@ class DriverMainController extends GetxController
     lngTween = Tween(begin: lastPosition!.longitude, end: newPos.longitude);
     rotTween = Tween(begin: carMarker!.rotation, end: bearing);
 
-    // âœ… guard animCtrl usage
+    // ? guard animCtrl usage
     if (_disposed || isClosed) return;
     try {
       if (animCtrl.isAnimating) animCtrl.stop();
@@ -582,14 +585,69 @@ class DriverMainController extends GetxController
 
   int? _remainingSecondsFromPayload(Map<String, dynamic> data) {
     final raw = data['remainingSeconds'] ?? data['remainingTimeInSeconds'];
-    if (raw is num) return raw.toInt();
-    return int.tryParse(raw?.toString() ?? '');
+    final explicitSeconds =
+        raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '');
+    // Relative TTL is calculated by the backend and is not affected by a
+    // driver's device clock being ahead or behind the server clock.
+    if (explicitSeconds != null) return explicitSeconds;
+
+    final expiresAt = DateTime.tryParse(
+      (data['expiresAt'] ?? data['requestExpiresAt'] ?? '').toString(),
+    );
+    if (expiresAt == null) return null;
+
+    final remainingMilliseconds =
+        expiresAt.toUtc().difference(DateTime.now().toUtc()).inMilliseconds;
+    return remainingMilliseconds <= 0
+        ? 0
+        : (remainingMilliseconds / 1000).ceil();
+  }
+
+  Map<String, dynamic> _mergeBookingRequestDeadline(
+    Map<String, dynamic> booking,
+    Map<String, dynamic>? notification,
+  ) {
+    if (notification == null || notification.isEmpty) return booking;
+
+    final merged = Map<String, dynamic>.from(booking);
+    final bookingSeconds = _remainingSecondsFromPayload(booking);
+    if (booking['remainingSeconds'] != null ||
+        booking['remainingTimeInSeconds'] != null) {
+      // The pending-request endpoint has just validated this request. Do not
+      // replace its fresh TTL with an older queued notification deadline.
+      merged['remainingSeconds'] = bookingSeconds;
+      return merged;
+    }
+
+    final notificationSeconds = _remainingSecondsFromPayload(notification);
+    if (notificationSeconds != null) {
+      merged['remainingSeconds'] = notificationSeconds;
+      return merged;
+    }
+
+    final notificationExpiresAt = DateTime.tryParse(
+      (notification['expiresAt'] ?? notification['requestExpiresAt'] ?? '')
+          .toString(),
+    );
+    final bookingExpiresAt = DateTime.tryParse(
+      (booking['expiresAt'] ?? booking['requestExpiresAt'] ?? '').toString(),
+    );
+    if (notificationExpiresAt != null &&
+        (bookingExpiresAt == null ||
+            notificationExpiresAt.isBefore(bookingExpiresAt))) {
+      merged['expiresAt'] = notificationExpiresAt.toUtc().toIso8601String();
+    }
+    return merged;
   }
 
   Future<void> _showBookingRequestPopup({
     required Map<String, dynamic> booking,
     int? remainingSecondsOverride,
   }) async {
+    if (remainingSecondsOverride != null && remainingSecondsOverride <= 0) {
+      return;
+    }
+
     final pickup = booking['pickupLocation'];
     final drop = booking['dropLocation'];
 
@@ -599,12 +657,12 @@ class DriverMainController extends GetxController
     double? dropLng;
 
     if (pickup is Map) {
-      pickupLat = (pickup['latitude'] as num?)?.toDouble();
-      pickupLng = (pickup['longitude'] as num?)?.toDouble();
+      pickupLat = _asDouble(pickup['latitude']);
+      pickupLng = _asDouble(pickup['longitude']);
     }
     if (drop is Map) {
-      dropLat = (drop['latitude'] as num?)?.toDouble();
-      dropLng = (drop['longitude'] as num?)?.toDouble();
+      dropLat = _asDouble(drop['latitude']);
+      dropLng = _asDouble(drop['longitude']);
     }
 
     final pickupAddressText = _preferredAddress(
@@ -641,11 +699,52 @@ class DriverMainController extends GetxController
     startCountdown(countdown);
   }
 
+  Future<void> handleBookingRequestNotification(
+    Map<String, dynamic> data, {
+    required String source,
+    bool payloadAlreadyQueued = false,
+  }) async {
+    if (_disposed || isClosed) return;
+    final bookingId = (data['bookingId'] ?? '').toString().trim();
+    if (bookingId.isEmpty) {
+      CommonLogger.log.w(
+        '[REQ-NOTIFICATION] source=$source ignored: bookingId missing',
+      );
+      return;
+    }
+
+    final visibleBookingId =
+        (bookingController.bookingRequestData.value?['bookingId'] ?? '')
+            .toString()
+            .trim();
+    if (!payloadAlreadyQueued && visibleBookingId == bookingId) {
+      CommonLogger.log.i(
+        '[REQ-NOTIFICATION] source=$source bookingId=$bookingId '
+        'already visible',
+      );
+      return;
+    }
+
+    if (!payloadAlreadyQueued) {
+      await FirebaseService.queueBookingRequestNotification(data);
+    }
+    if (_disposed || isClosed) return;
+
+    CommonLogger.log.i(
+      '[REQ-NOTIFICATION] source=$source bookingId=$bookingId '
+      'validating pending request',
+    );
+    await restorePendingBookingRequestFromNotification(force: true);
+  }
+
   Future<void> restorePendingBookingRequestFromNotification({
     bool force = false,
   }) async {
     if (_disposed || isClosed) return;
-    if (_restoringPendingBookingRequest) return;
+    if (_restoringPendingBookingRequest) {
+      _pendingBookingRequestRestoreRequested = true;
+      return;
+    }
     if (!force && bookingController.bookingRequestData.value != null) return;
 
     _restoringPendingBookingRequest = true;
@@ -676,53 +775,65 @@ class DriverMainController extends GetxController
       );
       if (_disposed || isClosed) return;
 
-      await result.fold((failure) async {
-        CommonLogger.log.w(
-          'Pending booking request restore failed for $bookingId: '
-          '${failure.message}',
-        );
-        if (queuedPayload != null) {
-          await FirebaseService.restoreQueuedBookingRequestNotification(
-            queuedPayload!,
-          );
-        }
-      }, (response) async {
-        if (!response.success || !response.hasPendingBookingRequest) {
-          CommonLogger.log.i(
-            'Pending booking request no longer valid for $bookingId '
-            'success=${response.success} '
-            'hasPending=${response.hasPendingBookingRequest}',
-          );
-          return;
-        }
-
-        final booking = response.data;
-        if (booking == null || booking.isEmpty) {
+      await result.fold(
+        (failure) async {
           CommonLogger.log.w(
-            'Pending booking request restore returned empty data for $bookingId',
+            'Pending booking request restore failed for $bookingId: '
+            '${failure.message}',
           );
-          return;
-        }
+          if (queuedPayload != null) {
+            await FirebaseService.restoreQueuedBookingRequestNotification(
+              queuedPayload!,
+            );
+          }
+        },
+        (response) async {
+          if (!response.success || !response.hasPendingBookingRequest) {
+            CommonLogger.log.i(
+              'Pending booking request no longer valid for $bookingId '
+              'success=${response.success} '
+              'hasPending=${response.hasPendingBookingRequest}',
+            );
+            return;
+          }
 
-        final apiBookingId = (booking['bookingId'] ?? bookingId)
-            .toString()
-            .trim();
-        if (apiBookingId.isEmpty) return;
-        if (apiBookingId == bookingController.lastHandledBookingId.value) {
-          CommonLogger.log.i(
-            'Skipping restored popup because booking already handled: '
-            '$apiBookingId',
+          final booking = response.data;
+          if (booking == null || booking.isEmpty) {
+            CommonLogger.log.w(
+              'Pending booking request restore returned empty data for $bookingId',
+            );
+            return;
+          }
+
+          final apiBookingId =
+              (booking['bookingId'] ?? bookingId).toString().trim();
+          if (apiBookingId.isEmpty) return;
+          if (apiBookingId == bookingController.lastHandledBookingId.value) {
+            CommonLogger.log.i(
+              'Skipping restored popup because booking already handled: '
+              '$apiBookingId',
+            );
+            return;
+          }
+
+          final restoredBooking = _mergeBookingRequestDeadline(
+            booking,
+            queuedPayload,
           );
-          return;
-        }
-
-        await _showBookingRequestPopup(
-          booking: booking,
-          remainingSecondsOverride: _remainingSecondsFromPayload(booking),
-        );
-      });
+          await _showBookingRequestPopup(
+            booking: restoredBooking,
+            remainingSecondsOverride: _remainingSecondsFromPayload(
+              restoredBooking,
+            ),
+          );
+        },
+      );
     } finally {
       _restoringPendingBookingRequest = false;
+      if (_pendingBookingRequestRestoreRequested && !_disposed && !isClosed) {
+        _pendingBookingRequestRestoreRequested = false;
+        unawaited(restorePendingBookingRequestFromNotification(force: true));
+      }
     }
   }
 
@@ -804,7 +915,18 @@ class DriverMainController extends GetxController
     if (data is Map<String, dynamic>) return data;
     if (data is Map) return Map<String, dynamic>.from(data);
     if (data is List && data.isNotEmpty) {
-      return _coerceSocketPayloadToMap(data.first);
+      final primary = _coerceSocketPayloadToMap(data.first);
+      if (primary == null) return null;
+      if (data.length > 1 && data[1] is Map) {
+        final metadata = Map<String, dynamic>.from(data[1] as Map);
+        final merged = Map<String, dynamic>.from(primary);
+        merged.putIfAbsent('socketMetadata', () => metadata);
+        for (final entry in metadata.entries) {
+          merged.putIfAbsent(entry.key.toString(), () => entry.value);
+        }
+        return merged;
+      }
+      return primary;
     }
     return null;
   }
@@ -864,10 +986,19 @@ class DriverMainController extends GetxController
       }
     }
 
-    _showCancellationDialog(
-      title: 'Trip Cancelled',
-      message: msg,
-    );
+    // Close any open bottom sheet (e.g. the parcel "Enter OTP" sheet) BEFORE
+    // showing the cancellation dialog. Previously the dialog was pushed on
+    // TOP of a still-open sheet, so the pop-order below (bottom-sheet check
+    // first, then dialog check) would pop the topmost route ? the dialog ?
+    // leaving the sheet un-popped when Get.offAll() below then force-tears
+    // down the whole stack. That ripped out the sheet's TextEditingController
+    // /PinCodeTextField while still mounted, causing a
+    // "TextEditingController used after being disposed" crash.
+    try {
+      if (Get.isBottomSheetOpen == true) Get.back();
+    } catch (_) {}
+
+    _showCancellationDialog(title: 'Trip Cancelled', message: msg);
 
     await _cleanupAfterBookingEnded(bookingId: bookingId);
 
@@ -875,13 +1006,14 @@ class DriverMainController extends GetxController
     if (_disposed || isClosed) return;
 
     try {
-      if (Get.isBottomSheetOpen == true) Get.back();
-    } catch (_) {}
-    try {
       if (Get.isDialogOpen == true) Get.back();
     } catch (_) {}
 
     if (Get.currentRoute != '/DriverMainScreen') {
+      // Any live top-snack OverlayEntry (from this cancellation flow or
+      // anything else shown earlier) must not survive this route-stack
+      // replacement ? see CustomSnackBar.dismiss()'s doc comment.
+      CustomSnackBar.dismiss();
       Get.offAll(() => const DriverMainScreen());
     }
 
@@ -943,7 +1075,7 @@ class DriverMainController extends GetxController
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Returning to Home…',
+                  'Returning to Home?',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -960,7 +1092,7 @@ class DriverMainController extends GetxController
 
   /// Public cleanup for the driver's shared "Cancel All" success. Clears the
   /// active booking id (so location STOPS emitting the stale bookingId), the
-  /// booking cache, active-booking card, and leaves booking rooms — mirroring the
+  /// booking cache, active-booking card, and leaves booking rooms ? mirroring the
   /// per-booking end cleanup. The driver keeps streaming location as an idle
   /// driver (no bookingId attached).
   Future<void> clearAfterSharedCancelAll() async {
@@ -1421,7 +1553,7 @@ class DriverMainController extends GetxController
   /// Align the FOREGROUND location emitter to an in-progress trip (pickup or
   /// drop). The 1s emit loop streams at the smooth ~1Hz active-trip cadence and
   /// stamps `bookingId` on every packet ONLY while `currentBookingId` is set;
-  /// otherwise it falls back to the idle 5–8s cadence with no bookingId, so the
+  /// otherwise it falls back to the idle 5?8s cadence with no bookingId, so the
   /// server cannot reliably route frames to the customer and the customer's car
   /// marker updates slowly / jerkily (notably during the drop leg, or after an
   /// app restart mid-ride where booking-request never re-ran). Ride screens call
@@ -1470,6 +1602,22 @@ class DriverMainController extends GetxController
     return null;
   }
 
+  String? _confirmedActiveBookingIdForSocketRegistration() {
+    final activeCard = activeBookingData.value;
+    if (activeCard == null) return null;
+
+    final bookingId = _normalizeBookingId(activeCard['bookingId']);
+    if (bookingId == null) return null;
+
+    final status = (activeCard['status'] ?? '').toString();
+    if (_isBookingCancelled(activeCard, status) ||
+        _isBookingCompleted(activeCard, status)) {
+      return null;
+    }
+
+    return bookingId;
+  }
+
   String _maskIdForLog(String? raw) {
     final value = raw?.trim() ?? '';
     if (value.isEmpty) return '';
@@ -1484,18 +1632,17 @@ class DriverMainController extends GetxController
     final now = DateTime.now().toUtc();
     final bool hadPrevEmit = _lastDriverEmitMetricAt != null;
     if (hadPrevEmit) {
-      _emitLastGapMs =
-          now.difference(_lastDriverEmitMetricAt!).inMilliseconds.clamp(
-                0,
-                1 << 30,
-              );
+      _emitLastGapMs = now
+          .difference(_lastDriverEmitMetricAt!)
+          .inMilliseconds
+          .clamp(0, 1 << 30);
     }
     _lastDriverEmitMetricAt = now;
     _emitCountWindow += 1;
 
-    // [track-gap] DIAGNOSTIC (hop 1/4: driver → server, FOREGROUND path). The
-    // background service already logs this for its path; the foreground emit —
-    // used right after returning from Google-Maps navigation — was previously
+    // [track-gap] DIAGNOSTIC (hop 1/4: driver ? server, FOREGROUND path). The
+    // background service already logs this for its path; the foreground emit ?
+    // used right after returning from Google-Maps navigation ? was previously
     // NOT instrumented, a blind spot when localizing a ride-2 freeze. Fires only
     // when the app resumes emitting after an anomalous silence (>3s) during an
     // ACTIVE booking (the moment the customer marker would freeze), pinning the
@@ -1509,7 +1656,8 @@ class DriverMainController extends GetxController
         'booking=${_maskIdForLog(bookingId)}',
       );
     }
-    if (now.difference(_emitMetricsWindowStartedAt) < const Duration(minutes: 1)) {
+    if (now.difference(_emitMetricsWindowStartedAt) <
+        const Duration(minutes: 1)) {
       return;
     }
     if (kDebugMode) {
@@ -1527,14 +1675,14 @@ class DriverMainController extends GetxController
   ///
   /// CRITICAL (Android): geolocator's base [LocationSettings] does NOT set an
   /// update interval, so the Android FusedLocationProvider falls back to its
-  /// DEFAULT 5000ms interval — the stream then delivered a fix only every ~5s
+  /// DEFAULT 5000ms interval ? the stream then delivered a fix only every ~5s
   /// even though our emit timer ticks at 1s. That sparse 5s feed is what made
   /// the customer's car jitter / freeze / dead-reckon between points (the
   /// driver-side root cause of the "shaking, uneven, jumping" marker). Request
   /// ~1Hz fixes on an active trip via [AndroidSettings.intervalDuration]
   /// (Uber/Ola/Rapido-grade), and a gentler cadence when merely online/idle to
   /// protect battery. iOS already streams at the accuracy/distanceFilter rate
-  /// (no fixed interval), so it keeps the base settings — no behaviour change.
+  /// (no fixed interval), so it keeps the base settings ? no behaviour change.
   LocationSettings _trackingLocationSettings({required bool activeTrip}) {
     const accuracy = LocationAccuracy.bestForNavigation;
     final distanceFilter = activeTrip ? 0 : 5;
@@ -1558,7 +1706,7 @@ class DriverMainController extends GetxController
     // RE-ENTRANCY GUARD: never let two starts overlap. Rapid active-trip flips
     // (bookingId set/cleared) previously raced through the `await cancel()` and
     // double-subscribed the Geolocator stream (the start/stop churn). Only the
-    // async prefix (up to the cancel) needs guarding — everything after is
+    // async prefix (up to the cancel) needs guarding ? everything after is
     // synchronous, so Dart cannot interleave another start there. Timer-driven
     // rebuilds (which run after this returns) are unaffected.
     if (_isStartingLocationStream) return;
@@ -1579,181 +1727,188 @@ class DriverMainController extends GetxController
     // speed (traffic / signal); the customer then gets an even, fresh ~1s feed.
     // Idle/online => 5 to save battery when nobody is watching a live ride.
     // The stream is rebuilt (see the emit timer) when this state flips.
-    final bool activeTripStream =
-        _resolveBookingIdForLocationPayload() != null;
+    final bool activeTripStream = _resolveBookingIdForLocationPayload() != null;
     _emitLoopForActiveTrip = activeTripStream;
 
     locationSub = Geolocator.getPositionStream(
       locationSettings: _trackingLocationSettings(activeTrip: activeTripStream),
-    ).listen((pos) {
-      if (_disposed || isClosed) return;
-      if (token != _emitLoopToken) return;
+    ).listen(
+      (pos) {
+        if (_disposed || isClosed) return;
+        if (token != _emitLoopToken) return;
 
-      // FRAUD (CRIT-5): drop mock/fake-GPS fixes so spoofed coordinates never feed the live
-      // trip or reach the server, and report the attempt (throttled) so the backend can flag
-      // the driver. Without this a free fake-GPS app lets a driver fabricate trips/earnings.
-      if (pos.isMocked) {
-        if (mockLocationDetected.value != true) mockLocationDetected.value = true;
-        final nowMock = DateTime.now();
-        if (_lastMockLocationReportAt == null ||
-            nowMock.difference(_lastMockLocationReportAt!) >
-                const Duration(seconds: 15)) {
-          _lastMockLocationReportAt = nowMock;
-          if (socketService.connected) {
-            socketService.emit('driver-integrity', {
-              'driverId': driverId,
-              'bookingId': _resolveBookingIdForLocationPayload(),
-              'mock': true,
-            });
+        // FRAUD (CRIT-5): drop mock/fake-GPS fixes so spoofed coordinates never feed the live
+        // trip or reach the server, and report the attempt (throttled) so the backend can flag
+        // the driver. Without this a free fake-GPS app lets a driver fabricate trips/earnings.
+        if (pos.isMocked) {
+          if (mockLocationDetected.value != true)
+            mockLocationDetected.value = true;
+          final nowMock = DateTime.now();
+          if (_lastMockLocationReportAt == null ||
+              nowMock.difference(_lastMockLocationReportAt!) >
+                  const Duration(seconds: 15)) {
+            _lastMockLocationReportAt = nowMock;
+            if (socketService.connected) {
+              socketService.emit('driver-integrity', {
+                'driverId': driverId,
+                'bookingId': _resolveBookingIdForLocationPayload(),
+                'mock': true,
+              });
+            }
+          }
+          return;
+        }
+
+        final now = DateTime.now();
+        // Freshness guard (skew-immune: same device clock for `now` and the fix).
+        // Drop a stale/buffered fix so `latestLocationPayload` only ever holds the
+        // current position ? the customer never sees the driver lag behind.
+        if (now.difference(pos.timestamp) > _maxFixAgeForEmit) {
+          return;
+        }
+        final speedMs =
+            (pos.speed.isFinite && pos.speed >= 0) ? pos.speed : 0.0;
+        final accuracyM = (pos.accuracy.isFinite) ? pos.accuracy : 9999.0;
+        final holdUntil = _manualFollowZoomHoldUntil;
+        final holdActive = holdUntil != null && now.isBefore(holdUntil);
+        if (!holdActive) {
+          final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs);
+          _followZoom = MapMotionProfile.smoothZoom(
+            _followZoom,
+            targetZoom.clamp(14.4, 16.4),
+          ).clamp(14.4, 16.4);
+        } else {
+          _followZoom = _followZoom.clamp(15.0, 16.4);
+        }
+
+        // 1) ignore very inaccurate fixes
+        if (accuracyM > _MAX_ACCURACY_M) return;
+
+        final current = LatLng(pos.latitude, pos.longitude);
+
+        // Demand opportunities refresh on significant movement (avoid spam).
+        final lastReqPos = _lastDemandRequestPos;
+        if (lastReqPos == null) {
+          _lastDemandRequestPos = current;
+        } else {
+          final moved = Geolocator.distanceBetween(
+            lastReqPos.latitude,
+            lastReqPos.longitude,
+            current.latitude,
+            current.longitude,
+          );
+          if (moved >= 500) {
+            _lastDemandRequestPos = current;
+            requestDemandOpportunities(
+              reason: 'location_moved_${moved.round()}m',
+            );
           }
         }
-        return;
-      }
 
-      final now = DateTime.now();
-      // Freshness guard (skew-immune: same device clock for `now` and the fix).
-      // Drop a stale/buffered fix so `latestLocationPayload` only ever holds the
-      // current position — the customer never sees the driver lag behind.
-      if (now.difference(pos.timestamp) > _maxFixAgeForEmit) {
-        return;
-      }
-      final speedMs = (pos.speed.isFinite && pos.speed >= 0) ? pos.speed : 0.0;
-      final accuracyM = (pos.accuracy.isFinite) ? pos.accuracy : 9999.0;
-      final holdUntil = _manualFollowZoomHoldUntil;
-      final holdActive = holdUntil != null && now.isBefore(holdUntil);
-      if (!holdActive) {
-        final targetZoom = MapMotionProfile.targetZoomFromSpeed(speedMs);
-        _followZoom = MapMotionProfile.smoothZoom(
-          _followZoom,
-          targetZoom.clamp(14.4, 16.4),
-        ).clamp(14.4, 16.4);
-      } else {
-        _followZoom = _followZoom.clamp(15.0, 16.4);
-      }
-
-      // 1) ignore very inaccurate fixes
-      if (accuracyM > _MAX_ACCURACY_M) return;
-
-      final current = LatLng(pos.latitude, pos.longitude);
-
-      // Demand opportunities refresh on significant movement (avoid spam).
-      final lastReqPos = _lastDemandRequestPos;
-      if (lastReqPos == null) {
-        _lastDemandRequestPos = current;
-      } else {
-        final moved = Geolocator.distanceBetween(
-          lastReqPos.latitude,
-          lastReqPos.longitude,
-          current.latitude,
-          current.longitude,
-        );
-        if (moved >= 500) {
-          _lastDemandRequestPos = current;
-          requestDemandOpportunities(
-            reason: 'location_moved_${moved.round()}m',
+        // 2) freeze drift/jumps when almost stationary
+        final prev = lastPosition;
+        double? movedSinceLastFix;
+        if (prev != null) {
+          final movedMeters = Geolocator.distanceBetween(
+            prev.latitude,
+            prev.longitude,
+            current.latitude,
+            current.longitude,
           );
-        }
-      }
+          movedSinceLastFix = movedMeters;
 
-      // 2) freeze drift/jumps when almost stationary
-      final prev = lastPosition;
-      double? movedSinceLastFix;
-      if (prev != null) {
-        final movedMeters = Geolocator.distanceBetween(
-          prev.latitude,
-          prev.longitude,
-          current.latitude,
-          current.longitude,
+          final isMoving =
+              speedMs >= _MOVING_SPEED_MS || movedMeters >= _MOVING_METERS;
+          if (isMoving) {
+            _lastMovedAt = now;
+          }
+
+          if (MapMotionProfile.shouldFreezeTurn(
+            speedMs: speedMs,
+            movedMeters: movedMeters,
+            accuracyM: accuracyM,
+          )) {
+            return;
+          }
+
+          // Rare: GPS can "teleport" while idle (esp. indoors). Ignore unless very accurate.
+          if (speedMs < MapMotionProfile.minSpeedMs &&
+              movedMeters >= _STATIONARY_JUMP_M &&
+              accuracyM > _JUMP_ACCEPT_ACCURACY_M) {
+            return;
+          }
+        }
+
+        // Bearing: trust GPS heading only while moving, and remember it. When
+        // stopped (<1 m/s) GPS heading is random, so reuse the last good bearing.
+        final headingValid = pos.heading.isFinite && pos.heading >= 0;
+        if (speedMs >= 1.0 && headingValid) {
+          _lastEmitBearing = pos.heading;
+        }
+
+        // Trust position over GPS-reported speed: when the car physically barely
+        // moved since the last fix, send speed 0 so the customer holds the marker
+        // (no forward dead-reckoning) even if GPS reports a phantom speed. Real
+        // movement still carries the true speed and still animates via lerp.
+        final double reportedSpeed = speedMs.isFinite ? speedMs : 0.0;
+        final double emitSpeed =
+            (movedSinceLastFix != null &&
+                    movedSinceLastFix < _STATIONARY_EMIT_M)
+                ? 0.0
+                : reportedSpeed;
+
+        final bookingIdForPayload = _resolveBookingIdForLocationPayload();
+        latestLocationPayload = {
+          'userId': driverId,
+          'driverId': driverId,
+          'latitude': current.latitude,
+          'longitude': current.longitude,
+          'lat': current.latitude,
+          'lng': current.longitude,
+          'bearing': _lastEmitBearing,
+          'speed': emitSpeed,
+          'accuracy': accuracyM.isFinite ? accuracyM : null,
+          if (bookingIdForPayload != null) 'bookingId': bookingIdForPayload,
+          'seq': socketService.nextClientLocationSeq(),
+          // DEVICE GPS fix time in UTC (not local send-time) so the customer can
+          // order/interpolate points correctly.
+          'timestamp': pos.timestamp.toUtc().toIso8601String(),
+          'deviceTimestamp': pos.timestamp.toUtc().toIso8601String(),
+          'clientSentAt': now.toUtc().toIso8601String(),
+        };
+
+        updateCarMarker(
+          current,
+          speedMs: speedMs.isFinite ? speedMs : null,
+          headingDeg: pos.heading.isFinite ? pos.heading : null,
+          accuracyM: accuracyM.isFinite ? accuracyM : null,
+          timestamp: pos.timestamp,
         );
-        movedSinceLastFix = movedMeters;
-
-        final isMoving =
-            speedMs >= _MOVING_SPEED_MS || movedMeters >= _MOVING_METERS;
-        if (isMoving) {
-          _lastMovedAt = now;
-        }
-
-        if (MapMotionProfile.shouldFreezeTurn(
-          speedMs: speedMs,
-          movedMeters: movedMeters,
-          accuracyM: accuracyM,
-        )) {
-          return;
-        }
-
-        // Rare: GPS can "teleport" while idle (esp. indoors). Ignore unless very accurate.
-        if (speedMs < MapMotionProfile.minSpeedMs &&
-            movedMeters >= _STATIONARY_JUMP_M &&
-            accuracyM > _JUMP_ACCEPT_ACCURACY_M) {
-          return;
-        }
-      }
-
-      // Bearing: trust GPS heading only while moving, and remember it. When
-      // stopped (<1 m/s) GPS heading is random, so reuse the last good bearing.
-      final headingValid = pos.heading.isFinite && pos.heading >= 0;
-      if (speedMs >= 1.0 && headingValid) {
-        _lastEmitBearing = pos.heading;
-      }
-
-      // Trust position over GPS-reported speed: when the car physically barely
-      // moved since the last fix, send speed 0 so the customer holds the marker
-      // (no forward dead-reckoning) even if GPS reports a phantom speed. Real
-      // movement still carries the true speed and still animates via lerp.
-      final double reportedSpeed = speedMs.isFinite ? speedMs : 0.0;
-      final double emitSpeed = (movedSinceLastFix != null &&
-              movedSinceLastFix < _STATIONARY_EMIT_M)
-          ? 0.0
-          : reportedSpeed;
-
-      final bookingIdForPayload = _resolveBookingIdForLocationPayload();
-      latestLocationPayload = {
-        'userId': driverId,
-        'driverId': driverId,
-        'latitude': current.latitude,
-        'longitude': current.longitude,
-        'lat': current.latitude,
-        'lng': current.longitude,
-        'bearing': _lastEmitBearing,
-        'speed': emitSpeed,
-        'accuracy': accuracyM.isFinite ? accuracyM : null,
-        if (bookingIdForPayload != null) 'bookingId': bookingIdForPayload,
-        'seq': socketService.nextClientLocationSeq(),
-        // DEVICE GPS fix time in UTC (not local send-time) so the customer can
-        // order/interpolate points correctly.
-        'timestamp': pos.timestamp.toUtc().toIso8601String(),
-        'deviceTimestamp': pos.timestamp.toUtc().toIso8601String(),
-        'clientSentAt': now.toUtc().toIso8601String(),
-      };
-
-      updateCarMarker(
-        current,
-        speedMs: speedMs.isFinite ? speedMs : null,
-        headingDeg: pos.heading.isFinite ? pos.heading : null,
-        accuracyM: accuracyM.isFinite ? accuracyM : null,
-        timestamp: pos.timestamp,
-      );
-    }, onError: (Object e, StackTrace st) {
-      // CRASH FIX: a denied/revoked location permission (or a transient platform
-      // GPS error) emits a stream error. Without an onError handler it became an
-      // unhandled "APP CRASH: User denied permissions". Swallow it so the app
-      // stays alive — the emit loop re-subscribes on its next rebuild once
-      // permission is granted again.
-      if (kDebugMode) CommonLogger.log.w('location stream error (emitter): $e');
-    }, cancelOnError: false);
+      },
+      onError: (Object e, StackTrace st) {
+        // CRASH FIX: a denied/revoked location permission (or a transient platform
+        // GPS error) emits a stream error. Without an onError handler it became an
+        // unhandled "APP CRASH: User denied permissions". Swallow it so the app
+        // stays alive ? the emit loop re-subscribes on its next rebuild once
+        // permission is granted again.
+        if (kDebugMode)
+          CommonLogger.log.w('location stream error (emitter): $e');
+      },
+      cancelOnError: false,
+    );
 
     if (_disposed || isClosed) return;
     if (token != _emitLoopToken) return;
 
     // Check every 1s so an active trip can emit at ~1s. Idle/online emits stay
-    // throttled by _preferredLocationEmitInterval (5–8s), so battery is safe.
+    // throttled by _preferredLocationEmitInterval (5?8s), so battery is safe.
     final localEmitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_disposed || isClosed) return;
       if (token != _emitLoopToken) return;
       final payload = latestLocationPayload;
       if (payload == null) return;
       // A driver on an ACTIVE trip must keep streaming location even if the
-      // `isOnline` flag is momentarily false — it is synced from the server
+      // `isOnline` flag is momentarily false ? it is synced from the server
       // (`getDriverStatus.onlineStatus`) and can read false mid-ride (a booked
       // driver, a stale sync on resume, a brief toggle). Gating the emit on it
       // silently stopped all sends and FROZE the customer's car marker. So only
@@ -1793,9 +1948,10 @@ class DriverMainController extends GetxController
       // booking whose context wasn't cleared on completion so it can't emit
       // 1Hz forever while parked.
       final movedAt = _lastMovedAt;
-      final idleFor = movedAt == null
-          ? const Duration(days: 9999)
-          : now.difference(movedAt);
+      final idleFor =
+          movedAt == null
+              ? const Duration(days: 9999)
+              : now.difference(movedAt);
       final idleCutoff =
           activeTrip ? _activeTripIdleCutoff : _movementIdleCutoff;
       if (idleFor >= idleCutoff) {
@@ -1823,9 +1979,10 @@ class DriverMainController extends GetxController
         outPayload = payload;
         _lastSentLocationTimestamp = ts;
       } else {
-        outPayload = Map<String, dynamic>.from(payload)
-          ..['timestamp'] = now.toUtc().toIso8601String()
-          ..['speed'] = 0.0;
+        outPayload =
+            Map<String, dynamic>.from(payload)
+              ..['timestamp'] = now.toUtc().toIso8601String()
+              ..['speed'] = 0.0;
       }
 
       _lastLocationEmitAt = now;
@@ -1847,7 +2004,7 @@ class DriverMainController extends GetxController
       return;
     }
 
-    // Not moving but online => emit `driver-heartbeat` every 20–30s (we use 25s).
+    // Not moving but online => emit `driver-heartbeat` every 20?30s (we use 25s).
     if (activeTripStream) {
       heartbeatTimer?.cancel();
       return;
@@ -1906,12 +2063,43 @@ class DriverMainController extends GetxController
   /// off) OR the secondary single-ride (bk) dispatch socket. The ride's backend
   /// is bound at ACCEPT time from the payload's `sharedBooking` flag (see the
   /// accept button in driver_main_screen.dart), so no origin is threaded here.
-  Future<void> _processBookingRequest(dynamic data) async {
-      if (_disposed || isClosed) return;
-      if (data == null) return;
+  /// Tolerant numeric coercion for socket payload fields ? some payload
+  /// producers (demand-notify vs. queue-dispatch, primary vs. secondary
+  /// socket) don't consistently guarantee JSON number types over the wire,
+  /// and a strict `as num?` cast throws on a numeric String instead of
+  /// returning null. A thrown exception here previously propagated out of
+  /// the whole booking-request handler uncaught (see the try/catch below,
+  /// which only ever wrapped the diagnostic log line, not the parse itself)
+  /// ? silently dropping the request with zero trace: the exact "popup
+  /// doesn't show, no error anywhere" symptom.
+  double? _asDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v.trim());
+    return null;
+  }
 
+  Future<void> _processBookingRequest(dynamic data) async {
+    if (_disposed || isClosed) return;
+    if (data == null) return;
+
+    try {
       final payload = _coerceSocketPayloadToMap(data);
-      if (payload == null) return;
+      if (payload == null) {
+        CommonLogger.log.w(
+          '[REQ-PARSE] booking-request payload could not be coerced to a map '
+          '(runtimeType=${data.runtimeType})',
+        );
+        return;
+      }
+      final requestCountdown = _remainingSecondsFromPayload(payload);
+      if (requestCountdown != null && requestCountdown <= 0) {
+        CommonLogger.log.i(
+          '[REQ-PARSE] dropping expired booking-request '
+          'bookingId=${payload['bookingId'] ?? 'unknown'}',
+        );
+        return;
+      }
 
       BookingDataService().setBookingData(payload);
 
@@ -1920,19 +2108,28 @@ class DriverMainController extends GetxController
         if (active.isEmpty) return;
 
         final booking = active.first;
-        currentBookingId = booking['bookingId']?.toString();
+        final bid = booking['bookingId']?.toString() ?? '';
+        currentBookingId = bid;
         // BG tracking is started only when app goes to background to avoid
         // `io server disconnect` caused by multiple sockets for same driverId.
 
-        final fromLat = (booking['fromLatitude'] as num?)?.toDouble();
-        final fromLng = (booking['fromLongitude'] as num?)?.toDouble();
-        final toLat = (booking['toLatitude'] as num?)?.toDouble();
-        final toLng = (booking['toLongitude'] as num?)?.toDouble();
+        final fromLat = _asDouble(booking['fromLatitude']);
+        final fromLng = _asDouble(booking['fromLongitude']);
+        final toLat = _asDouble(booking['toLatitude']);
+        final toLng = _asDouble(booking['toLongitude']);
 
         if (fromLat == null ||
             fromLng == null ||
             toLat == null ||
             toLng == null) {
+          CommonLogger.log.w(
+            '[REQ-PARSE] dropping active-bookings entry bookingId=$bid ? '
+            'missing/invalid coordinates '
+            '(fromLat=${fromLat == null ? "missing" : "ok"} '
+            'fromLng=${fromLng == null ? "missing" : "ok"} '
+            'toLat=${toLat == null ? "missing" : "ok"} '
+            'toLng=${toLng == null ? "missing" : "ok"})',
+          );
           return;
         }
 
@@ -1964,55 +2161,69 @@ class DriverMainController extends GetxController
         return;
       }
 
-      currentBookingId = payload['bookingId']?.toString();
+      final bid = payload['bookingId']?.toString() ?? '';
+      if (bid.trim().isEmpty) {
+        CommonLogger.log.w(
+          '[REQ-PARSE] dropping booking-request because bookingId is missing',
+        );
+        return;
+      }
+      currentBookingId = bid;
       // BG tracking is started only when app goes to background.
 
       final pickup = payload['pickupLocation'];
       final drop = payload['dropLocation'];
-      if (pickup == null || drop == null) return;
+      if (pickup is! Map || drop is! Map) {
+        CommonLogger.log.w(
+          '[REQ-PARSE] dropping booking-request bookingId=$bid ? '
+          'pickupLocation=${pickup is Map ? "present" : "missing/invalid"} '
+          'dropLocation=${drop is Map ? "present" : "missing/invalid"}',
+        );
+        return;
+      }
 
-      final pickupLat = (pickup['latitude'] as num?)?.toDouble();
-      final pickupLng = (pickup['longitude'] as num?)?.toDouble();
-      final dropLat = (drop['latitude'] as num?)?.toDouble();
-      final dropLng = (drop['longitude'] as num?)?.toDouble();
+      final pickupLat = _asDouble(pickup['latitude']);
+      final pickupLng = _asDouble(pickup['longitude']);
+      final dropLat = _asDouble(drop['latitude']);
+      final dropLng = _asDouble(drop['longitude']);
 
       if (pickupLat == null ||
           pickupLng == null ||
           dropLat == null ||
           dropLng == null) {
+        CommonLogger.log.w(
+          '[REQ-PARSE] dropping booking-request bookingId=$bid ? '
+          'missing/invalid coordinates '
+          '(pickupLat=${pickupLat == null ? "missing" : "ok"} '
+          'pickupLng=${pickupLng == null ? "missing" : "ok"} '
+          'dropLat=${dropLat == null ? "missing" : "ok"} '
+          'dropLng=${dropLng == null ? "missing" : "ok"})',
+        );
         return;
       }
 
-      final pickupAddressText = _preferredAddress(
-        payload,
-        keys: const ['pickupAddress', 'pickupLocationAddress'],
+      await _showBookingRequestPopup(
+        booking: payload,
+        remainingSecondsOverride: requestCountdown,
       );
-      final dropAddressText = _preferredAddress(
-        payload,
-        keys: const ['dropAddress', 'dropLocationAddress'],
+    } catch (e, st) {
+      // Never let a parse failure silently vanish the request ? this is the
+      // one place that previously had no logging at all on an uncaught
+      // exception (the try/catch in the 'booking-request' socket listener
+      // only wraps its own diagnostic line, not this call).
+      final bid =
+          (data is Map ? data['bookingId'] : null)?.toString() ?? 'unknown';
+      CommonLogger.log.e(
+        '[REQ-PARSE] booking-request processing failed bookingId=$bid err=$e',
+        error: e,
+        stackTrace: st,
       );
-      final pickupAddr =
-          pickupAddressText.isNotEmpty
-              ? pickupAddressText
-              : await getAddressFromLatLng(pickupLat, pickupLng);
-      final dropAddr =
-          dropAddressText.isNotEmpty
-              ? dropAddressText
-              : await getAddressFromLatLng(dropLat, dropLng);
-
-      if (_disposed || isClosed) return;
-
-      bookingController.showRequest(
-        rawData: payload,
-        pickupAddress: pickupAddr,
-        dropAddress: dropAddr,
-      );
-      startCountdown();
+    }
   }
 
   /// DUAL-CONNECT: start/stop the secondary single-ride (bk) dispatch socket so
   /// it runs exactly when the driver SHOULD be discoverable in customer "Ride
-  /// Only" while shared-enabled — i.e. shared preference ON, online, and NOT on
+  /// Only" while shared-enabled ? i.e. shared preference ON, online, and NOT on
   /// an active ride (no backend binding). In every other state it is torn down,
   /// guaranteeing at most one socket per backend (no same-backend contention).
   void syncSecondaryDispatchSocket() {
@@ -2061,7 +2272,9 @@ class DriverMainController extends GetxController
         SecondaryDispatchSocket().stop();
       }
     } catch (e) {
-      CommonLogger.log.e("[dual-connect] syncSecondaryDispatchSocket error: $e");
+      CommonLogger.log.e(
+        "[dual-connect] syncSecondaryDispatchSocket error: $e",
+      );
     }
   }
 
@@ -2124,6 +2337,26 @@ class DriverMainController extends GetxController
       statusController.requestOnlineStatus(driverId: driverId);
     });
 
+    // H6 (mirrors the customer app's OrderConfirmController): the backend
+    // asks every client in a booking's room to re-pull canonical state once
+    // it has validated a reconnected session ? e.g. right after the
+    // stale-booking sweep (see src/jobs/staleBookingSweep.ts in either
+    // backend) auto-cancels a booking this driver was still holding.
+    // Previously unimplemented anywhere in this app; the driver relied
+    // entirely on the 'registered' handler below (itself gated behind
+    // registerDriver()/'connect', not this signal specifically), so a
+    // reconnect that didn't happen to re-register right away could leave a
+    // stale booking on screen. FORCED (bypasses the 8s throttle) ? this is
+    // an explicit, infrequent server push, not the noisy repeat pattern
+    // 'registered' guards against.
+    socketService.on('active_ride_sync_required', (_) {
+      if (_disposed || isClosed) return;
+      CommonLogger.log.i(
+        'active_ride_sync_required ? re-checking active booking',
+      );
+      unawaited(checkAndResumeActiveBooking(force: true));
+    });
+
     socketService.on('registered', (_) async {
       if (_disposed || isClosed) return;
       await startEmitLoop();
@@ -2132,7 +2365,7 @@ class DriverMainController extends GetxController
       // booking so the driver resumes into their active ride. THROTTLED (no
       // `force`): the socket can emit `registered` many times/second (re-register
       // loop), and forcing a refetch each time re-joins the shared rooms and
-      // re-processes the ride EVERY SECOND — which made the complete button + map
+      // re-processes the ride EVERY SECOND ? which made the complete button + map
       // BLINK and the swipe slider un-swipeable. The built-in 8s throttle still
       // covers genuine reconnects without the spam.
       await checkAndResumeActiveBooking();
@@ -2163,17 +2396,18 @@ class DriverMainController extends GetxController
     });
 
     socketService.on('booking-request', (data) async {
-      // [REQ-RECV] which socket delivered the request — pairs with the backend's
+      // [REQ-RECV] which socket delivered the request ? pairs with the backend's
       // [SOCKET_DELIVERY] line to prove/deny end-to-end popup delivery.
+      final payload = _coerceSocketPayloadToMap(data);
       try {
-        final bid = (data is Map ? data['bookingId'] : null)?.toString() ?? '?';
+        final bid = payload?['bookingId']?.toString() ?? '?';
         CommonLogger.log.i(
           '[REQ-RECV] source=primary url=${cfg.socketUrl} bookingId=$bid '
           'sharedToggle=${cfg.isSharedEnabled.value} effectiveShared=${cfg.effectiveShared} '
           'online=${statusController.isOnline.value}',
         );
       } catch (_) {}
-      await _processBookingRequest(data);
+      await _processBookingRequest(payload ?? data);
     });
 
     socketService.on('driver:demand-opportunities', (data) {
@@ -2221,7 +2455,7 @@ class DriverMainController extends GetxController
   }
 
   /// Backend signalled this booking reached a terminal/paid state. We do NOT
-  /// trust the socket alone — we re-fetch the active booking and let the
+  /// trust the socket alone ? we re-fetch the active booking and let the
   /// backend-authoritative [checkAndResumeActiveBooking] clear the local cache
   /// (BookingDataService / currentBookingId / booking rooms) when the API says
   /// hasBooking=false, or restore only a backend-confirmed booking otherwise.
@@ -2401,13 +2635,16 @@ class DriverMainController extends GetxController
             _statusHas(status, ['ride_in_progress', 'in_progress', 'started']);
         // DROPPED = the driver actually SWIPED complete (booking status SUCCESS/
         // PAID). Do NOT use `destinationReached`: that flag is set the moment the
-        // CAR reaches the drop area (GPS < 50m), which is NOT a completion — using
+        // CAR reaches the drop area (GPS < 50m), which is NOT a completion ? using
         // it here wrongly auto-moved a rider to "Completed" (and the customer to
         // paid/completed) without any swipe. Completion is swipe-only.
-        final dropped = _statusHas(
-          status,
-          ['success', 'paid', 'complete', 'completed', 'finished'],
-        );
+        final dropped = _statusHas(status, [
+          'success',
+          'paid',
+          'complete',
+          'completed',
+          'finished',
+        ]);
 
         if (dropped) {
           sharedRide.markDropped(bid);
@@ -2418,23 +2655,24 @@ class DriverMainController extends GetxController
 
       if (hadActiveSharedPool &&
           previousActiveBookingId.isNotEmpty &&
-          sharedRide.riders.any((r) => r.bookingId == previousActiveBookingId)) {
+          sharedRide.riders.any(
+            (r) => r.bookingId == previousActiveBookingId,
+          )) {
         sharedRide.activeTarget.value = sharedRide.riders.firstWhereOrNull(
           (r) => r.bookingId == previousActiveBookingId,
         );
       }
 
       // COLD-START RESTORE (source of truth wins): if the backend resume payload
-      // carries a resolved active stop (stops[0] — already legal, reflecting the
+      // carries a resolved active stop (stops[0] ? already legal, reflecting the
       // driver's selected stop), adopt it OVER local greedy / prior in-memory
       // target. So a killed+reopened app shows the SAME stop the backend selected
-      // (e.g. Pickup Customer 2), not a greedy recompute. Missing → greedy stands.
+      // (e.g. Pickup Customer 2), not a greedy recompute. Missing ? greedy stands.
       final activeStop = data['activeStop'];
       if (activeStop is Map) {
         final asBid = (activeStop['bookingId'] ?? '').toString().trim();
         if (asBid.isNotEmpty) {
-          final idx =
-              sharedRide.riders.indexWhere((r) => r.bookingId == asBid);
+          final idx = sharedRide.riders.indexWhere((r) => r.bookingId == asBid);
           if (idx != -1 &&
               sharedRide.riders[idx].stage != SharedRiderStage.dropped &&
               !sharedRide.riders[idx].cancelledByCustomer) {
@@ -2678,7 +2916,8 @@ class DriverMainController extends GetxController
         // Previously the BG service was only (re)started on the external-nav handoff path,
         // so if the app was killed mid-trip the customer's car marker froze for the rest of
         // the ride. When the resumed ride is STARTED and we're online, ensure it's running.
-        if (status.toUpperCase() == 'STARTED' && statusController.isOnline.value) {
+        if (status.toUpperCase() == 'STARTED' &&
+            statusController.isOnline.value) {
           driverId ??= await SharedPrefHelper.getDriverId();
           final didRearm = driverId?.trim() ?? '';
           if (didRearm.isNotEmpty) {
@@ -2797,9 +3036,39 @@ class DriverMainController extends GetxController
     if (bookingId.isEmpty) return;
 
     final status = (data['status'] ?? '').toString();
+    final rawParcel = data['parcel'];
+    final parcel =
+        rawParcel is Map
+            ? Map<String, dynamic>.from(rawParcel)
+            : const <String, dynamic>{};
+    final resumeBookingType =
+        (data['bookingType'] ?? '').toString().trim().toLowerCase();
+    final resumeIsParcel = resumeBookingType == 'parcel' || rawParcel is Map;
+    final parcelStatus =
+        (parcel['parcelStatus'] ?? data['parcelStatus'] ?? '')
+            .toString()
+            .trim()
+            .toUpperCase();
+    final parcelPickupOtpVerified = _asBool(
+      parcel['pickupOtpVerified'] ?? data['pickupOtpVerified'],
+    );
+    final parcelPickedUpAt =
+        (parcel['pickedUpAt'] ?? data['pickedUpAt'] ?? '').toString().trim();
+    final parcelPickupComplete =
+        resumeIsParcel &&
+        (parcelPickupOtpVerified ||
+            parcelPickedUpAt.isNotEmpty ||
+            const <String>{
+              'PICKED_UP',
+              'IN_TRANSIT',
+              'OUT_FOR_DELIVERY',
+            }.contains(parcelStatus));
+    final parcelTerminal =
+        resumeIsParcel &&
+        const <String>{'DELIVERED', 'FAILED_DELIVERY'}.contains(parcelStatus);
     final cancelled = _isBookingCancelled(data, status);
     final completed = _isBookingCompleted(data, status);
-    if (cancelled || completed) return;
+    if (cancelled || completed || parcelTerminal) return;
 
     final live = data['driverLiveTracking'];
     final isShared = _isSharedActiveBooking(data);
@@ -2872,6 +3141,7 @@ class DriverMainController extends GetxController
     if (isShared) {
       await _seedSharedRideFromActiveBooking(data);
       if (rideStarted) {
+        CustomSnackBar.dismiss();
         Get.off(
           () => ShareRideStartScreen(
             pickupLocation: pickup,
@@ -2882,6 +3152,7 @@ class DriverMainController extends GetxController
         return;
       }
 
+      CustomSnackBar.dismiss();
       Get.off(
         () => PickingCustomerSharedScreen(
           pickupLocation: pickup,
@@ -2894,12 +3165,29 @@ class DriverMainController extends GetxController
       return;
     }
 
-    if (rideStarted) {
+    // Parcel lifecycle is independent of the legacy ride status. Once the
+    // backend confirms pickup, restore directly into the delivery workspace.
+    if (parcelPickupComplete) {
+      CustomSnackBar.dismiss();
       Get.off(
         () => RideStatsScreen(
           bookingId: bookingId,
           pickupAddress: pickupAddress,
           dropAddress: dropAddress,
+          isParcel: true,
+        ),
+      );
+      return;
+    }
+
+    if (rideStarted) {
+      CustomSnackBar.dismiss();
+      Get.off(
+        () => RideStatsScreen(
+          bookingId: bookingId,
+          pickupAddress: pickupAddress,
+          dropAddress: dropAddress,
+          isParcel: resumeIsParcel,
         ),
       );
       return;
@@ -2907,23 +3195,29 @@ class DriverMainController extends GetxController
 
     final arrived =
         _asBool(data['driverArrived']) || _statusHas(status, ['arrived']);
-    final otpVerified = _asBool(data['otpVerified']);
+    final otpVerified =
+        resumeIsParcel ? parcelPickupOtpVerified : _asBool(data['otpVerified']);
     final custName =
         (data['custName'] ?? data['customerName'] ?? data['name'] ?? '')
             .toString();
 
     if (arrived && !otpVerified && custName.trim().isNotEmpty) {
+      CustomSnackBar.dismiss();
       Get.off(
         () => VerifyRiderScreen(
           bookingId: bookingId,
           custName: custName,
           pickupAddress: pickupAddress,
           dropAddress: dropAddress,
+          isParcel: resumeIsParcel,
+          parcelType: (parcel['parcelType'] ?? '').toString(),
+          parcelWeight: (parcel['maxWeight'] ?? '').toString(),
         ),
       );
       return;
     }
 
+    CustomSnackBar.dismiss();
     Get.off(
       () => PickingCustomerScreen(
         pickupLocation: pickup,
@@ -2931,6 +3225,7 @@ class DriverMainController extends GetxController
         bookingId: bookingId,
         pickupLocationAddress: pickupAddress,
         dropLocationAddress: dropAddress,
+        initialIsParcel: resumeIsParcel,
       ),
     );
   }
@@ -2958,12 +3253,15 @@ class DriverMainController extends GetxController
     socketService.initSocket(cfg.socketUrl);
     _bindSocketListeners();
 
-    // ✅ IMPORTANT: if the socket is already connected (singleton reused),
+    // ? IMPORTANT: if the socket is already connected (singleton reused),
     // the 'connect' callback won't fire again. Register immediately so switching
     // Car -> Logout -> Bike works without app restart.
     final did = driverId?.trim() ?? '';
     if (did.isNotEmpty) {
-      socketService.registerDriver(did, bookingId: currentBookingId);
+      socketService.registerDriver(
+        did,
+        bookingId: _confirmedActiveBookingIdForSocketRegistration(),
+      );
       if (socketService.connected) {
         await startEmitLoop();
         requestDemandOpportunities(reason: 'socket_already_connected');
@@ -2976,7 +3274,7 @@ class DriverMainController extends GetxController
     await initLocation();
     startCameraFollow();
 
-    // NOTE: Don’t start BG tracking while the app is foregrounded.
+    // NOTE: Don?t start BG tracking while the app is foregrounded.
     // Running BG socket + foreground socket together causes `io server disconnect`
     // on servers that enforce a single active session per driverId.
   }
@@ -2987,19 +3285,21 @@ class DriverMainController extends GetxController
   /// took over), `SocketService` suppresses auto-reconnect to stop the
   /// revoke-war. That is correct WHILE the app is backgrounded (the background
   /// tracking isolate legitimately owns the session). But if the app is in the
-  /// FOREGROUND and online, THIS isolate is the rightful owner — a suppressed
+  /// FOREGROUND and online, THIS isolate is the rightful owner ? a suppressed
   /// socket would otherwise sit dead (dropping updateLocation/heartbeat) with no
   /// resume event to trigger a reclaim, so the customer's marker freezes.
   ///
   /// Here we reclaim: stop any background isolate first (so it can't fight back
-  /// — it also self-stops on its own session-revoke), then intentionally
+  /// ? it also self-stops on its own session-revoke), then intentionally
   /// reconnect (`connect()` clears the revoke flag) and re-register. Debounced
   /// to 5s so a genuinely contested session backs off instead of tight-looping.
   void _maybeReclaimRevokedSession() {
     if (_disposed || isClosed) return;
-    if (!_appInForeground) return; // backgrounded -> BG isolate owns the session
+    if (!_appInForeground)
+      return; // backgrounded -> BG isolate owns the session
     if (!statusController.isOnline.value) return; // offline -> nothing to own
-    if (!socketService.sessionRevoked) return; // only when explicitly suppressed
+    if (!socketService.sessionRevoked)
+      return; // only when explicitly suppressed
 
     final now = DateTime.now();
     if (now.difference(_lastSessionReclaimAt) < const Duration(seconds: 5)) {
@@ -3011,11 +3311,14 @@ class DriverMainController extends GetxController
     socketService.connect(); // intentional reclaim -> clears the revoke flag
     final did = driverId?.trim() ?? '';
     if (did.isNotEmpty) {
-      socketService.registerDriver(did, bookingId: currentBookingId);
+      socketService.registerDriver(
+        did,
+        bookingId: _confirmedActiveBookingIdForSocketRegistration(),
+      );
     }
     if (kDebugMode) {
       CommonLogger.log.w(
-        '🩹 [SOCKET] Foreground reclaiming revoked session url=${socketService.currentUrl}',
+        '?? [SOCKET] Foreground reclaiming revoked session url=${socketService.currentUrl}',
       );
     }
   }
@@ -3025,13 +3328,13 @@ class DriverMainController extends GetxController
     _appInForeground = false;
     final handoffRequestedAt = DateTime.now().millisecondsSinceEpoch;
 
-    // RACE-PROOF the foreground→background handoff. Suspend the foreground
+    // RACE-PROOF the foreground?background handoff. Suspend the foreground
     // socket's auto-reconnect SYNCHRONOUSLY, before the background isolate's
     // socket can register. When the background socket registers with a different/
     // missing deviceId, the backend revokes THIS foreground socket (single
     // session). The foreground would otherwise process that "io server disconnect"
     // and auto-reconnect BEFORE the buffered `session-revoked` event sets its
-    // guard — re-registering and revoking the background socket, which then
+    // guard ? re-registering and revoking the background socket, which then
     // `stopSelf()`s and freezes customer tracking while Google Maps is open.
     // Reclaimed by socketService.connect() in onAppResumed.
     socketService.suspendAutoReconnect();
@@ -3058,11 +3361,11 @@ class DriverMainController extends GetxController
           // startService(), but on many OEMs the foreground-service engine needs
           // longer (cold Flutter engine spin-up) before `isRunning()` reports true.
           // Concluding "not running" here is dangerous: the code below then KEEPS
-          // the foreground socket alive (connect()) — and the BG service comes up a
+          // the foreground socket alive (connect()) ? and the BG service comes up a
           // moment later anyway, so BOTH end up on the same backend (bck) for this
-          // driver. That is the single-session revoke-war / connect→forced-close
+          // driver. That is the single-session revoke-war / connect?forced-close
           // storm seen on return from Google Maps, AND the foreground GPS stream is
-          // throttled by the OS once backgrounded → the customer's car freezes.
+          // throttled by the OS once backgrounded ? the customer's car freezes.
           // Poll briefly so we trust a slow-but-real BG start instead of duelling.
           final bgWaitUntil = DateTime.now().add(const Duration(seconds: 2));
           while (DateTime.now().isBefore(bgWaitUntil)) {
@@ -3074,7 +3377,7 @@ class DriverMainController extends GetxController
           }
         }
         if (bgRunning) {
-          // Best-effort: give the (usually COLD — onAppResumed stops the service
+          // Best-effort: give the (usually COLD ? onAppResumed stops the service
           // on every return, so each Navigate starts it fresh) background isolate
           // a moment to land its first emit BEFORE we cut the foreground, purely
           // to minimise the hand-off gap. The foreground keeps emitting during
@@ -3084,7 +3387,7 @@ class DriverMainController extends GetxController
           // to "not running" just because this first emit is still in flight. A
           // cold Flutter engine spin-up + socket connect + first bestForNavigation
           // fix routinely needs >1.6s, so the old code set bgRunning=false on
-          // timeout and fell through to the "keep foreground socket" path below —
+          // timeout and fell through to the "keep foreground socket" path below ?
           // WHILE the background service was also running. That left TWO sockets
           // duelling for the backend's single session and a foreground GPS stream
           // the OS throttles once the app is backgrounded behind Google Maps,
@@ -3121,7 +3424,7 @@ class DriverMainController extends GetxController
           '[BG_HANDOFF] BG service not running; keeping foreground socket active',
         );
       }
-      // No handoff happened — the foreground stays the sole emitter, so restore
+      // No handoff happened ? the foreground stays the sole emitter, so restore
       // its normal auto-reconnect (clear the handoff suspension set above).
       socketService.connect();
       return;
@@ -3141,7 +3444,15 @@ class DriverMainController extends GetxController
     _appInForeground = true;
     _backgroundServiceActive = false;
 
-    // Back in Hoppr — the floating "return to app" bubble over Google Maps is
+    final token = (await SharedPrefHelper.getToken() ?? '').trim();
+    if (token.isNotEmpty && isJwtExpired(token)) {
+      await DriverSessionExpiryHandler.handle(
+        message: 'Your session has expired. Please sign in again.',
+      );
+      return;
+    }
+
+    // Back in Hoppr ? the floating "return to app" bubble over Google Maps is
     // now redundant. (MainActivity.onResume also removes it as a native safety
     // net; this covers resume paths that don't recreate the activity.)
     unawaited(NavigationService().hideReturnBubble());
@@ -3162,7 +3473,10 @@ class DriverMainController extends GetxController
 
     // Ensure socket is connected & registered after background/resume cycles.
     socketService.connect();
-    socketService.registerDriver(did, bookingId: currentBookingId);
+    socketService.registerDriver(
+      did,
+      bookingId: _confirmedActiveBookingIdForSocketRegistration(),
+    );
     if (socketService.connected) {
       await startEmitLoop();
       requestDemandOpportunities(reason: 'app_resumed');
@@ -3176,14 +3490,14 @@ class DriverMainController extends GetxController
     // DUAL-CONNECT: re-check the secondary single-ride dispatch socket on resume.
     // The OS may have killed its connection while backgrounded; a shared-ON idle
     // driver without it is unreachable for single-ride popups (customer still
-    // sees the car — DB presence is kept fresh by the primary's heartbeats).
+    // sees the car ? DB presence is kept fresh by the primary's heartbeats).
     syncSecondaryDispatchSocket();
 
     // Update home stats when returning from other screens / background.
     unawaited(refreshHomeStats());
   }
 
-  // ---------------- âœ… listen shared toggle ----------------
+  // ---------------- ? listen shared toggle ----------------
   void _listenSharedToggle() {
     _sharedToggleWorker?.dispose();
 
@@ -3193,7 +3507,7 @@ class DriverMainController extends GetxController
       try {
         final newUrl = cfg.socketUrl;
         CommonLogger.log.i(
-          "ðŸ” Shared changed => $enabled | switch socket => $newUrl",
+          "?? Shared changed => $enabled | switch socket => $newUrl",
         );
 
         socketService.switchUrl(newUrl);
@@ -3228,7 +3542,7 @@ class DriverMainController extends GetxController
           }
         }
       } catch (e) {
-        CommonLogger.log.e("âŒ socket switch failed: $e");
+        CommonLogger.log.e("? socket switch failed: $e");
       }
     });
   }
@@ -3357,7 +3671,7 @@ class DriverMainController extends GetxController
       }
 
       // DUAL-CONNECT: (re)evaluate the secondary single-ride dispatch socket now
-      // that online state changed — starts it when going online while shared is
+      // that online state changed ? starts it when going online while shared is
       // enabled and idle; stops it when going offline.
       syncSecondaryDispatchSocket();
     } catch (e) {
@@ -3371,7 +3685,7 @@ class DriverMainController extends GetxController
   bool _batteryOptExemptionAsked = false;
 
   /// Uber/Ola-style battery-optimization opt-in. Aggressive OEMs (Xiaomi/Oppo/
-  /// Vivo/Samsung) suspend a backgrounded foreground service unless exempted —
+  /// Vivo/Samsung) suspend a backgrounded foreground service unless exempted ?
   /// that suspension froze the driver location feed mid-trip (the customer saw
   /// the car stop ~50s then jump). Like Uber, we DON'T fire the bare system
   /// dialog: we first show a clear rationale sheet explaining why, then the
@@ -3507,7 +3821,7 @@ class DriverMainController extends GetxController
             bullet(
               Icons.my_location_rounded,
               'Smooth live tracking',
-              'Your car stays accurate for the customer — no freezing or jumps.',
+              'Your car stays accurate for the customer ? no freezing or jumps.',
             ),
             bullet(
               Icons.account_balance_wallet_rounded,
@@ -3707,7 +4021,10 @@ class DriverMainController extends GetxController
     _bindSocketListeners();
     final did = driverId?.trim() ?? '';
     if (did.isNotEmpty) {
-      socketService.registerDriver(did, bookingId: currentBookingId);
+      socketService.registerDriver(
+        did,
+        bookingId: _confirmedActiveBookingIdForSocketRegistration(),
+      );
     }
   }
 
@@ -3719,7 +4036,7 @@ class DriverMainController extends GetxController
       await statusController.getDriverStatus();
       if (_disposed || isClosed) return;
 
-      // ✅ Preload map style BEFORE first paint to avoid "color jumps" on first zoom.
+      // ? Preload map style BEFORE first paint to avoid "color jumps" on first zoom.
       await loadMapStyle();
       if (_disposed || isClosed) return;
 
@@ -3762,7 +4079,7 @@ class DriverMainController extends GetxController
 
   @override
   void onClose() {
-    // âœ… FIRST: block any future callbacks
+    // ? FIRST: block any future callbacks
     _disposed = true;
 
     // Unbind socket listeners (avoid retaining this controller via closures).
@@ -3793,7 +4110,7 @@ class DriverMainController extends GetxController
     } catch (_) {}
     mapController = null;
 
-    // âœ… stop animation safely
+    // ? stop animation safely
     try {
       if (animCtrl.isAnimating) animCtrl.stop();
     } catch (_) {}

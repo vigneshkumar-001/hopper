@@ -215,19 +215,23 @@ class AuthController extends GetxController {
           .timeout(const Duration(seconds: 2));
     } catch (_) {}
 
-    await performLogoutCleanup();
     await SharedPrefHelper.clearAll();
     if (Get.isRegistered<DriverAnalyticsController>()) {
       await Get.find<DriverAnalyticsController>().reset(clearPersisted: false);
     }
     accessToken = '';
 
-    if (!context.mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => LandingScreens()),
-      (route) => false,
+    if (!context.mounted) {
+      await performLogoutCleanup();
+      return;
+    }
+    CustomSnackBar.dismiss();
+    Get.offAll(
+      () => const LandingScreens(),
+      transition: Transition.noTransition,
     );
+    await WidgetsBinding.instance.endOfFrame;
+    await performLogoutCleanup();
   }
 
   Future<bool> deleteAccount(BuildContext context) async {
@@ -265,19 +269,23 @@ class AuthController extends GetxController {
           .timeout(const Duration(seconds: 2));
     } catch (_) {}
 
-    await performLogoutCleanup();
     await SharedPrefHelper.clearAll();
     if (Get.isRegistered<DriverAnalyticsController>()) {
       await Get.find<DriverAnalyticsController>().reset(clearPersisted: false);
     }
     accessToken = '';
 
-    if (!context.mounted) return true;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => LandingScreens()),
-      (route) => false,
+    if (!context.mounted) {
+      await performLogoutCleanup();
+      return true;
+    }
+    CustomSnackBar.dismiss();
+    Get.offAll(
+      () => const LandingScreens(),
+      transition: Transition.noTransition,
     );
+    await WidgetsBinding.instance.endOfFrame;
+    await performLogoutCleanup();
     return true;
   }
 

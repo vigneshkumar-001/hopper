@@ -600,17 +600,26 @@ class _GetStartedScreensState extends State<GetStartedScreens> {
                           ],
                         ),
                         SizedBox(height: 30),
-                        Buttons.button(
-                          imagePath: AppImages.apple,
-                          buttonColor: AppColors.containerColor,
-                          textColor: AppColors.commonBlack,
+                        // Apple Sign-In is only offered on Apple platforms
+                        // (App Store guideline 4.8 also requires it there
+                        // when other third-party sign-in options exist) —
+                        // Android/other platforms never see the button, but
+                        // the sign-in implementation itself is untouched.
+                        // Bundled with its trailing spacer so hiding it never
+                        // leaves an empty gap in the column.
+                        if (Platform.isIOS || Platform.isMacOS) ...[
+                          Buttons.button(
+                            imagePath: AppImages.apple,
+                            buttonColor: AppColors.containerColor,
+                            textColor: AppColors.commonBlack,
 
-                          onTap: () {
-                            signInWithApple();
-                          },
-                          text: Text('Continue with Apple'),
-                        ),
-                        SizedBox(height: 20),
+                            onTap: () {
+                              signInWithApple();
+                            },
+                            text: Text('Continue with Apple'),
+                          ),
+                          SizedBox(height: 20),
+                        ],
                         Buttons.button(
                           imgHeight: 18,
                           imgWeight: 18,

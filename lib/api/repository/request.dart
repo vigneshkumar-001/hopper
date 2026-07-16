@@ -15,21 +15,17 @@ class Request {
   //   final v = headers['Authorization']?.toString() ?? '';
   //   return v.trim().isEmpty ? '(none)' : 'Bearer ***masked***';
   // }
-static String _tokenFromHeaders(Map<String, dynamic> headers) {
-  final token = headers['Authorization']?.toString() ?? '';
+  static String _tokenFromHeaders(Map<String, dynamic> headers) {
+    final token = headers['Authorization']?.toString() ?? '';
 
-  if (token.trim().isEmpty) {
-    return '(none)';
+    if (token.trim().isEmpty) {
+      return '(none)';
+    }
+
+    // Debug logs are routinely attached to support tickets, so never expose JWTs.
+    return 'Bearer ***masked***';
   }
 
-  // Show full token only in debug builds.
-  if (kDebugMode) {
-    return token;
-  }
-
-  // Mask token in release/profile builds.
-  return 'Bearer ***masked***';
-}
   static void _debugLogInfo(String message) {
     if (!kDebugMode) return;
     AppLogger.log.i(message);
@@ -85,7 +81,8 @@ static String _tokenFromHeaders(Map<String, dynamic> headers) {
         ) {
           final t = _tokenFromHeaders(response.requestOptions.headers);
           final reqBody =
-              response.requestOptions.data ?? response.requestOptions.queryParameters;
+              response.requestOptions.data ??
+              response.requestOptions.queryParameters;
           _debugLogInfo(
             'Method: ${response.requestOptions.method}\n'
             'Url: ${response.realUri}\n'
@@ -179,7 +176,8 @@ static String _tokenFromHeaders(Map<String, dynamic> headers) {
         ) {
           final t = _tokenFromHeaders(response.requestOptions.headers);
           final reqBody =
-              response.requestOptions.data ?? response.requestOptions.queryParameters;
+              response.requestOptions.data ??
+              response.requestOptions.queryParameters;
           _debugLogInfo(
             'Method: ${response.requestOptions.method}\n'
             'Url: ${response.realUri}\n'
@@ -264,7 +262,8 @@ static String _tokenFromHeaders(Map<String, dynamic> headers) {
         ) {
           final t = _tokenFromHeaders(response.requestOptions.headers);
           final reqBody =
-              response.requestOptions.data ?? response.requestOptions.queryParameters;
+              response.requestOptions.data ??
+              response.requestOptions.queryParameters;
           _debugLogInfo(
             'Method: ${response.requestOptions.method}\n'
             'Url: ${response.realUri}\n'

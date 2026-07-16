@@ -11,7 +11,7 @@ class BookingRequestController extends GetxController {
   final RxInt remainingSeconds = 0.obs;
   Timer? _timer;
 
-  // 🆕 keep track of last handled booking (accepted/declined/expired)
+  // ?? keep track of last handled booking (accepted/declined/expired)
   final RxnString lastHandledBookingId = RxnString();
 
   // Prevent double-popups from quick duplicate socket events.
@@ -30,21 +30,23 @@ class BookingRequestController extends GetxController {
     data['dropAddress'] = dropAddress;
 
     final incomingId = data['bookingId']?.toString();
+    final incomingDispatchId = data['dispatchId']?.toString().trim() ?? '';
+    final requestKey = incomingDispatchId.isNotEmpty ? incomingDispatchId : (incomingId ?? '');
 
-    // 🛑 ignore if this booking was already handled
-    if (incomingId != null && incomingId == lastHandledBookingId.value) {
+    // ?? ignore if this booking was already handled
+    if (requestKey.isNotEmpty && requestKey == lastHandledBookingId.value) {
       return;
     }
 
     final now = DateTime.now();
-    if (incomingId != null &&
-        incomingId == _lastShownBookingId &&
+    if (requestKey.isNotEmpty &&
+        requestKey == _lastShownBookingId &&
         now.difference(_lastShownAt) < _duplicateShowWindow) {
       return;
     }
 
     bookingRequestData.value = data;
-    _lastShownBookingId = incomingId;
+    _lastShownBookingId = requestKey;
     _lastShownAt = now;
     Get.find<DriverAnalyticsController>().trackOffer();
     _startTimer(_normalizedCountdown(remainingSeconds));
@@ -79,7 +81,7 @@ class BookingRequestController extends GetxController {
     _timer = null;
   }
 
-  // 🆕 call this when user ACCEPTS or DECLINES
+  // ?? call this when user ACCEPTS or DECLINES
   void markHandled(String bookingId) {
     lastHandledBookingId.value = bookingId;
     clear();

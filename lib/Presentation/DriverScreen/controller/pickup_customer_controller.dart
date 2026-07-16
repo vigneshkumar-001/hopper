@@ -1,4 +1,4 @@
-﻿// lib/Presentation/DriverScreen/controller/pickup_customer_controller.dart
+// lib/Presentation/DriverScreen/controller/pickup_customer_controller.dart
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -103,7 +103,19 @@ class PickingCustomerController extends GetxController {
     required this.bookingId,
     this.pickupLocationAddress,
     this.dropLocationAddress,
-  });
+    bool initialIsParcel = false,
+  }) {
+    // Car->Parcel UI flash fix: isParcel used to default false and only
+    // flip true once the async 'joined-booking' socket reply or the
+    // /active-booking REST fallback landed — both well after the first
+    // build, so the Car UI rendered for a frame (or more, on a slow
+    // network) before switching. Callers now already know the booking type
+    // from data they fetched BEFORE navigating here (the accept-response or
+    // the active-booking resume payload) — seeding it synchronously here
+    // means the very first build already renders the right UI. The async
+    // paths below are left untouched as a safety net (never downgrade).
+    if (initialIsParcel) isParcel.value = true;
+  }
 
   // ----- deps -----
   late final DriverStatusController driverStatusController =
@@ -133,6 +145,40 @@ class PickingCustomerController extends GetxController {
   final customerProfilePic = ''.obs;
   final pickupAddressText = ''.obs;
   final dropAddressText = ''.obs;
+
+  /// Package delivery trust (Phase 2): true when the active booking is a
+  /// parcel. Only used to route pickup-OTP verification to the dedicated
+  /// hash-based endpoint instead of the shared ride-start OTP flow.
+  final isParcel = false.obs;
+
+  /// Display-only package fields for the parcel pickup screen (Phase 4 UI
+  /// redesign) — sourced from the same `parcel` object RideStatsController
+  /// already reads on the drop leg. Never written back to the backend from
+  /// here; purely informational for the driver before pickup. (Package ID is
+  /// just `bookingId`, already a field on this controller — no duplicate.)
+  final parcelType = ''.obs;
+  final parcelWeight = ''.obs;
+  final deliveryInstruction = ''.obs;
+  final addressType = ''.obs;
+
+  void _applyParcelInfo(Map<String, dynamic> payload) {
+    final raw = payload['parcel'];
+    if (raw is! Map) return;
+    final p = Map<String, dynamic>.from(raw);
+    String clean(dynamic v) {
+      final s = (v ?? '').toString().trim();
+      return s == 'null' ? '' : s;
+    }
+
+    final type = clean(p['parcelType']);
+    if (type.isNotEmpty) parcelType.value = type;
+    final weight = clean(p['maxWeight']);
+    if (weight.isNotEmpty && weight != '0') parcelWeight.value = weight;
+    final instruction = clean(p['deliveryInstruction']);
+    if (instruction.isNotEmpty) deliveryInstruction.value = instruction;
+    final addrType = clean(p['addressType']);
+    if (addrType.isNotEmpty) addressType.value = addrType;
+  }
 
   // ----- flow flags -----
   final arrivedAtPickup = true.obs; // before pressing "Arrived at Pickup Point"
@@ -294,8 +340,11 @@ class PickingCustomerController extends GetxController {
       socketService.socket.off('joined-booking');
       socketService.socket.off('driver-location');
       socketService.socket.off('driver-arrived');
-      socketService.socket.off('driver-cancelled');
-      socketService.socket.off('customer-cancelled');
+      // NOTE: never call socket.off('driver-cancelled'/'customer-cancelled')
+      // here — the raw off(event) with no handler removes ALL listeners for
+      // that event, including DriverMainController's app-lifetime
+      // cancellation handler, silently breaking cancellation detection for
+      // every screen opened afterward.
     } catch (_) {}
     _queuedTarget = null;
     _queuedBearing = null;
@@ -345,9 +394,9 @@ class PickingCustomerController extends GetxController {
   }
 
   void _applyVehicleType() {
-    rideMap.setVehicleType(_vehicleTypeFromServiceType(
-      driverStatusController.serviceType.value,
-    ));
+    rideMap.setVehicleType(
+      _vehicleTypeFromServiceType(driverStatusController.serviceType.value),
+    );
   }
 
   void _listenServiceTypeForVehicle() {
@@ -385,6 +434,16 @@ class PickingCustomerController extends GetxController {
       customerPhone.value = (joined['customerPhone'] ?? '').toString();
       customerProfilePic.value =
           (joined['customerProfilePic'] ?? '').toString();
+
+      // Package delivery trust (Phase 2): detect parcel bookings so the OTP
+      // screen can route to the dedicated pickup-OTP endpoint. Never downgrade
+      // — a later payload without the marker must not un-flag a parcel.
+      final joinedBookingType =
+          (joined['bookingType'] ?? '').toString().trim().toLowerCase();
+      if (joinedBookingType == 'parcel' || joined['parcel'] is Map) {
+        isParcel.value = true;
+      }
+      _applyParcelInfo(joined);
 
       double? asDouble(dynamic v) {
         if (v is num) return v.toDouble();
@@ -471,12 +530,15 @@ class PickingCustomerController extends GetxController {
           driverStatusController.pickupDistanceInMeters.value = pickupM;
 
           _lastSocketFixAt = DateTime.now();
-          if (!_driverReachedSocket && pickupM > 0 && pickupM <= _ARRIVED_PICKUP_RADIUS_M) {
+          if (!_driverReachedSocket &&
+              pickupM > 0 &&
+              pickupM <= _ARRIVED_PICKUP_RADIUS_M) {
             _driverReachedSocket = true;
             CommonLogger.log.i(
               'Auto driverReached TRUE (socket) pickupDistanceInMeters=${pickupM.toStringAsFixed(1)}m',
             );
-          } else if (_driverReachedSocket && pickupM >= _ARRIVED_PICKUP_EXIT_RADIUS_M) {
+          } else if (_driverReachedSocket &&
+              pickupM >= _ARRIVED_PICKUP_EXIT_RADIUS_M) {
             _driverReachedSocket = false;
           }
 
@@ -578,6 +640,15 @@ class PickingCustomerController extends GetxController {
           fillIfEmpty(customerProfilePic, data['customerProfilePic']);
           fillIfEmpty(pickupAddressText, data['pickupAddress']);
           fillIfEmpty(dropAddressText, data['dropAddress']);
+
+          final restBookingType =
+              (data['bookingType'] ?? '').toString().trim().toLowerCase();
+          if (restBookingType == 'parcel' || data['parcel'] is Map) {
+            isParcel.value = true;
+          }
+          if (data is Map) {
+            _applyParcelInfo(Map<String, dynamic>.from(data));
+          }
 
           CommonLogger.log.i(
             'Customer info hydrated from /active-booking '
@@ -738,7 +809,10 @@ class PickingCustomerController extends GetxController {
 
   // ===================== MAP EVENTS =====================
 
-  Future<void> onMapCreated(GoogleMapController gm, BuildContext context) async {
+  Future<void> onMapCreated(
+    GoogleMapController gm,
+    BuildContext context,
+  ) async {
     // Map controller is attached by RideMapView; keep style behavior here.
     try {
       final style = await AppMapStyle.loadUberLight();
@@ -829,15 +903,18 @@ class PickingCustomerController extends GetxController {
           _lastRouteOrigin == null
               ? 9999.0
               : Geolocator.distanceBetween(
-                  _lastRouteOrigin!.latitude,
-                  _lastRouteOrigin!.longitude,
-                  origin.latitude,
-                  origin.longitude,
-                );
+                _lastRouteOrigin!.latitude,
+                _lastRouteOrigin!.longitude,
+                origin.latitude,
+                origin.longitude,
+              );
       final recentlyRequested =
           now.difference(_lastRouteRequestAt).inSeconds < (force ? 12 : 15);
 
-      if (sameOrigin && sameDest && recentlyRequested && driverMovedSinceLast < 50) {
+      if (sameOrigin &&
+          sameDest &&
+          recentlyRequested &&
+          driverMovedSinceLast < 50) {
         if (kDebugMode) {
           debugPrint(
             '[ROUTE_DEDUPE] skipped reason=same_origin_dest_recent '
@@ -847,7 +924,9 @@ class PickingCustomerController extends GetxController {
         return;
       }
 
-      if (!force && now.difference(_lastRouteFetch).inSeconds < 8 && driverMovedSinceLast < 30) {
+      if (!force &&
+          now.difference(_lastRouteFetch).inSeconds < 8 &&
+          driverMovedSinceLast < 30) {
         if (kDebugMode) {
           debugPrint('[ROUTE_DEDUPE] skipped reason=throttle');
         }
@@ -900,7 +979,9 @@ class PickingCustomerController extends GetxController {
           ui.value = _cachedUiState!;
         }
         _scheduleRouteRetry();
-        CommonLogger.log.w('[PICKUP_ROUTE] got <2 points, fallback direct polyline');
+        CommonLogger.log.w(
+          '[PICKUP_ROUTE] got <2 points, fallback direct polyline',
+        );
         if (kDebugMode) {
           debugPrint(
             '[PICKUP_POLYLINE] driver=${origin.latitude},${origin.longitude} '
@@ -962,9 +1043,10 @@ class PickingCustomerController extends GetxController {
       _hasRoadRoute = true;
       _poly = fixed;
 
-      final routeDurMin = (result['durationMin'] is num)
-          ? (result['durationMin'] as num).toDouble()
-          : 0.0;
+      final routeDurMin =
+          (result['durationMin'] is num)
+              ? (result['durationMin'] as num).toDouble()
+              : 0.0;
       ui.value = ui.value.copyWith(
         polyline: fixed,
         directionText: _stripHtml((result['direction'] ?? '').toString()),
@@ -981,7 +1063,10 @@ class PickingCustomerController extends GetxController {
       }
       rideMap.setPickupDrop(pickup: pickupLocation, showPickupPin: true);
       rideMap.setRoutePoints(fixed);
-      rideMap.setNavigationDestination(pickupLocation, driverFriendlyStop: false);
+      rideMap.setNavigationDestination(
+        pickupLocation,
+        driverFriendlyStop: false,
+      );
       if (kDebugMode) {
         debugPrint(
           '[FIT_FULL_TRIP] mode=pickupNavigation points=${fixed.length} zoomClamp=true',
@@ -991,7 +1076,10 @@ class PickingCustomerController extends GetxController {
       final mp = result['maneuverPoints'];
       final maneuverPoints =
           mp is List
-              ? mp.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+              ? mp
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList()
               : const <Map<String, dynamic>>[];
 
       unawaited(
@@ -1260,7 +1348,10 @@ class PickingCustomerController extends GetxController {
         speedMs: speed,
       );
 
-      ui.value = ui.value.copyWith(driverLocation: current, bearing: targetBearing);
+      ui.value = ui.value.copyWith(
+        driverLocation: current,
+        bearing: targetBearing,
+      );
       rideMap.updateVehicleLocation(
         raw,
         source: 'gps',
@@ -1303,7 +1394,8 @@ class PickingCustomerController extends GetxController {
       CommonLogger.log.i(
         "Auto driverReached TRUE (gps) at ${distanceToPickup.toStringAsFixed(1)}m from pickup",
       );
-    } else if (_driverReachedGps && distanceToPickup >= _ARRIVED_PICKUP_EXIT_RADIUS_M) {
+    } else if (_driverReachedGps &&
+        distanceToPickup >= _ARRIVED_PICKUP_EXIT_RADIUS_M) {
       // Hysteresis: avoid flicker around the threshold.
       _driverReachedGps = false;
     }
@@ -1316,7 +1408,8 @@ class PickingCustomerController extends GetxController {
 
     final now = DateTime.now();
     final gpsFresh =
-        _lastGpsFixAt != null && now.difference(_lastGpsFixAt!) <= _gpsReachedTtl;
+        _lastGpsFixAt != null &&
+        now.difference(_lastGpsFixAt!) <= _gpsReachedTtl;
     final socketFresh =
         _lastSocketFixAt != null &&
         now.difference(_lastSocketFixAt!) <= _socketReachedTtl;
@@ -1324,7 +1417,10 @@ class PickingCustomerController extends GetxController {
     // Priority rule:
     // - If GPS is fresh, trust GPS (even if socket says otherwise).
     // - Else fall back to socket.
-    final next = gpsFresh ? _driverReachedGps : (socketFresh ? _driverReachedSocket : false);
+    final next =
+        gpsFresh
+            ? _driverReachedGps
+            : (socketFresh ? _driverReachedSocket : false);
 
     if (driverReached.value != next) {
       driverReached.value = next;
@@ -1680,6 +1776,9 @@ class PickingCustomerController extends GetxController {
           pickupAddress: pickupLocationAddress ?? pickupAddressText.value,
           dropAddress: dropLocationAddress ?? dropAddressText.value,
           isSharedRide: false,
+          isParcel: isParcel.value,
+          parcelType: parcelType.value,
+          parcelWeight: parcelWeight.value,
         ),
       );
     } finally {

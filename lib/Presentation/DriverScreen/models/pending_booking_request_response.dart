@@ -44,7 +44,9 @@ class PendingBookingRequestResponse {
     final data =
         rawData is Map
             ? Map<String, dynamic>.from(rawData as Map)
-            : null;
+            : rawData is List && rawData.isNotEmpty && rawData.first is Map
+                ? Map<String, dynamic>.from(rawData.first as Map)
+                : null;
 
     return PendingBookingRequestResponse(
       success: success,

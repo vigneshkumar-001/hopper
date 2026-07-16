@@ -8,6 +8,7 @@ import 'package:hopper/Core/Constants/log.dart';
 import 'package:hopper/Core/Utility/Buttons.dart';
 import 'package:hopper/Core/Utility/app_loader.dart';
 import 'package:hopper/Core/Utility/images.dart';
+import 'package:hopper/Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/ride_starts_controller.dart';
@@ -141,16 +142,20 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
 
     final joined = JoinedBookingData().getData();
     final joinedName =
-        (joined?['custName'] ?? joined?['customerName'] ?? joined?['name'] ?? '')
+        (joined?['custName'] ??
+                joined?['customerName'] ??
+                joined?['name'] ??
+                '')
             .toString()
             .trim();
-    final joinedImage = (joined?['customerProfilePic'] ??
-            joined?['profilePic'] ??
-            joined?['imageUrl'] ??
-            joined?['image'] ??
-            '')
-        .toString()
-        .trim();
+    final joinedImage =
+        (joined?['customerProfilePic'] ??
+                joined?['profilePic'] ??
+                joined?['imageUrl'] ??
+                joined?['image'] ??
+                '')
+            .toString()
+            .trim();
 
     return (
       name: joinedName.isNotEmpty ? joinedName : 'Customer',
@@ -257,7 +262,9 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
               shape: BoxShape.circle,
               color: Color(0xFFF2F4F7),
             ),
-            child: const Center(child: HopprCircularLoader(size: 24, radius: 12)),
+            child: const Center(
+              child: HopprCircularLoader(size: 24, radius: 12),
+            ),
           ),
       errorWidget:
           (context, url, error) => Container(
@@ -325,19 +332,19 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                   ),
                   const SizedBox(height: 18),
                   Expanded(
-                      child: SingleChildScrollView(
-                        child: Obx(() {
-                          final paymentType =
-                              driverStatusController.paymentType.value;
-                          final paymentStatus =
-                              driverStatusController.paymentStatus.value;
-                          final customer = _customerInfo();
-                          final imageUrl = customer.imageUrl;
-                          final riderName = customer.name;
+                    child: SingleChildScrollView(
+                      child: Obx(() {
+                        final paymentType =
+                            driverStatusController.paymentType.value;
+                        final paymentStatus =
+                            driverStatusController.paymentStatus.value;
+                        final customer = _customerInfo();
+                        final imageUrl = customer.imageUrl;
+                        final riderName = customer.name;
 
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.fromLTRB(
@@ -390,7 +397,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                         ),
                                       ),
                                     ),
-                                   child: Column(
+                                    child: Column(
                                       children: [
                                         _buildPaymentInfoTile(
                                           icon: Icons.payments_outlined,
@@ -667,6 +674,7 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                 if (widget.isSharedRide) {
                                   await _finishSharedAndPop(success: true);
                                 } else {
+                                  CustomSnackBar.dismiss();
                                   Navigator.of(pageContext).pushAndRemoveUntil(
                                     MaterialPageRoute(
                                       builder: (_) => DriverMainScreen(),
@@ -694,6 +702,24 @@ class _CashCollectedScreenState extends State<CashCollectedScreen> {
                                         setModalState(
                                           () => isSubmittingRating = true,
                                         );
+
+                                        // Single ride: driverRatingToCustomer()
+                                        // does a hard stack wipe
+                                        // (Navigator.pushAndRemoveUntil) on
+                                        // success — close this sheet FIRST so
+                                        // that wipe doesn't rip the route out
+                                        // from under this callback while it's
+                                        // still mid-flight (the cause of a
+                                        // "Duplicate GlobalKeys detected" /
+                                        // disposed-widget crash). Shared ride
+                                        // doesn't navigate from inside that
+                                        // call, so it keeps its existing
+                                        // pop-after-call sequence below
+                                        // untouched.
+                                        if (!widget.isSharedRide &&
+                                            sheetNavigator.canPop()) {
+                                          sheetNavigator.pop();
+                                        }
 
                                         await driverStatusController
                                             .driverRatingToCustomer(

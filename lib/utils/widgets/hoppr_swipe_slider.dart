@@ -15,6 +15,9 @@ class HopprSwipeSlider extends StatelessWidget {
   final TextStyle? textStyle;
   final double height;
   final Color backgroundColor;
+  // Optional — when set, paints over backgroundColor for a premium gradient
+  // track. Purely additive, existing callers are unaffected.
+  final Gradient? backgroundGradient;
   final Color textColor;
   final Color handleColor;
   final Color handleIconColor;
@@ -30,6 +33,7 @@ class HopprSwipeSlider extends StatelessWidget {
     this.textStyle,
     this.height = 56,
     this.backgroundColor = const Color(0xFF1C1C1C),
+    this.backgroundGradient,
     this.textColor = Colors.white,
     this.handleColor = Colors.white,
     this.handleIconColor = Colors.black,
@@ -53,7 +57,10 @@ class HopprSwipeSlider extends StatelessWidget {
         // Keep at least a small travel distance, otherwise the slider has no room to move.
         final travel = minTravelDistance.clamp(56.0, w);
         final maxToggleWidth = math.max(0.0, maxW - travel);
-        final desiredToggleWidth = math.max(height - margin * 2, maxToggleWidth);
+        final desiredToggleWidth = math.max(
+          height - margin * 2,
+          maxToggleWidth,
+        );
         final toggleWidth =
             maxW <= 56.0 ? maxW : desiredToggleWidth.clamp(56.0, maxW);
 
@@ -70,7 +77,8 @@ class HopprSwipeSlider extends StatelessWidget {
           outerBackgroundBuilder: (context, state, child) {
             return DecoratedBox(
               decoration: BoxDecoration(
-                color: backgroundColor,
+                color: backgroundGradient == null ? backgroundColor : null,
+                gradient: backgroundGradient,
                 borderRadius: borderRadius,
               ),
               child: child,
@@ -102,10 +110,18 @@ class HopprSwipeSlider extends StatelessWidget {
                 );
                 break;
               case SliderMode.success:
-                icon = Icon(Icons.check_rounded, color: handleIconColor, size: 26);
+                icon = Icon(
+                  Icons.check_rounded,
+                  color: handleIconColor,
+                  size: 26,
+                );
                 break;
               case SliderMode.failure:
-                icon = Icon(Icons.close_rounded, color: handleIconColor, size: 26);
+                icon = Icon(
+                  Icons.close_rounded,
+                  color: handleIconColor,
+                  size: 26,
+                );
                 break;
               default:
                 icon = Icon(idleIcon, color: handleIconColor, size: 28);

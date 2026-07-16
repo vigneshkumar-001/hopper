@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -69,15 +69,20 @@ class RideMapController {
     }();
   }
 
-  final ValueNotifier<Set<Marker>> markers = ValueNotifier<Set<Marker>>(<Marker>{});
-  final ValueNotifier<Set<Polyline>> polylines =
-      ValueNotifier<Set<Polyline>>(<Polyline>{});
-  final ValueNotifier<Set<Marker>> overlayMarkers =
-      ValueNotifier<Set<Marker>>(<Marker>{});
+  final ValueNotifier<Set<Marker>> markers = ValueNotifier<Set<Marker>>(
+    <Marker>{},
+  );
+  final ValueNotifier<Set<Polyline>> polylines = ValueNotifier<Set<Polyline>>(
+    <Polyline>{},
+  );
+  final ValueNotifier<Set<Marker>> overlayMarkers = ValueNotifier<Set<Marker>>(
+    <Marker>{},
+  );
   final ValueNotifier<Set<Polyline>> overlayPolylines =
       ValueNotifier<Set<Polyline>>(<Polyline>{});
-  final ValueNotifier<Set<Circle>> overlayCircles =
-      ValueNotifier<Set<Circle>>(<Circle>{});
+  final ValueNotifier<Set<Circle>> overlayCircles = ValueNotifier<Set<Circle>>(
+    <Circle>{},
+  );
 
   // Vehicle animation state
   final VehicleAnimationService _vehicleAnim = VehicleAnimationService();
@@ -142,8 +147,9 @@ class RideMapController {
   double _lastSpeedMs = 0.0;
 
   // Single source of truth for focus button toggle state.
-  final ValueNotifier<MapFocusMode> focusMode =
-      ValueNotifier<MapFocusMode>(MapFocusMode.fullTrip);
+  final ValueNotifier<MapFocusMode> focusMode = ValueNotifier<MapFocusMode>(
+    MapFocusMode.fullTrip,
+  );
   bool _initialFullTripFitDone = false;
 
   /// Preferred navigation zoom based on latest speed (m/s).
@@ -233,9 +239,14 @@ class RideMapController {
     if (pose == null && fallbackPos == null) return;
     final target = pose?.position ?? fallbackPos!;
     final bearing = pose?.bearing ?? _lastLiveBearing;
-    final z = (zoom ?? (_isNavigationMode(_mode) ? MapUiConfig.navigationZoom : MapUiConfig.defaultZoom))
+    final z = (zoom ??
+            (_isNavigationMode(_mode)
+                ? MapUiConfig.navigationZoom
+                : MapUiConfig.defaultZoom))
         .clamp(11.5, 17.8);
-    final t = (tilt ?? (_isNavigationMode(_mode) ? MapUiConfig.cameraTilt : 0.0)).clamp(0.0, 60.0);
+    final t = (tilt ??
+            (_isNavigationMode(_mode) ? MapUiConfig.cameraTilt : 0.0))
+        .clamp(0.0, 60.0);
     try {
       await c.animateCamera(
         CameraUpdate.newCameraPosition(
@@ -477,11 +488,12 @@ class RideMapController {
     _drop = drop;
     final p = _pickup;
     if (p != null) {
-      _dbg(
-        '[PICKUP_MARKER] lat=${p.latitude} lng=${p.longitude}',
-      );
+      _dbg('[PICKUP_MARKER] lat=${p.latitude} lng=${p.longitude}');
     }
-    _rebuildStaticMarkers(showPickupPin: showPickupPin, showDropPin: showDropPin);
+    _rebuildStaticMarkers(
+      showPickupPin: showPickupPin,
+      showDropPin: showDropPin,
+    );
 
     // Pickup/drop changed: clear stale preview so the next full-trip tap reflects
     // the current booking.
@@ -522,7 +534,10 @@ class RideMapController {
     if (circles != null) overlayCircles.value = circles;
   }
 
-  void setRoutePoints(List<LatLng> points, {bool isFallbackStraightLine = false}) {
+  void setRoutePoints(
+    List<LatLng> points, {
+    bool isFallbackStraightLine = false,
+  }) {
     _routeFull = List<LatLng>.from(points);
     _remaining = List<LatLng>.from(points);
     _completed = <LatLng>[];
@@ -557,8 +572,7 @@ class RideMapController {
     _navDestination = destination;
     _navDriverFriendlyStop = driverFriendlyStop;
 
-    final resolvedMode =
-        mode ?? TravelModeResolver.getTravelMode(_vehicleType);
+    final resolvedMode = mode ?? TravelModeResolver.getTravelMode(_vehicleType);
     final res = await _routeService.fetchRoadRoute(
       origin: origin,
       destination: destination,
@@ -596,7 +610,9 @@ class RideMapController {
     double? accuracyMeters,
     DateTime? timestamp,
   }) {
-    _dbg('[VEHICLE_SOURCE] source=$source lat=${raw.latitude} lng=${raw.longitude}');
+    _dbg(
+      '[VEHICLE_SOURCE] source=$source lat=${raw.latitude} lng=${raw.longitude}',
+    );
     _dbg(
       'updateVehicleLocation(raw=$raw, acc=${accuracyMeters?.toStringAsFixed(1)}, '
       'speed=${speedMetersPerSecond?.toStringAsFixed(2)}, heading=${headingDeg?.toStringAsFixed(1)})',
@@ -630,7 +646,8 @@ class RideMapController {
     // ================= Timestamp filtering =================
     // Socket replays / delayed packets cause the marker to "rewind" and the
     // camera to face backwards. Filter aggressively but keep first paint.
-    if (pointTime.isBefore(deviceNow.subtract(MapUiConfig.maxLocationAge))) return;
+    if (pointTime.isBefore(deviceNow.subtract(MapUiConfig.maxLocationAge)))
+      return;
     // Allow slight future skew.
     if (pointTime.isAfter(deviceNow.add(MapUiConfig.maxFutureSkew))) {
       pointTime = deviceNow;
@@ -646,18 +663,21 @@ class RideMapController {
     final lastAccepted = _lastAcceptedGps;
     if (lastAccepted != null) {
       final moved = _distanceMeters(lastAccepted, raw);
-      final hasSpeed = speedMetersPerSecond != null && speedMetersPerSecond.isFinite;
+      final hasSpeed =
+          speedMetersPerSecond != null && speedMetersPerSecond.isFinite;
       final speed = hasSpeed ? speedMetersPerSecond : 0.0;
 
       // Ignore tiny movements (noise).
       // When we have an active route, we can safely accept smaller deltas for
       // smoother motion because we will snap to the polyline (map-matching).
       final allowSmallMove =
-          (_routeFull.length >= 2 && source == 'socket') || (hasSpeed && speed > 2.0);
+          (_routeFull.length >= 2 && source == 'socket') ||
+          (hasSpeed && speed > 2.0);
       if (moved < MapUiConfig.minMoveAcceptMeters && !allowSmallMove) return;
 
       // Ignore stationary drift (GPS wandering while stopped/slow).
-      if (speed < 1.0 && moved < MapUiConfig.stationaryDriftIgnoreMeters) return;
+      if (speed < 1.0 && moved < MapUiConfig.stationaryDriftIgnoreMeters)
+        return;
 
       // Reject physically implausible movement based on timestamps (prevents jumps).
       final lastAt = _lastAcceptedAt;
@@ -682,7 +702,8 @@ class RideMapController {
         vehicle: filteredPos,
         lookAheadPoints: 80,
         lookAheadMeters: _lookAheadMeters(speedMetersPerSecond),
-        previousNearestIndex: _lastTrimNearestIndex >= 0 ? _lastTrimNearestIndex : null,
+        previousNearestIndex:
+            _lastTrimNearestIndex >= 0 ? _lastTrimNearestIndex : null,
       );
 
       // Snap to the route only if we're reasonably close.
@@ -768,7 +789,8 @@ class RideMapController {
           _lastLookAheadPoint!,
         );
         if (motionBearing != null &&
-            BearingUtils.angleDeltaDeg(lookAheadBearing, motionBearing) > 120.0) {
+            BearingUtils.angleDeltaDeg(lookAheadBearing, motionBearing) >
+                120.0) {
           if (heading != null &&
               BearingUtils.angleDeltaDeg(heading, motionBearing) <= 70.0) {
             targetBearing = heading;
@@ -796,7 +818,11 @@ class RideMapController {
       _lastSnappedForBearing = targetPos;
     }
 
-    final smoothed = BearingUtils.smoothBearing(currentBearing, targetBearing, 0.35);
+    final smoothed = BearingUtils.smoothBearing(
+      currentBearing,
+      targetBearing,
+      0.35,
+    );
     if (isRealSource) {
       // Store final route-aligned bearing for dead-reckoning.
       _lastLiveBearing = smoothed;
@@ -808,13 +834,16 @@ class RideMapController {
     final deadReckonAllowed =
         source == 'dead_reckon' &&
         _lastLiveUpdateAt != null &&
-        deviceNow.difference(_lastLiveUpdateAt!) <= MapUiConfig.deadReckonMaxAge;
+        deviceNow.difference(_lastLiveUpdateAt!) <=
+            MapUiConfig.deadReckonMaxAge;
 
     if (!isRealSource && !deadReckonAllowed) {
       final p = _pickup;
       final d = _drop;
       if (p != null && _distanceMeters(targetPos, p) <= 2.5) {
-        _dbg('[BUG_BLOCKED] attempted to set vehicle marker to pickup location');
+        _dbg(
+          '[BUG_BLOCKED] attempted to set vehicle marker to pickup location',
+        );
         return;
       }
       if (d != null && _distanceMeters(targetPos, d) <= 2.5) {
@@ -902,12 +931,18 @@ class RideMapController {
   LatLng _moveMeters(LatLng from, double bearingDeg, double meters) {
     final rad = bearingDeg * math.pi / 180.0;
     final dLat = (meters * math.cos(rad)) / 111320.0;
-    final safeCos = math.cos(from.latitude * math.pi / 180.0).abs().clamp(0.2, 1.0);
+    final safeCos = math
+        .cos(from.latitude * math.pi / 180.0)
+        .abs()
+        .clamp(0.2, 1.0);
     final dLng = (meters * math.sin(rad)) / (111320.0 * safeCos);
     return LatLng(from.latitude + dLat, from.longitude + dLng);
   }
 
-  void _scheduleRouteRetryIfNeeded({required LatLng origin, required LatLng dest}) {
+  void _scheduleRouteRetryIfNeeded({
+    required LatLng origin,
+    required LatLng dest,
+  }) {
     if (_disposed) return;
     final now = DateTime.now();
     if (now.difference(_lastRouteRetryAt).inSeconds < 8) return;
@@ -952,7 +987,9 @@ class RideMapController {
       return;
     }
     if (_initInFlight) {
-      _dbg('initializeRideMapIfReady($source) -> earlyReturn: initInFlight=true');
+      _dbg(
+        'initializeRideMapIfReady($source) -> earlyReturn: initInFlight=true',
+      );
       return;
     }
 
@@ -1083,12 +1120,24 @@ class RideMapController {
   /// - driver -> fullTrip fit
   Future<void> toggleFocusMode() async {
     final old = focusMode.value;
-    final next = (old == MapFocusMode.driver) ? MapFocusMode.fullTrip : MapFocusMode.driver;
+    final next =
+        (old == MapFocusMode.driver)
+            ? MapFocusMode.fullTrip
+            : MapFocusMode.driver;
     _dbg('[FOCUS_BUTTON] tapped oldMode=${old.name} newMode=${next.name}');
     await applyFocusMode(next, userInitiated: true);
   }
 
-  Future<void> applyFocusMode(MapFocusMode mode, {required bool userInitiated}) async {
+  Future<void> applyFocusMode(
+    MapFocusMode mode, {
+    required bool userInitiated,
+    // Optional override for the driver-focus zoom level. Defaults to the
+    // existing 17.4 so every current caller (car/solo/shared rides) is
+    // unaffected — only a caller that explicitly passes a lower value (e.g.
+    // the parcel/bike drop-leg screen, which wants more surrounding context
+    // visible) changes behavior.
+    double? driverFocusZoom,
+  }) async {
     focusMode.value = mode;
     if (mode == MapFocusMode.driver) {
       // Button tap should override manual camera pause: enable follow again.
@@ -1096,7 +1145,7 @@ class RideMapController {
       final pose = _vehicleAnim.pose.value;
       _dbg('[FOCUS_DRIVER] target=${pose?.position}');
       await focusVehicle(
-        zoom: 17.4,
+        zoom: driverFocusZoom ?? 17.4,
         tilt: MapUiConfig.cameraTilt,
         bearingEnabled: cameraBearingEnabledNow,
       );
@@ -1206,7 +1255,8 @@ class RideMapController {
       if (p.polylineId.value != 'preview_pickup_to_drop') next.add(p);
     }
 
-    if (_mode == RideMapMode.pickupNavigation && _previewPickupToDrop.length >= 2) {
+    if (_mode == RideMapMode.pickupNavigation &&
+        _previewPickupToDrop.length >= 2) {
       next.add(
         Polyline(
           polylineId: const PolylineId('preview_pickup_to_drop'),
@@ -1223,6 +1273,7 @@ class RideMapController {
 
     overlayPolylines.value = next;
   }
+
   Future<void> fitCameraToRouteOnce({
     required List<LatLng> routePoints,
     required LatLng driverLocation,
@@ -1316,11 +1367,10 @@ class RideMapController {
         // Extra: apply bottom bias by zooming slightly in after bounds fit.
         // Then clamp zoom to prevent world/city zoom-out.
         final z = await c.getZoomLevel();
-        final clamped =
-            (z + MapUiConfig.boundsFitExtraZoomIn).clamp(
-              MapUiConfig.boundsFitMinZoom,
-              MapUiConfig.boundsFitMaxZoom,
-            );
+        final clamped = (z + MapUiConfig.boundsFitExtraZoomIn).clamp(
+          MapUiConfig.boundsFitMinZoom,
+          MapUiConfig.boundsFitMaxZoom,
+        );
         if ((clamped - z).abs() > 0.05) {
           await c.animateCamera(CameraUpdate.zoomTo(clamped));
         }
@@ -1415,7 +1465,9 @@ class RideMapController {
 
     final set = markers.value;
     const vehicleMarkerId = 'vehicle_marker';
-    final next = <Marker>{...set.where((m) => m.markerId.value != vehicleMarkerId)};
+    final next = <Marker>{
+      ...set.where((m) => m.markerId.value != vehicleMarkerId),
+    };
     next.add(
       Marker(
         markerId: const MarkerId(vehicleMarkerId),
@@ -1448,7 +1500,10 @@ class RideMapController {
     if (pose != null) _updateVehicleMarker(pose);
   }
 
-  void _rebuildStaticMarkers({bool showPickupPin = false, bool showDropPin = false}) {
+  void _rebuildStaticMarkers({
+    bool showPickupPin = false,
+    bool showDropPin = false,
+  }) {
     if (_disposed) return;
     final set = markers.value;
     final keepDriver =
@@ -1597,11 +1652,12 @@ class RideMapController {
   }) {
     double base = MapUiConfig.snapToRouteToleranceMeters;
 
-    final speed = (speedMetersPerSecond != null &&
-            speedMetersPerSecond.isFinite &&
-            speedMetersPerSecond >= 0)
-        ? speedMetersPerSecond
-        : 0.0;
+    final speed =
+        (speedMetersPerSecond != null &&
+                speedMetersPerSecond.isFinite &&
+                speedMetersPerSecond >= 0)
+            ? speedMetersPerSecond
+            : 0.0;
 
     // When crawling/turning in dense areas, be stricter to avoid parallel-road snaps.
     if (speed <= 2.0) {
@@ -1610,7 +1666,9 @@ class RideMapController {
       base = math.min(base, 24.0);
     }
 
-    if (accuracyMeters == null || !accuracyMeters.isFinite || accuracyMeters <= 0.0) {
+    if (accuracyMeters == null ||
+        !accuracyMeters.isFinite ||
+        accuracyMeters <= 0.0) {
       return base;
     }
 
@@ -1625,15 +1683,19 @@ class RideMapController {
   }
 
   static double _lookAheadMeters(double? speedMetersPerSecond) {
-    final speed = (speedMetersPerSecond != null && speedMetersPerSecond.isFinite)
-        ? speedMetersPerSecond
-        : 0.0;
-    final base =
-        MapUiConfig.lookAheadMinMeters + (speed * 8.0); // ~8m per m/s
-    return base.clamp(MapUiConfig.lookAheadMinMeters, MapUiConfig.lookAheadMaxMeters);
+    final speed =
+        (speedMetersPerSecond != null && speedMetersPerSecond.isFinite)
+            ? speedMetersPerSecond
+            : 0.0;
+    final base = MapUiConfig.lookAheadMinMeters + (speed * 8.0); // ~8m per m/s
+    return base.clamp(
+      MapUiConfig.lookAheadMinMeters,
+      MapUiConfig.lookAheadMaxMeters,
+    );
   }
 
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     _deadReckonTimer?.cancel();
     _polylineDebounce?.cancel();

@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
@@ -218,7 +218,8 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                             // booking card. While offline the Resume action is
                             // disabled so the driver cannot navigate into a ride
                             // screen from the home screen.
-                            final isOnlineNow = c.statusController.isOnline.value;
+                            final isOnlineNow =
+                                c.statusController.isOnline.value;
                             if (!visible || data == null) {
                               return const SizedBox.shrink();
                             }
@@ -386,18 +387,20 @@ class _DriverMainScreenState extends State<DriverMainScreen>
                                       children: [
                                         Expanded(
                                           child: ElevatedButton(
-                                            onPressed: isOnlineNow
-                                                ? () => c.resumeActiveBooking(
-                                                      userInitiated: true,
-                                                    )
-                                                : null,
+                                            onPressed:
+                                                isOnlineNow
+                                                    ? () =>
+                                                        c.resumeActiveBooking(
+                                                          userInitiated: true,
+                                                        )
+                                                    : null,
                                             style: ElevatedButton.styleFrom(
                                               backgroundColor:
                                                   AppColors.commonBlack,
                                               foregroundColor: Colors.white,
-                                              disabledBackgroundColor:
-                                                  AppColors.commonBlack
-                                                      .withOpacity(0.35),
+                                              disabledBackgroundColor: AppColors
+                                                  .commonBlack
+                                                  .withOpacity(0.35),
                                               disabledForegroundColor:
                                                   Colors.white70,
                                               padding:
@@ -1958,10 +1961,11 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                 }
                                 final endsLabel =
                                     isCar
-                                        ? ((weeklyData?.endsOn ?? '').trim()
-                                                    .isNotEmpty
-                                                ? 'Ends on ${weeklyData!.endsOn}'
-                                                : 'Ends on -')
+                                        ? ((weeklyData?.endsOn ?? '')
+                                                .trim()
+                                                .isNotEmpty
+                                            ? 'Ends on ${weeklyData!.endsOn}'
+                                            : 'Ends on -')
                                         : (endsOn == null
                                             ? 'Ends on -'
                                             : 'Ends on ${DateFormat('EEEE').format(endsOn)}');
@@ -1976,7 +1980,8 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                         .trim()
                                         .toUpperCase();
                                 final rewardCredited =
-                                    isCar && (weeklyData?.rewardCredited ?? false);
+                                    isCar &&
+                                    (weeklyData?.rewardCredited ?? false);
                                 final showCreditedState =
                                     rewardCredited || challengeStatus == 'PAID';
                                 final isAchievedState =
@@ -1999,40 +2004,44 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                         ? weeklyData!.rewardDisplayAmount
                                         : formatAmount(
                                           showCreditedState
-                                              ? (weeklyData?.rewardCreditedAmount ??
+                                              ? (weeklyData
+                                                      ?.rewardCreditedAmount ??
                                                   0.0)
                                               : (weeklyData?.reward ?? 0.0),
                                         );
                                 final subtext =
                                     isCar
-                                        ? ((weeklyData?.subtext ?? '').trim()
-                                                    .isNotEmpty
-                                                ? weeklyData!.subtext
-                                                : showCreditedState
-                                                ? '\u20A6$rewardAmountLabel has been added to your wallet.'
-                                                : isInactiveState
-                                                ? 'Your weekly challenge will appear here once it becomes active.'
-                                                : 'Keep going to unlock your weekly reward.')
+                                        ? ((weeklyData?.subtext ?? '')
+                                                .trim()
+                                                .isNotEmpty
+                                            ? weeklyData!.subtext
+                                            : showCreditedState
+                                            ? '\u20A6$rewardAmountLabel has been added to your wallet.'
+                                            : isInactiveState
+                                            ? 'Your weekly challenge will appear here once it becomes active.'
+                                            : 'Keep going to unlock your weekly reward.')
                                         : '$totalTrips trips done out of $goal';
                                 final badgeText =
                                     isCar
-                                        ? ((weeklyData?.badgeText ?? '').trim()
-                                                    .isNotEmpty
-                                                ? weeklyData!.badgeText
-                                                : showCreditedState
-                                                ? 'Reward Added'
-                                                : isAchievedState
-                                                ? 'Challenge Achieved'
-                                                : isInactiveState
-                                                ? 'Inactive'
-                                                : 'In Progress')
+                                        ? ((weeklyData?.badgeText ?? '')
+                                                .trim()
+                                                .isNotEmpty
+                                            ? weeklyData!.badgeText
+                                            : showCreditedState
+                                            ? 'Reward Added'
+                                            : isAchievedState
+                                            ? 'Challenge Achieved'
+                                            : isInactiveState
+                                            ? 'Inactive'
+                                            : 'In Progress')
                                         : 'In Progress';
                                 final progressLine =
                                     isCar
-                                        ? ((weeklyData?.progressText ?? '').trim()
-                                                    .isNotEmpty
-                                                ? weeklyData!.progressText
-                                                : '$totalTrips trips done out of $goal')
+                                        ? ((weeklyData?.progressText ?? '')
+                                                .trim()
+                                                .isNotEmpty
+                                            ? weeklyData!.progressText
+                                            : '$totalTrips trips done out of $goal')
                                         : '$totalTrips trips done out of $goal';
 
                                 final int remaining =
@@ -2047,14 +2056,16 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                   (goal * 0.75).ceil(),
                                   goal,
                                 ];
-                                final Color cAccent = isInactiveState
-                                    ? const Color(0xFF94A3B8)
-                                    : done
+                                final Color cAccent =
+                                    isInactiveState
+                                        ? const Color(0xFF94A3B8)
+                                        : done
                                         ? const Color(0xFF16A34A)
                                         : const Color(0xFFE0561E);
-                                final Color cSoft = isInactiveState
-                                    ? const Color(0xFFEEF1F5)
-                                    : done
+                                final Color cSoft =
+                                    isInactiveState
+                                        ? const Color(0xFFEEF1F5)
+                                        : done
                                         ? const Color(0xFFE7F6EC)
                                         : const Color(0xFFFBEAE1);
                                 const Color cInk = Color(0xFF1A1A1A);
@@ -2069,9 +2080,10 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                       color: reached ? cAccent : Colors.white,
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: reached
-                                            ? cAccent
-                                            : cAccent.withOpacity(0.40),
+                                        color:
+                                            reached
+                                                ? cAccent
+                                                : cAccent.withOpacity(0.40),
                                         width: 2,
                                       ),
                                     ),
@@ -2104,7 +2116,8 @@ class _DriverBottomSheetState extends State<DriverBottomSheet>
                                     ],
                                   ),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -2635,15 +2648,21 @@ class _CarBookingCardUI extends StatelessWidget {
                                             driverLocation: pickup,
                                           );
                                     } else {
-                                      await statusController.bookingAccept(
-                                        pickupLocationAddress: pickupAddress,
-                                        dropLocationAddress: dropAddress,
-                                        context,
-                                        bookingId: bookingId,
-                                        status: 'ACCEPT',
-                                        pickupLocation: pickup,
-                                        driverLocation: pickup,
-                                      );
+                                      final acceptResult =
+                                          await statusController.bookingAccept(
+                                            pickupLocationAddress:
+                                                pickupAddress,
+                                            dropLocationAddress: dropAddress,
+                                            context,
+                                            bookingId: bookingId,
+                                            status: 'ACCEPT',
+                                            pickupLocation: pickup,
+                                            driverLocation: pickup,
+                                          );
+                                      if (acceptResult == null ||
+                                          acceptResult.isEmpty) {
+                                        return;
+                                      }
                                     }
 
                                     bookingController.markHandled(
@@ -4639,4 +4658,3 @@ class _TodayActivityParcel extends StatelessWidget {
 // }
 //
 //
-

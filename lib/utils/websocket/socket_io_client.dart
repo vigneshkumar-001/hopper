@@ -8,6 +8,40 @@ class SocketService {
   factory SocketService() => _instance;
   SocketService._internal();
 
+  dynamic _sanitizeSocketLogValue(dynamic value, {String? key}) {
+    const sensitiveKeys = {
+      'authorization',
+      'password',
+      'token',
+      'accesstoken',
+      'refreshtoken',
+      'fcmtoken',
+      'deviceid',
+      'secret',
+    };
+    final normalizedKey =
+        key?.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (normalizedKey != null &&
+        (sensitiveKeys.contains(normalizedKey) ||
+            normalizedKey.endsWith('token') ||
+            normalizedKey.endsWith('password') ||
+            normalizedKey.endsWith('secret'))) {
+      return '[REDACTED]';
+    }
+    if (value is Map) {
+      return value.map(
+        (entryKey, entryValue) => MapEntry(
+          entryKey,
+          _sanitizeSocketLogValue(entryValue, key: entryKey.toString()),
+        ),
+      );
+    }
+    if (value is Iterable) {
+      return value.map((entry) => _sanitizeSocketLogValue(entry)).toList();
+    }
+    return value;
+  }
+
   IO.Socket? _socket;
   IO.Socket get socket => _socket!;
 
@@ -19,7 +53,7 @@ class SocketService {
 
   /// True after the backend revoked this session (a newer socket for the same
   /// userId took over). While true we suppress auto-reconnect. The foreground
-  /// owner reclaims via an intentional connect() — see `_sessionRevoked`.
+  /// owner reclaims via an intentional connect() ? see `_sessionRevoked`.
   bool get sessionRevoked => _sessionRevoked;
 
   String? _userId;
@@ -49,7 +83,7 @@ class SocketService {
   // were emitted while the socket was disconnected during an active ride. Flushed
   // (latest-first, capped) AFTER rooms are rejoined on reconnect, so a few seconds
   // of drop no longer silently loses the driver's trail / freezes the customer
-  // marker. In-memory only — never persisted. Heartbeat is NOT buffered (it is a
+  // marker. In-memory only ? never persisted. Heartbeat is NOT buffered (it is a
   // keepalive; only the latest matters).
   static const int _MAX_LOCATION_BUFFER = 40;
   static const int _MAX_LOCATION_FLUSH = 10;
@@ -62,22 +96,22 @@ class SocketService {
   // same driver on another device), the server emits `session-revoked` to the
   // older socket and disconnects it (reason "server namespace disconnect").
   // Without this guard the revoked socket auto-reconnected and re-registered,
-  // which then revoked the OTHER socket — an endless revoke-war that surfaced as
+  // which then revoked the OTHER socket ? an endless revoke-war that surfaced as
   // the driver socket "randomly disconnecting" until the app was killed and
   // reopened. When revoked we STOP auto-reconnecting; only an intentional
-  // (re)connect — app resume, go-online, screen init, URL switch — reclaims the
+  // (re)connect ? app resume, go-online, screen init, URL switch ? reclaims the
   // session and clears this flag.
   bool _sessionRevoked = false;
 
   // Explicit handoff suspension. Set by the foreground controller the moment it
   // begins handing the live session to the background-tracking isolate (driver
-  // taps "Navigate" / app pauses). Unlike `_sessionRevoked` — which is only set
-  // when the backend's `session-revoked` EVENT is delivered — this is set
+  // taps "Navigate" / app pauses). Unlike `_sessionRevoked` ? which is only set
+  // when the backend's `session-revoked` EVENT is delivered ? this is set
   // SYNCHRONOUSLY before the background socket can register, closing the race
   // where the foreground processes its "io server disconnect" (from the backend
   // revoking it for the new background session) BEFORE the buffered
   // `session-revoked` event arrives, and therefore auto-reconnects + re-registers
-  // — which then revokes the background socket (revoke-war) and freezes customer
+  // ? which then revokes the background socket (revoke-war) and freezes customer
   // tracking while Google Maps is open. Cleared by an intentional reclaim
   // (connect()/initSocket()/switchUrl()) on app resume.
   bool _autoReconnectSuspended = false;
@@ -117,7 +151,7 @@ class SocketService {
     _joinedRooms.clear();
     _lastHighFreqEmitAtByKey.clear();
     _lastHighFreqEmitSigByKey.clear();
-    _locationBuffer.clear(); // C8: ride ended — drop any buffered trail
+    _locationBuffer.clear(); // C8: ride ended ? drop any buffered trail
   }
 
   void setSingleActiveBookingRoom(String bookingId) {
@@ -148,13 +182,13 @@ class SocketService {
     final url = _socketUrl;
     if (!_initialized || url == null || url.trim().isEmpty) return;
 
-    CommonLogger.log.w("♻️ [SOCKET] Recreate socket url=$url reason=$reason");
+    CommonLogger.log.w("?? [SOCKET] Recreate socket url=$url reason=$reason");
 
     try {
       // Remove ALL listeners (not just onAny) BEFORE disconnecting/disposing.
       // `offAny()` leaves the named `onDisconnect` handler bound, so the dying
-      // socket's "forced close" would re-enter `_safeManualReconnect` → recreate
-      // → a fresh socket → which dies → a self-sustaining reconnect storm (the
+      // socket's "forced close" would re-enter `_safeManualReconnect` ? recreate
+      // ? a fresh socket ? which dies ? a self-sustaining reconnect storm (the
       // ~2s loop seen on return from Google Maps). Clearing listeners first makes
       // teardown silent so only an intentional reclaim brings the socket back.
       _socket?.clearListeners();
@@ -225,7 +259,7 @@ class SocketService {
   }
 
   // ---------------------------------------------------------
-  // ✅ INIT socket (create once per URL)
+  // ? INIT socket (create once per URL)
   // ---------------------------------------------------------
   void initSocket(String url) {
     // Any explicit init is an intentional session (re)claim.
@@ -264,7 +298,7 @@ class SocketService {
   }
 
   // ---------------------------------------------------------
-  // ✅ SWITCH URL (Shared <-> Single)
+  // ? SWITCH URL (Shared <-> Single)
   // ---------------------------------------------------------
   void switchUrl(String newUrl) {
     // Switching URL is an intentional session (re)claim on the new endpoint.
@@ -274,14 +308,14 @@ class SocketService {
       return;
     }
 
-    CommonLogger.log.i("🔁 Switching socket URL: $_socketUrl -> $newUrl");
+    CommonLogger.log.i("?? Switching socket URL: $_socketUrl -> $newUrl");
 
     // dispose old socket but keep state (ids, rooms, callbacks)
     try {
       // Clear ALL listeners first (see _recreateSocket): `offAny()` alone leaves
       // the named onDisconnect bound, so the old socket's teardown "forced close"
       // could trigger a reconnect on the controller and fight the new URL's
-      // socket — a revoke/reconnect war. Silent teardown avoids that.
+      // socket ? a revoke/reconnect war. Silent teardown avoids that.
       _socket?.clearListeners();
       _socket?.disconnect();
       _socket?.dispose();
@@ -307,20 +341,20 @@ class SocketService {
   }
 
   // ---------------------------------------------------------
-  // ✅ Bind core events
+  // ? Bind core events
   // ---------------------------------------------------------
   void _bindCoreEvents() {
     final s = _socket;
     if (s == null) return;
 
     s.onConnect((_) {
-      CommonLogger.log.i("✅ Connected: $_socketUrl | id: ${s.id}");
+      CommonLogger.log.i("? Connected: $_socketUrl | id: ${s.id}");
 
       // after connect -> restore everything
       _restoreRegistration();
       _restoreJoinedRooms();
       _restoreEventListeners();
-      // C8: rooms are rejoined above — now flush any locations buffered while down.
+      // C8: rooms are rejoined above ? now flush any locations buffered while down.
       _flushLocationBuffer();
       // H8: single stored external connect callback (never stacked).
       _externalConnectCb?.call();
@@ -335,7 +369,7 @@ class SocketService {
       // and should not look like a production failure.
       if (rl.contains('io client disconnect')) {
         CommonLogger.log.i(
-          "ℹ️ Disconnected (client): $_socketUrl | reason: $reason",
+          "?? Disconnected (client): $_socketUrl | reason: $reason",
         );
         return;
       }
@@ -346,12 +380,12 @@ class SocketService {
       if (rl.contains('server namespace disconnect')) {
         _sessionRevoked = true;
         CommonLogger.log.w(
-          "🚫 Session revoked (namespace disconnect): $_socketUrl — staying down until an intentional reconnect",
+          "?? Session revoked (namespace disconnect): $_socketUrl ? staying down until an intentional reconnect",
         );
         return;
       }
 
-      CommonLogger.log.e("❌ Disconnected: $_socketUrl | reason: $reason");
+      CommonLogger.log.e("? Disconnected: $_socketUrl | reason: $reason");
 
       // If server explicitly disconnected us, socket.io may not auto-reconnect.
       // Attempt a safe manual reconnect (debounced).
@@ -374,7 +408,7 @@ class SocketService {
     });
 
     s.onReconnect((_) {
-      CommonLogger.log.i("🔄 Reconnected: $_socketUrl");
+      CommonLogger.log.i("?? Reconnected: $_socketUrl");
 
       // safety restore (socket.io should keep listeners, but we do safe)
       _restoreRegistration();
@@ -387,23 +421,23 @@ class SocketService {
     });
 
     s.onConnectError((err) {
-      CommonLogger.log.e("⚠️ Connect error: $err | $_socketUrl");
+      CommonLogger.log.e("?? Connect error: $err | $_socketUrl");
       _safeManualReconnect();
     });
 
     s.onError((err) {
-      CommonLogger.log.e("⚠️ Socket error: $err");
+      CommonLogger.log.e("?? Socket error: $err");
       _safeManualReconnect();
     });
 
     s.onReconnectAttempt((attempt) {
-      CommonLogger.log.i("🔁 Reconnect attempt: $attempt | url=$_socketUrl");
+      CommonLogger.log.i("?? Reconnect attempt: $attempt | url=$_socketUrl");
     });
     s.onReconnectError((err) {
-      CommonLogger.log.e("⚠️ Reconnect error: $err | url=$_socketUrl");
+      CommonLogger.log.e("?? Reconnect error: $err | url=$_socketUrl");
     });
     s.onReconnectFailed((_) {
-      CommonLogger.log.e("❌ Reconnect failed | url=$_socketUrl");
+      CommonLogger.log.e("? Reconnect failed | url=$_socketUrl");
     });
 
     // Explicit single-session signal from the backend (sent to the OLDER socket
@@ -412,20 +446,20 @@ class SocketService {
     s.on('session-revoked', (_) {
       _sessionRevoked = true;
       CommonLogger.log.w(
-        "🚫 [SOCKET] session-revoked received url=$_socketUrl — another session "
+        "?? [SOCKET] session-revoked received url=$_socketUrl ? another session "
         "took over; suppressing auto-reconnect until an intentional reclaim",
       );
     });
 
     if (kDebugMode) {
       s.onAny((event, data) {
-        CommonLogger.log.i("Url: $_socketUrl\n📦 [onAny] $event → $data");
+        CommonLogger.log.i('Url: ' + (_socketUrl ?? '') + '\n[onAny] ' + event + ' -> ' + data.runtimeType.toString());
       });
     }
   }
 
   // ---------------------------------------------------------
-  // ✅ Manual connect
+  // ? Manual connect
   // ---------------------------------------------------------
   void connect() {
     // Intentional (re)claim of the session: clear any prior revoke / handoff
@@ -441,7 +475,7 @@ class SocketService {
   /// Suspend ALL auto-reconnect for this (foreground) socket while the live
   /// session is handed off to the background-tracking isolate. Call this BEFORE
   /// starting the background service so a backend revoke of this socket can never
-  /// race the `session-revoked` event into an auto-reconnect → revoke-war that
+  /// race the `session-revoked` event into an auto-reconnect ? revoke-war that
   /// kills the background socket and freezes customer tracking. Reversed by the
   /// intentional reclaim in connect() on app resume.
   void suspendAutoReconnect() {
@@ -461,7 +495,7 @@ class SocketService {
     // down until an intentional reclaim (connect()/initSocket()/switchUrl()).
     if (_sessionRevoked || _autoReconnectSuspended) {
       CommonLogger.log.w(
-        "🚫 [SOCKET] Reconnect suppressed (revoked=$_sessionRevoked handoff=$_autoReconnectSuspended) url=$_socketUrl",
+        "?? [SOCKET] Reconnect suppressed (revoked=$_sessionRevoked handoff=$_autoReconnectSuspended) url=$_socketUrl",
       );
       return;
     }
@@ -486,23 +520,23 @@ class SocketService {
       }
       if (rs == 'opening') {
         CommonLogger.log.w(
-          "⏳ [SOCKET] Reconnect skipped (already opening) url=$_socketUrl connected=$connected readyState=$readyState",
+          "? [SOCKET] Reconnect skipped (already opening) url=$_socketUrl connected=$connected readyState=$readyState",
         );
         return;
       }
     } catch (_) {}
 
     CommonLogger.log.w(
-      "🔌 [SOCKET] Reconnect nudge url=$_socketUrl connected=$connected readyState=${readyState ?? 'unknown'}",
+      "?? [SOCKET] Reconnect nudge url=$_socketUrl connected=$connected readyState=${readyState ?? 'unknown'}",
     );
     connect();
   }
 
   // ---------------------------------------------------------
-  // ✅ BACKWARD COMPATIBILITY (so your old code won't error)
+  // ? BACKWARD COMPATIBILITY (so your old code won't error)
   // ---------------------------------------------------------
   // H8: external connect/reconnect callbacks are STORED (single slot each) and
-  // fanned out from the internal handlers in _bindCoreEvents — never re-registered
+  // fanned out from the internal handlers in _bindCoreEvents ? never re-registered
   // on the raw socket. This stops connect/reconnect handlers from STACKING on
   // controller recreate / reconnect / app resume (the raw `_socket.onConnect`
   // added a new listener on every call). `on()` already dedupes per event.
@@ -513,7 +547,7 @@ class SocketService {
   void onReconnect(Function() callback) => _externalReconnectCb = callback;
 
   // ---------------------------------------------------------
-  // ✅ Register customer
+  // ? Register customer
   // ---------------------------------------------------------
   /// Set the stable per-install device id (FCM token) included on every
   /// `register` so the backend can dedupe this device's own foreground/background
@@ -538,17 +572,17 @@ class SocketService {
     if (!connected) {
       _ensureConnecting();
       CommonLogger.log.w(
-        "⏳ Customer registration queued (socket disconnected) → $payload via $_socketUrl",
+        "? Customer registration queued (socket disconnected) ? $payload via $_socketUrl",
       );
       return;
     }
 
     emit('register', payload);
-    CommonLogger.log.i("🙋 Customer registered → $payload via $_socketUrl");
+    CommonLogger.log.i("?? Customer registered ? $payload via $_socketUrl");
   }
 
   // ---------------------------------------------------------
-  // ✅ Register driver
+  // ? Register driver
   // ---------------------------------------------------------
   void registerDriver(
     String driverId, {
@@ -571,7 +605,7 @@ class SocketService {
     if (!connected) {
       _ensureConnecting();
       CommonLogger.log.w(
-        "⏳ Driver registration queued (socket disconnected) → $payload via $_socketUrl",
+        "? Driver registration queued (socket disconnected) ? $payload via $_socketUrl",
       );
       return;
     }
@@ -580,7 +614,7 @@ class SocketService {
     // bursts (onConnect + onReconnect firing together, or rapid reconnects under
     // heavy location emits) otherwise spam identical register events. A new socket
     // id, a changed userId/deviceId/bookingId, or an explicit ACK call always goes
-    // through — and room rejoin is separate (_restoreJoinedRooms), so this never
+    // through ? and room rejoin is separate (_restoreJoinedRooms), so this never
     // affects rooms.
     final sig =
         '${_socket!.id}|$driverId|driver|${_deviceId ?? ''}|${_bookingId ?? ''}';
@@ -596,15 +630,15 @@ class SocketService {
 
     if (ack != null) {
       _socket!.emitWithAck('register', payload, ack: ack);
-      CommonLogger.log.i("🙋 Driver registered with ACK → $payload");
+      CommonLogger.log.i("?? Driver registered with ACK ? $payload");
     } else {
       emit('register', payload);
-      CommonLogger.log.i("🙋 Driver registered → $payload");
+      CommonLogger.log.i("?? Driver registered ? $payload");
     }
   }
 
   // ---------------------------------------------------------
-  // ✅ Join booking room
+  // ? Join booking room
   // ---------------------------------------------------------
   void joinBooking(String bookingId, {String? userId}) {
     _updateBookingId(bookingId);
@@ -625,23 +659,23 @@ class SocketService {
     if (!connected) {
       _ensureConnecting();
       CommonLogger.log.w(
-        "⏳ Join booking queued (socket disconnected) → $payload via $_socketUrl",
+        "? Join booking queued (socket disconnected) ? $payload via $_socketUrl",
       );
       return;
     }
 
     emit('join-booking', payload);
-    CommonLogger.log.i("📡 Joined booking → $payload");
+    CommonLogger.log.i("?? Joined booking ? $payload");
   }
 
   // ---------------------------------------------------------
-  // ✅ Listen event (normal)
+  // ? Listen event (normal)
   // ---------------------------------------------------------
   void on(String event, Function(dynamic data) callback) {
     final prev = _callbacks[event];
     _callbacks[event] = callback;
 
-    // IMPORTANT: don't call `off(event)` without a handler — it removes *all*
+    // IMPORTANT: don't call `off(event)` without a handler ? it removes *all*
     // listeners, including core listeners added via `onConnect/onReconnect`.
     if (prev != null) {
       _socket?.off(event, prev);
@@ -650,7 +684,7 @@ class SocketService {
   }
 
   // ---------------------------------------------------------
-  // ✅ Listen event WITH ACK support (client can reply to server)
+  // ? Listen event WITH ACK support (client can reply to server)
   //
   // Use:
   // socketService.onAck("booking-request", (data, ack) {
@@ -689,7 +723,7 @@ class SocketService {
   }
 
   // ---------------------------------------------------------
-  // ✅ Emit
+  // ? Emit
   // ---------------------------------------------------------
   void emit(String event, dynamic data) {
     // If we emit while disconnected, socket.io may queue, but ensure we are
@@ -714,7 +748,7 @@ class SocketService {
       // a manual action/screen re-init.
       _safeManualReconnect();
       // C8: buffer location (NOT heartbeat) so a short disconnect during an active
-      // ride doesn't lose the trail — it is flushed after reconnect + room restore.
+      // ride doesn't lose the trail ? it is flushed after reconnect + room restore.
       if (event == 'updateLocation') {
         _bufferLocation(Map<String, dynamic>.from(data));
       }
@@ -768,7 +802,8 @@ class SocketService {
         _maybeLogEmit(event: event, payload: base, roomsCount: rooms.length);
         if (kDebugMode) {
           CommonLogger.log.i(
-            '[SOCKET_EMIT_ALL] url=$_socketUrl event=$event rooms=${rooms.length} payload=$base',
+            '[SOCKET_EMIT_ALL] url=$_socketUrl event=$event rooms=${rooms.length} '
+            'payload=${_sanitizeSocketLogValue(base)}',
           );
         }
         return;
@@ -789,12 +824,16 @@ class SocketService {
       _maybeLogEmit(event: event, payload: Map<String, dynamic>.from(data));
       if (kDebugMode) {
         CommonLogger.log.i(
-          '[SOCKET_EMIT_ALL] url=$_socketUrl event=$event payload=${Map<String, dynamic>.from(data)}',
+          '[SOCKET_EMIT_ALL] url=$_socketUrl event=$event '
+          'payload=${_sanitizeSocketLogValue(Map<String, dynamic>.from(data))}',
         );
       }
     } else {
       if (kDebugMode) {
-        CommonLogger.log.i('[SOCKET_EMIT_ALL] url=$_socketUrl event=$event data=$data');
+        CommonLogger.log.i(
+          '[SOCKET_EMIT_ALL] url=$_socketUrl event=$event '
+          'data=${_sanitizeSocketLogValue(data)}',
+        );
       }
     }
   }
@@ -829,7 +868,7 @@ class SocketService {
         emit('updateLocation', payload);
       }
       CommonLogger.log.i(
-        '🔁 [SOCKET] Flushed ${toSend.length} buffered location(s) after reconnect url=$_socketUrl',
+        '?? [SOCKET] Flushed ${toSend.length} buffered location(s) after reconnect url=$_socketUrl',
       );
     } finally {
       _flushingBuffer = false;
@@ -899,7 +938,7 @@ class SocketService {
     final ts = payload['timestamp'];
 
     CommonLogger.log.w(
-      '🛑 [SOCKET_DROP] $event url=$_socketUrl connected=$connected bookingId=$bookingId lat=$lat lng=$lng ts=$ts reason=$reason',
+      '?? [SOCKET_DROP] $event url=$_socketUrl connected=$connected bookingId=$bookingId lat=$lat lng=$lng ts=$ts reason=$reason',
     );
   }
 
@@ -936,12 +975,12 @@ class SocketService {
     final rooms = roomsCount == null ? '' : ' rooms=$roomsCount';
 
     CommonLogger.log.i(
-      '📍 [SOCKET_EMIT] $event url=$_socketUrl id=$id connected=$connected$rooms bookingId=$bookingId lat=$lat lng=$lng ts=$ts',
+      '?? [SOCKET_EMIT] $event url=$_socketUrl id=$id connected=$connected$rooms bookingId=$bookingId lat=$lat lng=$lng ts=$ts',
     );
   }
 
   // ---------------------------------------------------------
-  // ✅ Emit with ack (server replies back)
+  // ? Emit with ack (server replies back)
   // ---------------------------------------------------------
   void emitWithAck(String event, dynamic data, Function(dynamic)? ack) {
     if (_initialized && _socket != null && _socket!.disconnected) {
@@ -951,7 +990,7 @@ class SocketService {
   }
 
   // ---------------------------------------------------------
-  // ✅ Off
+  // ? Off
   // ---------------------------------------------------------
   void off(String event) {
     final prev = _callbacks.remove(event);
@@ -965,7 +1004,7 @@ class SocketService {
   }
 
   // ---------------------------------------------------------
-  // ✅ Dispose (full reset)
+  // ? Dispose (full reset)
   // ---------------------------------------------------------
   void dispose() {
     try {
@@ -1019,14 +1058,14 @@ class SocketService {
     final who = (_userId ?? _driverId)?.toString().trim();
     final logEach = kDebugMode && rooms.length <= 6;
     if (!logEach) {
-      CommonLogger.log.i("🔄 Restoring ${rooms.length} booking room(s)");
+      CommonLogger.log.i("?? Restoring ${rooms.length} booking room(s)");
     }
 
     for (final room in rooms) {
       final payload = <String, dynamic>{"bookingId": room, "userId": who};
       emit('join-booking', payload);
       if (logEach) {
-        CommonLogger.log.i("🔄 Rejoined booking → $payload via $_socketUrl");
+        CommonLogger.log.i("?? Rejoined booking ? $payload via $_socketUrl");
       }
     }
   }
@@ -1043,7 +1082,7 @@ class SocketService {
       s.on(event, cb);
     });
 
-    CommonLogger.log.i("🔄 Event listeners rebound");
+    CommonLogger.log.i("?? Event listeners rebound");
   }
 }
 
@@ -1096,7 +1135,7 @@ class SocketService {
 //     _socket.connect();
 //
 //     _socket.onConnect((_) {
-//       CommonLogger.log.i("✅ Connected: $_socketUrl \n socket id: ${_socket.id}");
+//       CommonLogger.log.i("? Connected: $_socketUrl \n socket id: ${_socket.id}");
 //
 //       _restoreRegistration();
 //       _restoreJoinedRooms();
@@ -1104,15 +1143,15 @@ class SocketService {
 //     });
 //
 //     _socket.onDisconnect(
-//       (_) => CommonLogger.log.e("❌ Disconnected to $_socketUrl"),
+//       (_) => CommonLogger.log.e("? Disconnected to $_socketUrl"),
 //     );
 //     _socket.onConnectError(
-//       (err) => CommonLogger.log.e("⚠️ Connect error: $err - $_socketUrl"),
+//       (err) => CommonLogger.log.e("?? Connect error: $err - $_socketUrl"),
 //     );
-//     _socket.onError((err) => CommonLogger.log.e("⚠️ General error: $err"));
+//     _socket.onError((err) => CommonLogger.log.e("?? General error: $err"));
 //
 //     _socket.onAny(
-//       (event, data) => CommonLogger.log.i("Url: $_socketUrl\n📦 [onAny] $event → $data"),
+//       (event, data) => CommonLogger.log.i("Url: $_socketUrl\n?? [onAny] $event ? $data"),
 //     );
 //   }
 //
@@ -1136,7 +1175,7 @@ class SocketService {
 //     };
 //
 //     emit('register', payload);
-//     CommonLogger.log.i("🙋 Driver registered → $payload via $_socketUrl");
+//     CommonLogger.log.i("?? Driver registered ? $payload via $_socketUrl");
 //   }
 //
 //   // ---------------------------------------------------------
@@ -1158,10 +1197,10 @@ class SocketService {
 //
 //     if (ack != null) {
 //       _socket.emitWithAck('register', payload, ack: ack);
-//       CommonLogger.log.i("🙋 Driver registered with ACK → $payload");
+//       CommonLogger.log.i("?? Driver registered with ACK ? $payload");
 //     } else {
 //       emit('register', payload);
-//       CommonLogger.log.i("🙋 Driver registered → $payload");
+//       CommonLogger.log.i("?? Driver registered ? $payload");
 //     }
 //   }
 //
@@ -1176,7 +1215,7 @@ class SocketService {
 //   //   };
 //   //
 //   //   emit('register', payload);
-//   //   CommonLogger.log.i("🙋 Driver register → $payload via $_socketUrl and socket id: ${_socket.id}");
+//   //   CommonLogger.log.i("?? Driver register ? $payload via $_socketUrl and socket id: ${_socket.id}");
 //   //
 //   // }
 //
@@ -1190,7 +1229,7 @@ class SocketService {
 //
 //     if (!_joinedRooms.contains(bookingId)) _joinedRooms.add(bookingId);
 //     emit('join-booking', payload);
-//     CommonLogger.log.i("📡 Joined booking → $payload");
+//     CommonLogger.log.i("?? Joined booking ? $payload");
 //   }
 //
 //   // ---------------------------------------------------------
@@ -1270,7 +1309,7 @@ class SocketService {
 //         "userId": _userId ?? _driverId,
 //       };
 //       emit('join-booking', payload);
-//       CommonLogger.log.i("🔄 Rejoined booking → $payload via $_socketUrl");
+//       CommonLogger.log.i("?? Rejoined booking ? $payload via $_socketUrl");
 //     }
 //   }
 //
@@ -1279,7 +1318,7 @@ class SocketService {
 //       _socket.off(event);
 //       _socket.on(event, cb);
 //     });
-//     CommonLogger.log.i("🔄 Event listeners rebound");
+//     CommonLogger.log.i("?? Event listeners rebound");
 //   }
 // }
 //

@@ -10,6 +10,16 @@ import 'package:get/get.dart';
 /// "Duplicate GlobalKeys detected in widget tree".
 class SnackSafeNavigatorObserver extends NavigatorObserver {
   @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    CustomSnackBar.dismiss();
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    CustomSnackBar.dismiss();
+  }
+
+  @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
     CustomSnackBar.dismiss();
   }
@@ -23,6 +33,7 @@ class SnackSafeNavigatorObserver extends NavigatorObserver {
 class CustomSnackBar {
   static OverlayEntry? _currentEntry;
   static Timer? _dismissTimer;
+  static int _generation = 0;
 
   static void _showTopSnack({
     required String title,
@@ -30,17 +41,16 @@ class CustomSnackBar {
     required Color backgroundColor,
     required IconData icon,
   }) {
-    final overlay =
-        Get.key.currentState?.overlay ??
-        ((Get.overlayContext ?? Get.context) != null
-            ? Overlay.maybeOf(
-                Get.overlayContext ?? Get.context!,
-                rootOverlay: true,
-              )
-            : null);
-    if (overlay == null) {
+    _dismissCurrent();
+    final requestGeneration = _generation;
+
+    void insertSnack({int attempt = 0}) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final retryOverlay =
+        if (requestGeneration != _generation) {
+          return;
+        }
+
+        final overlay =
             Get.key.currentState?.overlay ??
             ((Get.overlayContext ?? Get.context) != null
                 ? Overlay.maybeOf(
@@ -48,11 +58,17 @@ class CustomSnackBar {
                     rootOverlay: true,
                   )
                 : null);
-        if (retryOverlay == null) {
+        if (overlay == null) {
+          if (attempt < 1) {
+            insertSnack(attempt: attempt + 1);
+          }
           return;
         }
 
-        _dismissCurrent();
+        if (requestGeneration != _generation) {
+          return;
+        }
+
         _currentEntry = OverlayEntry(
           builder: (context) {
             return _TopSnackOverlay(
@@ -64,28 +80,13 @@ class CustomSnackBar {
             );
           },
         );
-        retryOverlay.insert(_currentEntry!);
+
+        overlay.insert(_currentEntry!);
         _dismissTimer = Timer(const Duration(seconds: 3), _dismissCurrent);
       });
-      return;
     }
 
-    _dismissCurrent();
-
-    _currentEntry = OverlayEntry(
-      builder: (context) {
-        return _TopSnackOverlay(
-          title: title,
-          message: message,
-          backgroundColor: backgroundColor,
-          icon: icon,
-          onDismiss: _dismissCurrent,
-        );
-      },
-    );
-
-    overlay.insert(_currentEntry!);
-    _dismissTimer = Timer(const Duration(seconds: 3), _dismissCurrent);
+    insertSnack();
   }
 
   /// Public escape hatch: call BEFORE any route-stack replacement
@@ -95,13 +96,14 @@ class CustomSnackBar {
   static void dismiss() => _dismissCurrent();
 
   static void _dismissCurrent() {
+    _generation++;
     _dismissTimer?.cancel();
     _dismissTimer = null;
     try {
       _currentEntry?.remove();
     } catch (_) {
       // The entry's overlay was already torn down (route-stack replacement
-      // mid-display) — dropping the reference is all that's left to do.
+      // mid-display) - dropping the reference is all that's left to do.
     }
     _currentEntry = null;
   }

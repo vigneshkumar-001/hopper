@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -39,11 +39,13 @@ class RideStatsController extends GetxController
     required this.bookingId,
     this.pickupAddress,
     this.dropAddress,
+    this.initialIsParcel = false,
   });
 
   final String bookingId;
   final String? pickupAddress;
   final String? dropAddress;
+  final bool initialIsParcel;
 
   /// ---- external controllers ----
   late final DriverStatusController driverStatusController =
@@ -84,8 +86,10 @@ class RideStatsController extends GetxController
   bool _trackingStopped = false;
   bool _hasLiveSocketDriverLocation = false;
   bool _isSimulatedSocketTrip = false;
-  DateTime _lastAcceptedSocketDriverTsUtc =
-      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+  DateTime _lastAcceptedSocketDriverTsUtc = DateTime.fromMillisecondsSinceEpoch(
+    0,
+    isUtc: true,
+  );
   LatLng? _lastAcceptedSocketDriverPos;
   String _latestSocketRideStatus = '';
 
@@ -138,6 +142,14 @@ class RideStatsController extends GetxController
   final RxString parcelWeight = ''.obs;
   final RxString parcelAddressType = ''.obs;
   final RxString parcelPaymentMode = ''.obs;
+
+  /// Parcel payment — fully separate from parcelPaymentMode above (that one
+  /// reads the legacy car-ride-style `paymentMode` field; these read the
+  /// dedicated `parcelPaymentMode`/`parcelPaymentStatus` fields). See
+  /// isParcelPaymentSatisfied() on the backend for why they're distinct.
+  final RxString parcelPaymentMethod = ''.obs;
+  final RxString parcelPaymentStatus = ''.obs;
+  final RxBool confirmCashCollectedLoading = false.obs;
   final RxBool deliveryOtpVerified = false.obs;
   final RxString podPhotoUrl = ''.obs;
   final RxBool deliveryOtpVerifying = false.obs;
@@ -146,11 +158,22 @@ class RideStatsController extends GetxController
   final RxBool podUploading = false.obs;
   Timer? _deliveryOtpResendTimer;
 
+  /// Real backend `parcelStatus` (ORDER_CONFIRMED/PICKED_UP/IN_TRANSIT/
+  /// OUT_FOR_DELIVERY/DELIVERED/FAILED_DELIVERY) — drives the Start Delivery /
+  /// Out for Delivery action cards. Empty until the first snapshot arrives;
+  /// treated as "PICKED_UP" by the UI since this screen is only reached after
+  /// pickup-OTP verification.
+  final RxString parcelStatus = ''.obs;
+  final RxBool pickupOtpVerified = true.obs;
+  final RxBool startDeliveryLoading = false.obs;
+  final RxBool outForDeliveryLoading = false.obs;
+
   /// icon
   final Rxn<BitmapDescriptor> carIcon = Rxn<BitmapDescriptor>();
   Worker? _serviceTypeWorker;
   Worker? _mapTargetWorker;
   Worker? _sheetHeightWorker;
+  Worker? _parcelSheetHeightWorker;
 
   /// streams + animation
   StreamSubscription<Position>? _positionStream;
@@ -185,6 +208,7 @@ class RideStatsController extends GetxController
   @override
   void onInit() {
     super.onInit();
+    if (initialIsParcel) isParcel.value = true;
     WidgetsBinding.instance.addObserver(this);
     _setupBackgroundServiceListener();
     // Ensure the BG isolate is always aligned to the current (drop-phase) booking id.
@@ -216,10 +240,7 @@ class RideStatsController extends GetxController
     // notifiers from inside a widget build (avoids "markNeedsBuild during build").
     _mapTargetWorker?.dispose();
     _mapTargetWorker = everAll(
-      <RxInterface>[
-        bookingToLocation,
-        adjustedDropLocation,
-      ],
+      <RxInterface>[bookingToLocation, adjustedDropLocation],
       (_) {
         final dest = adjustedDropLocation.value ?? bookingToLocation.value;
         if (dest == null) return;
@@ -257,25 +278,39 @@ class RideStatsController extends GetxController
     // Stop background tracking once the trip is fully completed (cash collected).
     // This avoids continuing a foreground service beyond the active trip.
     _paymentStatusWorker?.dispose();
-    _paymentStatusWorker = ever<String>(
-      driverStatusController.paymentStatus,
-      (status) {
-        if (_trackingStopped) return;
-        final v = status.trim().toUpperCase();
-        if (v == 'PAID' || v == 'COMPLETED') {
-          _trackingStopped = true;
-          unawaited(DriverBackgroundLocationService.stopTracking());
-        }
-      },
-    );
+    _paymentStatusWorker = ever<String>(driverStatusController.paymentStatus, (
+      status,
+    ) {
+      if (_trackingStopped) return;
+      final v = status.trim().toUpperCase();
+      if (v == 'PAID' || v == 'COMPLETED') {
+        _trackingStopped = true;
+        unawaited(DriverBackgroundLocationService.stopTracking());
+      }
+    });
     // Keep map padding hint in sync with the bottom sheet, without doing
-    // side-effects from the widget build method.
+    // side-effects from the widget build method. Parcel/Bike uses one fixed
+    // hint matching its unified initialChildSize (0.48, unlike the ride
+    // sheet's completed-dependent 0.28/0.75 split — see ride_stats_screen.dart).
     void applySheetHeight(bool completed) {
+      if (isParcel.value) {
+        rideMap.setBottomSheetHeight(420.0);
+        return;
+      }
       rideMap.setBottomSheetHeight(completed ? 350.0 : 270.0);
     }
+
     applySheetHeight(driverCompletedRide.value);
     _sheetHeightWorker?.dispose();
     _sheetHeightWorker = ever<bool>(driverCompletedRide, applySheetHeight);
+    // isParcel is often still false at this point (set once booking details
+    // load asynchronously — see below) — recompute the hint the moment it
+    // flips true so a parcel booking doesn't keep the ride-sized hint.
+    _parcelSheetHeightWorker?.dispose();
+    _parcelSheetHeightWorker = ever<bool>(
+      isParcel,
+      (_) => applySheetHeight(driverCompletedRide.value),
+    );
   }
 
   @override
@@ -290,6 +325,7 @@ class RideStatsController extends GetxController
     _paymentStatusWorker?.dispose();
     _mapTargetWorker?.dispose();
     _sheetHeightWorker?.dispose();
+    _parcelSheetHeightWorker?.dispose();
     _isMapActive = false;
     try {
       mapController?.dispose();
@@ -302,8 +338,11 @@ class RideStatsController extends GetxController
       socketService.socket.off('driver-reached-destination');
       socketService.socket.off('driver-location');
       socketService.socket.off('joined-booking');
-      socketService.socket.off('driver-cancelled');
-      socketService.socket.off('customer-cancelled');
+      // NOTE: never call socket.off('driver-cancelled'/'customer-cancelled')
+      // here — the raw off(event) with no handler removes ALL listeners for
+      // that event, including DriverMainController's app-lifetime
+      // cancellation handler, silently breaking cancellation detection for
+      // every screen opened afterward.
     } catch (_) {}
 
     super.onClose();
@@ -312,8 +351,9 @@ class RideStatsController extends GetxController
   void _setupBackgroundServiceListener() {
     _bgLocationSub?.cancel();
     try {
-      _bgLocationSub =
-          FlutterBackgroundService().on('locationUpdate').listen((data) {
+      _bgLocationSub = FlutterBackgroundService().on('locationUpdate').listen((
+        data,
+      ) {
         if (isClosed || data == null) return;
         if (data is! Map) return;
         if (_shouldRenderSocketDriverLocationDirectly()) return;
@@ -497,8 +537,9 @@ class RideStatsController extends GetxController
     _lastDriverPosition = pos;
 
     final speed = _asDouble(payload['speed']);
-    final bearing =
-        _asDouble(payload['bearing'] ?? payload['heading'] ?? payload['rotation']);
+    final bearing = _asDouble(
+      payload['bearing'] ?? payload['heading'] ?? payload['rotation'],
+    );
     final accuracy = _asDouble(payload['accuracy']);
 
     rideMap.updateVehicleLocation(
@@ -712,11 +753,43 @@ class RideStatsController extends GetxController
     parcelDescription.value = _cleanStr(p['parcelDescription']);
     parcelAddressType.value = _cleanStr(p['addressType']);
     parcelPaymentMode.value = _cleanStr(p['paymentMode']);
+    final ppMode = _cleanStr(p['parcelPaymentMode']);
+    if (ppMode.isNotEmpty) parcelPaymentMethod.value = ppMode;
+    final ppStatus = _cleanStr(p['parcelPaymentStatus']);
+    if (ppStatus.isNotEmpty) parcelPaymentStatus.value = ppStatus;
     final w = _cleanStr(p['maxWeight']);
     parcelWeight.value = (w.isEmpty || w == '0') ? '' : w;
+    if (p['pickupOtpVerified'] == true) pickupOtpVerified.value = true;
     if (p['deliveryOtpVerified'] == true) deliveryOtpVerified.value = true;
     final pod = _cleanStr(p['podPhotoUrl']);
     if (pod.isNotEmpty) podPhotoUrl.value = pod;
+    _applyParcelStatus(_cleanStr(p['parcelStatus']));
+  }
+
+  /// Monotonic status ranking so a stale/out-of-order snapshot (REST refresh
+  /// racing a socket push, or vice versa) can never move `parcelStatus`
+  /// backwards in the UI. Backend remains the actual source of truth — this
+  /// only protects against display flicker.
+  static const List<String> _parcelStatusOrder = [
+    'ORDER_CONFIRMED',
+    'COURIER_ASSIGNED',
+    'PICKED_UP',
+    'IN_TRANSIT',
+    'OUT_FOR_DELIVERY',
+    'DELIVERED',
+  ];
+
+  void _applyParcelStatus(String next) {
+    if (next.isEmpty) return;
+    if (next == 'FAILED_DELIVERY') {
+      parcelStatus.value = next;
+      return;
+    }
+    final nextRank = _parcelStatusOrder.indexOf(next);
+    if (nextRank < 0) return;
+    final currentRank = _parcelStatusOrder.indexOf(parcelStatus.value);
+    if (currentRank > nextRank) return;
+    parcelStatus.value = next;
   }
 
   /// Verify the RECEIVER's delivery OTP at the drop. Backend enforces
@@ -848,8 +921,7 @@ class RideStatsController extends GetxController
           podPhotoUrl.value = url;
           return (
             success: true,
-            message:
-                (data['message'] ?? 'Proof of delivery saved').toString(),
+            message: (data['message'] ?? 'Proof of delivery saved').toString(),
           );
         },
       );
@@ -859,6 +931,159 @@ class RideStatsController extends GetxController
     } finally {
       podUploading.value = false;
     }
+  }
+
+  /// True once the sender's CASH payment has been physically collected — the
+  /// only case where startDelivery() needs a confirmation step first (online
+  /// payments settle themselves via webhook). Mirrors isParcelPaymentSatisfied
+  /// on the backend, but only for the CASH branch that the UI needs to gate.
+  bool get needsCashCollectionBeforeDelivery =>
+      parcelPaymentMethod.value == 'CASH' &&
+      parcelPaymentStatus.value != 'CASH_COLLECTED';
+
+  /// Driver-initiated at PICKUP: confirms the sender's CASH has been
+  /// collected. Only valid while payment is CASH_PENDING — the backend
+  /// re-validates atomically regardless of local state.
+  Future<({bool success, String message})> confirmCashCollected() async {
+    if (confirmCashCollectedLoading.value) {
+      return (success: false, message: 'Already in progress');
+    }
+    confirmCashCollectedLoading.value = true;
+    try {
+      final result = await _apiDataSource.confirmParcelCashCollected(
+        bookingId: bookingId,
+      );
+      return result.fold(
+        (failure) => (success: false, message: failure.message),
+        (data) {
+          parcelPaymentStatus.value = 'CASH_COLLECTED';
+          return (
+            success: true,
+            message: (data['message'] ?? 'Cash payment collected').toString(),
+          );
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.e('confirmCashCollected failed: $e');
+      return (success: false, message: 'Something went wrong');
+    } finally {
+      confirmCashCollectedLoading.value = false;
+    }
+  }
+
+  /// PICKED_UP -> IN_TRANSIT. Backend re-validates `pickupOtpVerified` and the
+  /// current status atomically — this call can fail even if the UI thinks
+  /// pickup is done; the returned message is surfaced verbatim.
+  Future<({bool success, String message})> startDelivery() async {
+    if (startDeliveryLoading.value) {
+      return (success: false, message: 'Already in progress');
+    }
+    startDeliveryLoading.value = true;
+    try {
+      final result = await _apiDataSource.startParcelDelivery(
+        bookingId: bookingId,
+      );
+      return result.fold(
+        (failure) => (success: false, message: failure.message),
+        (data) {
+          _applyParcelStatus('IN_TRANSIT');
+          return (
+            success: true,
+            message: (data['message'] ?? 'Delivery started').toString(),
+          );
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.e('startDelivery failed: $e');
+      return (success: false, message: 'Something went wrong');
+    } finally {
+      startDeliveryLoading.value = false;
+    }
+  }
+
+  /// IN_TRANSIT -> OUT_FOR_DELIVERY.
+  Future<({bool success, String message})> markOutForDelivery() async {
+    if (outForDeliveryLoading.value) {
+      return (success: false, message: 'Already in progress');
+    }
+    outForDeliveryLoading.value = true;
+    try {
+      final result = await _apiDataSource.markParcelOutForDelivery(
+        bookingId: bookingId,
+      );
+      return result.fold(
+        (failure) => (success: false, message: failure.message),
+        (data) {
+          _applyParcelStatus('OUT_FOR_DELIVERY');
+          return (
+            success: true,
+            message: (data['message'] ?? 'Marked out for delivery').toString(),
+          );
+        },
+      );
+    } catch (e) {
+      CommonLogger.log.e('markOutForDelivery failed: $e');
+      return (success: false, message: 'Something went wrong');
+    } finally {
+      outForDeliveryLoading.value = false;
+    }
+  }
+
+  /// Re-pull the full active-booking snapshot from the backend and replace
+  /// local package state with it. Used after a partial/ambiguous response, a
+  /// missed socket event, or a manual retry — never trusts local state alone.
+  Future<void> refreshPackage() async {
+    try {
+      final result = await _apiDataSource.getDriverActiveBooking();
+      await result.fold((_) async {}, (response) async {
+        if (!response.hasBooking) return;
+        final data = response.data;
+        if (data == null) return;
+        final snapshot = Map<String, dynamic>.from(data);
+        JoinedBookingData().setData(snapshot);
+        await _applyBookingSnapshot(snapshot);
+      });
+    } catch (e) {
+      CommonLogger.log.e('refreshPackage error: $e');
+    }
+  }
+
+  /// Handle a `booking-update` socket push with `type: 'parcel-status'`
+  /// (emitted by `emitParcelStatus` on the backend for every parcel-trust
+  /// transition). Never reads an OTP value — the backend never emits one.
+  /// Ignored for any other booking's event or any other update type.
+  void applyPackageSocketUpdate(Map<String, dynamic> payload) {
+    final incomingBookingId = (payload['bookingId'] ?? '').toString().trim();
+    if (incomingBookingId.isNotEmpty && incomingBookingId != bookingId.trim()) {
+      return;
+    }
+    if ((payload['type'] ?? '').toString() != 'parcel-status') return;
+
+    isParcel.value = true;
+    if (payload['pickupOtpVerified'] == true) pickupOtpVerified.value = true;
+    if (payload['deliveryOtpVerified'] == true) {
+      deliveryOtpVerified.value = true;
+    }
+    final pod = _cleanStr(payload['podPhotoUrl']);
+    if (pod.isNotEmpty) podPhotoUrl.value = pod;
+    final ppMode = _cleanStr(payload['parcelPaymentMode']);
+    if (ppMode.isNotEmpty) parcelPaymentMethod.value = ppMode;
+    final ppStatus = _cleanStr(payload['parcelPaymentStatus']);
+    if (ppStatus.isNotEmpty) parcelPaymentStatus.value = ppStatus;
+    _applyParcelStatus(_cleanStr(payload['parcelStatus']));
+  }
+
+  /// Thin wrapper so the UI calls one controller method for completion; the
+  /// actual network call and navigation are unchanged and shared with rides
+  /// (`driverStatusController.completeRideRequest`, POST /ride-complete).
+  /// The backend re-validates pickup/delivery OTP + POD atomically — this
+  /// local gate is UX only.
+  Future<String?> completeDelivery(BuildContext context) async {
+    return driverStatusController.completeRideRequest(
+      context,
+      Amount: amount.value,
+      bookingId: bookingId,
+    );
   }
 
   Future<void> _fetchActiveBookingSnapshotIfNeeded() async {
@@ -969,7 +1194,8 @@ class RideStatsController extends GetxController
     maneuver.value = nextManeuver;
     polylinePoints.assignAll(pts);
 
-    final dest = adjustedDropLocation.value ?? bookingToLocation.value ?? pts.last;
+    final dest =
+        adjustedDropLocation.value ?? bookingToLocation.value ?? pts.last;
     rideMap.setPickupDrop(drop: dest);
     rideMap.setRoutePoints(pts);
     rideMap.setNavigationDestination(dest, driverFriendlyStop: true);
@@ -1123,17 +1349,18 @@ class RideStatsController extends GetxController
       // âœ… Fallback: if server is already sending drop-distance updates, use them
       // to toggle the Complete Ride UI even if the explicit `driver-reached-destination`
       // event listener was overridden elsewhere.
-    // Guard: some backends send `0` temporarily (unknown), which would otherwise
-    // incorrectly flip UI into "reached destination".
-    _lastSocketFixAt = DateTime.now();
-    final dm = dropM;
-    if (dm != null && dm > 0) {
-      if (!_reachedDropSocket && dm <= _REACHED_DESTINATION_RADIUS_M) {
-        _reachedDropSocket = true;
-      } else if (_reachedDropSocket && dm >= _REACHED_DESTINATION_EXIT_RADIUS_M) {
-        _reachedDropSocket = false;
+      // Guard: some backends send `0` temporarily (unknown), which would otherwise
+      // incorrectly flip UI into "reached destination".
+      _lastSocketFixAt = DateTime.now();
+      final dm = dropM;
+      if (dm != null && dm > 0) {
+        if (!_reachedDropSocket && dm <= _REACHED_DESTINATION_RADIUS_M) {
+          _reachedDropSocket = true;
+        } else if (_reachedDropSocket &&
+            dm >= _REACHED_DESTINATION_EXIT_RADIUS_M) {
+          _reachedDropSocket = false;
+        }
       }
-    }
       _recomputeReachedDestination();
     });
 
@@ -1170,6 +1397,14 @@ class RideStatsController extends GetxController
     socketService.on('customer-cancelled', (data) {
       if (!Get.isRegistered<DriverMainController>()) return;
       Get.find<DriverMainController>().handleCustomerCancelled(data);
+    });
+
+    // Package delivery trust (Phase 2): live parcelStatus/OTP/POD pushes.
+    // Reuses the existing generic booking-update event/room — no new socket
+    // event or listener registration on the backend side.
+    socketService.on('booking-update', (data) {
+      if (data is! Map) return;
+      applyPackageSocketUpdate(Map<String, dynamic>.from(data as Map));
     });
 
     if (!_onAnyAttached) {
@@ -1215,7 +1450,8 @@ class RideStatsController extends GetxController
       CommonLogger.log.i(
         'Auto driverCompletedRide TRUE (gps) at ${distanceToDropM.toStringAsFixed(1)}m from drop',
       );
-    } else if (_reachedDropGps && distanceToDropM >= _REACHED_DESTINATION_EXIT_RADIUS_M) {
+    } else if (_reachedDropGps &&
+        distanceToDropM >= _REACHED_DESTINATION_EXIT_RADIUS_M) {
       _reachedDropGps = false;
     }
 
@@ -1225,12 +1461,14 @@ class RideStatsController extends GetxController
   void _recomputeReachedDestination() {
     final now = DateTime.now();
     final gpsFresh =
-        _lastGpsFixAt != null && now.difference(_lastGpsFixAt!) <= _gpsReachedTtl;
+        _lastGpsFixAt != null &&
+        now.difference(_lastGpsFixAt!) <= _gpsReachedTtl;
     final socketFresh =
         _lastSocketFixAt != null &&
         now.difference(_lastSocketFixAt!) <= _socketReachedTtl;
 
-    final next = gpsFresh ? _reachedDropGps : (socketFresh ? _reachedDropSocket : false);
+    final next =
+        gpsFresh ? _reachedDropGps : (socketFresh ? _reachedDropSocket : false);
     if (driverCompletedRide.value != next) {
       driverCompletedRide.value = next;
     }
@@ -1242,7 +1480,9 @@ class RideStatsController extends GetxController
     // Shared foreground GPS bus (one OS stream for all driver map screens). The
     // bus runs at distanceFilter 0 / bestForNavigation, matching what this
     // active-ride stream requested, so the driver's own map stays smooth.
-    _positionStream = DriverLocationBus.instance.stream.listen((Position position) async {
+    _positionStream = DriverLocationBus.instance.stream.listen((
+      Position position,
+    ) async {
       if (_shouldRenderSocketDriverLocationDirectly()) {
         return;
       }
@@ -1424,7 +1664,6 @@ class RideStatsController extends GetxController
       _scheduleRouteRetry(from);
     }
   }
-
 
   bool _isOffRoute(LatLng current) {
     const toleranceM = 25.0;

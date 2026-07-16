@@ -83,6 +83,16 @@ class ApiConstents {
   static String get parcelResendDeliveryOtp =>
       _u('/users/parcel/resend-delivery-otp');
   static String get parcelPodPhoto => _u('/users/parcel/pod-photo');
+  // Package delivery trust (Phase 2): sender pickup-OTP verify + explicit
+  // PICKED_UP -> IN_TRANSIT -> OUT_FOR_DELIVERY driver actions.
+  static String get parcelVerifyPickupOtp =>
+      _u('/users/parcel/verify-pickup-otp');
+  static String get parcelStartDelivery => _u('/users/parcel/start-delivery');
+  static String get parcelOutForDelivery =>
+      _u('/users/parcel/out-for-delivery');
+  // Parcel payment: driver confirms CASH collected from the sender at pickup.
+  static String get parcelConfirmCashCollected =>
+      _u('/users/parcel/confirm-cash-collected');
   static String get stopNewRequests => _u('/users/stopNewRequests');
   static String get driverStatus => _u('/users/status');
   static String get driverActiveBooking => _u('/users/active-booking');

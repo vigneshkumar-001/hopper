@@ -9,9 +9,11 @@ import 'package:hopper/Presentation/DriverScreen/models/today_parcel_activity_re
 import 'package:hopper/Presentation/DriverScreen/models/weekly_challenge_models.dart';
 import 'package:hopper/api/dataSource/apiDataSource.dart';
 import 'package:hopper/api/repository/api_config_controller.dart';
+import 'package:hopper/api/repository/failure.dart';
 import 'package:hopper/Presentation/Drawer/controller/notification_controller.dart';
 import 'package:hopper/utils/websocket/socket_io_client.dart';
 import 'package:hopper/utils/map/navigation_assist.dart';
+import 'package:hopper/utils/session/driver_session_expiry_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../Core/Utility/snackbar.dart';
 import 'package:hopper/Presentation/DriverScreen/models/booking_accept_model.dart';
@@ -220,20 +222,22 @@ class DriverStatusController extends GetxController {
       _statusDriverId = driverId.trim();
     }
     final did = _statusDriverId;
-    socketService.emitWithAck('get-online-status', {
-      if (did != null) 'driverId': did,
-    }, (resp) {
-      final map = _coerceStatusMap(resp);
-      if (map == null) return;
-      // Missing `success` is treated as success (some servers omit it on ack).
-      final ok = map['success'] == null || map['success'] == true;
-      if (!ok) return;
-      final online = _readBoolFlexible(map['onlineStatus']);
-      if (online != null) applyServerOnlineStatus(online);
-    });
+    socketService.emitWithAck(
+      'get-online-status',
+      {if (did != null) 'driverId': did},
+      (resp) {
+        final map = _coerceStatusMap(resp);
+        if (map == null) return;
+        // Missing `success` is treated as success (some servers omit it on ack).
+        final ok = map['success'] == null || map['success'] == true;
+        if (!ok) return;
+        final online = _readBoolFlexible(map['onlineStatus']);
+        if (online != null) applyServerOnlineStatus(online);
+      },
+    );
   }
 
-  /// THE source of truth — apply the server's status to the UI, clear any
+  /// THE source of truth ? apply the server's status to the UI, clear any
   /// pending tap, and surface the inactivity reason for a banner.
   void applyServerOnlineStatus(bool online, {String? reason}) {
     _toggleConfirmTimer?.cancel();
@@ -274,7 +278,24 @@ class DriverStatusController extends GetxController {
     return null;
   }
 
-  // ðŸ”¹ booking accept
+  bool _isBookingConflictFailure(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('no longer available') ||
+        normalized.contains('already assigned') ||
+        normalized.contains('conflict');
+  }
+
+  void _clearStaleBookingRequestAndRefresh() {
+    try {
+      final main = Get.find<DriverMainController>();
+      main.bookingController.clear();
+      unawaited(main.checkAndResumeActiveBooking(force: true));
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  // ?? booking accept
   Future<String?> bookingAccept(
     BuildContext context, {
     required String bookingId,
@@ -292,8 +313,23 @@ class DriverStatusController extends GetxController {
         status: status,
       );
 
+      final authenticationFailure = results.fold<AuthenticationFailure?>(
+        (failure) => failure is AuthenticationFailure ? failure : null,
+        (_) => null,
+      );
+      if (authenticationFailure != null) {
+        isBookingAcceptLoading.value = false;
+        await DriverSessionExpiryHandler.handle(
+          message: authenticationFailure.message,
+        );
+        return '';
+      }
+
       return results.fold(
         (failure) {
+          if (_isBookingConflictFailure(failure.message)) {
+            _clearStaleBookingRequestAndRefresh();
+          }
           CustomSnackBar.showError(failure.message);
           isBookingAcceptLoading.value = false;
           return '';
@@ -313,7 +349,7 @@ class DriverStatusController extends GetxController {
             'userType': 'driver',
           };
 
-          CommonLogger.log.i("ðŸ“¤ Join booking data: $bookingData");
+          CommonLogger.log.i("?? Join booking data: $bookingData");
 
           // IMPORTANT: When we navigate to PickingCustomerScreen, its controller
           // (PickingCustomerController) registers the 'joined-booking' listener
@@ -330,11 +366,11 @@ class DriverStatusController extends GetxController {
             if (socketService.connected) {
               socketService.emit('join-booking', bookingData);
               CommonLogger.log.i(
-                "âœ… Socket already connected, emitted join-booking",
+                "? Socket already connected, emitted join-booking",
               );
             } else {
               socketService.onConnect(() {
-                CommonLogger.log.i("âœ… Socket connected, emitting join-booking");
+                CommonLogger.log.i("? Socket connected, emitting join-booking");
                 socketService.emit('join-booking', bookingData);
               });
             }
@@ -356,6 +392,13 @@ class DriverStatusController extends GetxController {
                 bookingId: resolvedBookingId,
                 pickupLocationAddress: pickupLocationAddress,
                 dropLocationAddress: dropLocationAddress,
+                // Car->Parcel UI flash fix: the driver's active serviceType
+                // (car vs bike) already gates which incoming-request card
+                // they could have accepted (isCar governs the request-card
+                // routing in driver_main_screen.dart), so it's a reliable,
+                // synchronously-available signal here ? no need to wait for
+                // PickingCustomerController's own async hydration.
+                initialIsParcel: !isCar,
               ),
             );
             // Get.to(
@@ -369,7 +412,7 @@ class DriverStatusController extends GetxController {
             // );
           } else {
             CommonLogger.log.i(
-              "ðŸš— [SHARED] bookingAccept called with navigateToPickup = false â†’ staying on current screen",
+              "?? [SHARED] bookingAccept called with navigateToPickup = false ? staying on current screen",
             );
           }
 
@@ -383,7 +426,7 @@ class DriverStatusController extends GetxController {
     }
   }
 
-  // ðŸ”¹ booking accept
+  // ?? booking accept
   Future<String?> bookingAcceptForSharedRide(
     BuildContext context, {
     required String bookingId,
@@ -403,6 +446,9 @@ class DriverStatusController extends GetxController {
 
       return results.fold(
         (failure) {
+          if (_isBookingConflictFailure(failure.message)) {
+            _clearStaleBookingRequestAndRefresh();
+          }
           CustomSnackBar.showError(failure.message);
           isBookingAcceptLoading.value = false;
           return '';
@@ -422,16 +468,16 @@ class DriverStatusController extends GetxController {
             'userType': 'driver',
           };
 
-          CommonLogger.log.i("ðŸ“¤ Join booking data: $bookingData");
+          CommonLogger.log.i("?? Join booking data: $bookingData");
 
           if (socketService.connected) {
             socketService.emit('join-booking', bookingData);
             CommonLogger.log.i(
-              "âœ… Socket already connected, emitted join-booking",
+              "? Socket already connected, emitted join-booking",
             );
           } else {
             socketService.onConnect(() {
-              CommonLogger.log.i("âœ… Socket connected, emitting join-booking");
+              CommonLogger.log.i("? Socket connected, emitting join-booking");
               socketService.emit('join-booking', bookingData);
             });
           }
@@ -456,7 +502,7 @@ class DriverStatusController extends GetxController {
             );
           } else {
             CommonLogger.log.i(
-              "ðŸš— [SHARED] bookingAccept called with navigateToPickup = false â†’ staying on current screen",
+              "?? [SHARED] bookingAccept called with navigateToPickup = false ? staying on current screen",
             );
           }
 
@@ -500,7 +546,7 @@ class DriverStatusController extends GetxController {
     }
   }
 
-  // ðŸ”¹ complete ride â€“ used for single ride & shared
+  // ?? complete ride - used for single ride & shared
   /*
   Future<String?> completeRideRequest(
       BuildContext context, {
@@ -583,15 +629,49 @@ class DriverStatusController extends GetxController {
     }
   }
 
+  /// Verify the SENDER's pickup OTP for a parcel booking (Phase 2). Dedicated
+  /// hash-based endpoint ? parcels only, does not touch the shared ride-start
+  /// OTP flow used by [otpInsert].
+  Future<({bool success, String message})> verifyParcelPickupOtp(
+    BuildContext context, {
+    required String bookingId,
+    required String otp,
+  }) async {
+    isLoading.value = true;
+    try {
+      final results = await apiDataSource.verifyParcelPickupOtp(
+        bookingId: bookingId,
+        enteredOtp: otp,
+      );
+      return results.fold(
+        (failure) {
+          isLoading.value = false;
+          return (success: false, message: failure.message);
+        },
+        (data) {
+          isLoading.value = false;
+          return (
+            success: true,
+            message: (data['message'] ?? 'Pickup OTP verified').toString(),
+          );
+        },
+      );
+    } catch (_) {
+      isLoading.value = false;
+      return (success: false, message: 'Something went wrong');
+    }
+  }
+
   /// Driver-initiated "Resend OTP to rider" (Ride/Parcel). Deliberately does NOT
-  /// toggle [isLoading] — it's a lightweight button action, not a full-screen
+  /// toggle [isLoading] ? it's a lightweight button action, not a full-screen
   /// load. Cooldown / max-attempt enforcement is server-side.
   Future<({bool success, String message})> resendRideOtp({
     required String bookingId,
   }) async {
     try {
-      final results =
-          await apiDataSource.resendRideOtpRequest(bookingId: bookingId);
+      final results = await apiDataSource.resendRideOtpRequest(
+        bookingId: bookingId,
+      );
       return results.fold(
         (failure) => (success: false, message: failure.message),
         (data) => (
@@ -614,13 +694,16 @@ class DriverStatusController extends GetxController {
 
       return results.fold(
         (failure) {
+          if (_isBookingConflictFailure(failure.message)) {
+            _clearStaleBookingRequestAndRefresh();
+          }
           CustomSnackBar.showError(failure.message);
           isBookingRejectLoading.value = false;
           return '';
         },
         (response) {
           CommonLogger.log.i(
-            '🚫 Booking rejected for bookingId=$bookingId response=${response.message}',
+            '?? Booking rejected for bookingId=$bookingId response=${response.message}',
           );
           isBookingRejectLoading.value = false;
           return 'success';
@@ -868,6 +951,14 @@ class DriverStatusController extends GetxController {
       } catch (_) {}
 
       Future.delayed(const Duration(milliseconds: 80), () {
+        // Dismiss the snackbar just shown above BEFORE tearing down the
+        // stack ? a live top-snack OverlayEntry that survives a
+        // Get.offAll() reparents its GlobalKey into the rebuilt Overlay and
+        // crashes with "Duplicate GlobalKeys detected in widget tree" (see
+        // CustomSnackBar.dismiss()'s own doc comment). The registered
+        // SnackSafeNavigatorObserver is a secondary safety net, not a
+        // substitute for this explicit call before a hard navigation.
+        CustomSnackBar.dismiss();
         Get.offAll(() => const DriverMainScreen());
       });
     }
@@ -878,11 +969,13 @@ class DriverStatusController extends GetxController {
   bool _sharedCancelInFlight = false;
 
   /// Shared-ride PER-PASSENGER cancel. Unlike [cancelBooking] this NEVER
-  /// navigates — it returns the backend's decision so the SCREEN decides whether
+  /// navigates ? it returns the backend's decision so the SCREEN decides whether
   /// to stay (passengers remain) or go Home (`shouldNavigateHome`). Guards
   /// against double-taps. Single-ride cancellation still uses [cancelBooking].
-  Future<({bool success, bool shouldNavigateHome, int remaining, String message})>
-      cancelSharedPassenger({
+  Future<
+    ({bool success, bool shouldNavigateHome, int remaining, String message})
+  >
+  cancelSharedPassenger({
     required String reason,
     required String bookingId,
   }) async {
@@ -891,7 +984,7 @@ class DriverStatusController extends GetxController {
         success: false,
         shouldNavigateHome: false,
         remaining: -1,
-        message: 'Please wait…',
+        message: 'Please wait?',
       );
     }
     _sharedCancelInFlight = true;
@@ -910,12 +1003,14 @@ class DriverStatusController extends GetxController {
         ),
         (data) {
           try {
-            Get.find<DriverAnalyticsController>()
-                .trackCancel(bookingId: bookingId);
+            Get.find<DriverAnalyticsController>().trackCancel(
+              bookingId: bookingId,
+            );
           } catch (_) {}
-          final remaining = (data['remainingActivePassengers'] is num)
-              ? (data['remainingActivePassengers'] as num).toInt()
-              : 0;
+          final remaining =
+              (data['remainingActivePassengers'] is num)
+                  ? (data['remainingActivePassengers'] as num).toInt()
+                  : 0;
           final goHome = data['shouldNavigateHome'] == true;
           final msg = (data['message'] ?? 'Passenger cancelled').toString();
           return (
@@ -945,8 +1040,8 @@ class DriverStatusController extends GetxController {
     BuildContext context, {
     required String reason,
     required String bookingId,
-    bool silent = true, // âœ… default true (avoid ticker crash)
-    bool navigate = true, // âœ… default true
+    bool silent = true, // ? default true (avoid ticker crash)
+    bool navigate = true, // ? default true
   }) async
   {
     try {
@@ -972,13 +1067,13 @@ class DriverStatusController extends GetxController {
 
       isLoading.value = false;
 
-      // âœ… show snackbar only if NOT navigating away
+      // ? show snackbar only if NOT navigating away
       if (!silent && !navigate && (msg ?? '').isNotEmpty) {
         CustomSnackBar.showSuccess(msg!);
       }
 
       if (navigate) {
-        // âœ… close overlays safely
+        // ? close overlays safely
         try {
           Get.closeAllSnackbars();
         } catch (e) {
@@ -995,6 +1090,12 @@ class DriverStatusController extends GetxController {
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (Get.currentRoute == '/DriverMainScreen') return;
+          // A live top-snack OverlayEntry from ANY earlier action (this
+          // function's own snackbar is already suppressed above when
+          // navigating, but a stale one from something else entirely can
+          // still be showing) must not survive this route-stack replacement
+          // ? see CustomSnackBar.dismiss()'s doc comment.
+          CustomSnackBar.dismiss();
           Get.offAll(() => const DriverMainScreen());
         });
       }
@@ -1061,7 +1162,7 @@ class DriverStatusController extends GetxController {
           serviceType.refresh();
           unawaited(_persistServiceType(serviceType.value));
 
-          // ✅ Server is source of truth for shared booking; switch base+socket.
+          // ? Server is source of truth for shared booking; switch base+socket.
           final shared = response.data.sharedBooking;
           if (cfg.isSharedEnabled.value != shared) {
             unawaited(cfg.setSharedEnabled(shared));
@@ -1140,13 +1241,10 @@ class DriverStatusController extends GetxController {
       bookingId: bookingId,
       stopType: stopType,
     );
-    return res.fold(
-      (failure) {
-        CustomSnackBar.showError(failure.message);
-        return null;
-      },
-      (msg) => msg,
-    );
+    return res.fold((failure) {
+      CustomSnackBar.showError(failure.message);
+      return null;
+    }, (msg) => msg);
   }
 
   Future<String?> completeRideRequest(
@@ -1176,10 +1274,10 @@ class DriverStatusController extends GetxController {
           Get.find<DriverAnalyticsController>().trackEarning(Amount ?? 0);
           Get.find<DriverAnalyticsController>().trackComplete();
 
-          // âœ… Shared ride -> DON'T navigate from controller
+          // ? Shared ride -> DON'T navigate from controller
           if (isSharedRide) return;
 
-          // âœ… Single ride -> go to cash screen if needed
+          // ? Single ride -> go to cash screen if needed
           // if (navigateToCashScreen) {
           //   Navigator.push(
           //     context,
@@ -1225,6 +1323,13 @@ class DriverStatusController extends GetxController {
           isLoading.value = false;
 
           if (goToMainOnSuccess) {
+            // Same class of crash as cancelBooking() above: a live top-snack
+            // OverlayEntry must not survive this hard stack wipe, or it
+            // reparents its GlobalKey into the rebuilt Overlay and throws
+            // "Duplicate GlobalKeys detected in widget tree". This runs on
+            // EVERY completed ride (post-rating), so it's a much more
+            // frequently-hit path than the cancel flows.
+            CustomSnackBar.dismiss();
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(builder: (_) => DriverMainScreen()),
               (route) => false,

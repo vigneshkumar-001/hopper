@@ -1,4 +1,4 @@
-﻿import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -14,6 +14,8 @@ import 'package:hopper/Presentation/Authentication/widgets/textFields.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_main_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/controller/driver_status_controller.dart';
 import 'package:hopper/Presentation/DriverScreen/screens/chat_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/screens/parcel_delivery_success_screen.dart';
+import 'package:hopper/Presentation/DriverScreen/widgets/parcel_dark_theme.dart';
 import 'package:hopper/Presentation/DriverScreen/widgets/parcel_delivery_section.dart';
 import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/utils/map/map_control_button.dart';
@@ -27,13 +29,14 @@ import 'package:hopper/utils/ride_map/ride_map_controller.dart';
 import 'package:hopper/utils/phone/call_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../controller/ride_starts_controller.dart';
+import 'package:hopper/Presentation/DriverScreen/controller/ride_starts_controller.dart';
 import 'cash_collected_screen.dart';
 
 class RideStatsScreen extends StatelessWidget {
   final String bookingId;
   final String? pickupAddress;
   final String? dropAddress;
+  final bool isParcel;
 
   final NavigationService _navigationService = NavigationService();
 
@@ -42,6 +45,7 @@ class RideStatsScreen extends StatelessWidget {
     required this.bookingId,
     this.pickupAddress,
     this.dropAddress,
+    this.isParcel = false,
   });
 
   Future<void> _onNavigatePressed(RideStatsController c) async {
@@ -88,8 +92,7 @@ class RideStatsScreen extends StatelessWidget {
       driverId: driverId,
     );
 
-    final dest =
-        c.adjustedDropLocation.value ?? c.bookingToLocation.value;
+    final dest = c.adjustedDropLocation.value ?? c.bookingToLocation.value;
     if (dest == null) return;
 
     _showNavigationTrackingMessage('drop');
@@ -232,6 +235,7 @@ class RideStatsScreen extends StatelessWidget {
         bookingId: bookingId,
         pickupAddress: pickupAddress,
         dropAddress: dropAddress,
+        initialIsParcel: isParcel,
       ),
       tag: bookingId,
     );
@@ -263,6 +267,10 @@ class RideStatsScreen extends StatelessWidget {
       child: WillPopScope(
         onWillPop: () async => false,
         child: Scaffold(
+          // Explicit white — guards against any black bleed-through behind
+          // the sheet (the app theme's scaffoldBackgroundColor is already
+          // white, but this removes any doubt for the parcel branch).
+          backgroundColor: Colors.white,
           body: Stack(
             children: [
               SizedBox(
@@ -338,6 +346,11 @@ class RideStatsScreen extends StatelessWidget {
                               c.rideMap.applyFocusMode(
                                 MapFocusMode.driver,
                                 userInitiated: true,
+                                // Parcel/bike wants more surrounding street
+                                // context visible than the tighter car-ride
+                                // default; car/solo/shared rides are
+                                // unaffected (this only overrides when set).
+                                driverFocusZoom: c.isParcel.value ? 15.6 : null,
                               );
                             },
                             onFitBounds: () async {
@@ -360,12 +373,36 @@ class RideStatsScreen extends StatelessWidget {
               // bottom sheet
               Obx(() {
                 final completed = c.driverCompletedRide.value;
+                final isParcelSheet = c.isParcel.value;
+                // Parcel completion is backend-gated by status, OTP, POD, and
+                // payment; GPS proximity must not hide the gated action.
+                final showParcelCompletion =
+                    isParcelSheet && c.parcelStatus.value == 'OUT_FOR_DELIVERY';
+
+                // Parcel/Bike gets one generous, unified sizing regardless of
+                // GPS-arrival state — ParcelDeliverySection shows a rich
+                // multi-card panel throughout the whole drop leg (not just
+                // once "arrived"), so it needs real room from the moment the
+                // pickup OTP is verified. The old completed-only small size
+                // (max 0.30) couldn't fit that content, which read as a
+                // near-empty sheet with a lot of bare background around it.
+                // Car/solo/shared rides keep their existing behavior.
+                final initialSize =
+                    isParcelSheet ? 0.48 : (completed ? 0.28 : 0.75);
+                final minSize =
+                    isParcelSheet ? 0.32 : (completed ? 0.25 : 0.40);
+                final maxSize =
+                    isParcelSheet ? 0.92 : (completed ? 0.30 : 0.75);
 
                 return DraggableScrollableSheet(
-                  initialChildSize: completed ? 0.28 : 0.75,
-                  minChildSize: completed ? 0.25 : 0.40,
-                  maxChildSize: completed ? 0.30 : 0.75,
+                  initialChildSize: initialSize,
+                  minChildSize: minSize,
+                  maxChildSize: maxSize,
+                  expand: true,
                   builder: (context, scrollController) {
+                    // Bike/Parcel delivery uses the same light sheet surface
+                    // as a normal ride — only text, buttons, and branded
+                    // accents (see ParcelDeliverySection) stay dark-toned.
                     return DecoratedBox(
                       decoration: const BoxDecoration(
                         color: Colors.white,
@@ -383,343 +420,421 @@ class RideStatsScreen extends StatelessWidget {
                       child: ListView(
                         controller: scrollController,
                         physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.only(bottom: 18),
+                        padding: EdgeInsets.only(
+                          bottom: MediaQuery.of(context).padding.bottom + 18,
+                        ),
                         children: [
                           const SizedBox(height: 10),
                           Center(
                             child: Container(
                               width: 44,
                               height: 5,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE5E7EB),
-                                borderRadius: BorderRadius.circular(10),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFE5E7EB),
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(10),
+                                ),
                               ),
                             ),
                           ),
                           const SizedBox(height: 14),
 
-                          if (!completed) ...[
-                            // Secondary / utility action -> tonal blue so it
-                            // reads as distinct from the solid primary
-                            // "Arrived / Complete" CTA.
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 2, 16, 14),
-                              child: SizedBox(
-                                width: double.infinity,
-                                height: 52,
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _onNavigatePressed(c),
-                                  icon: Container(
-                                    width: 26,
-                                    height: 26,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF1A73E8),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.navigation_rounded,
-                                      color: Colors.white,
-                                      size: 15,
-                                    ),
-                                  ),
-                                  label: const Text(
-                                    'Navigate to Drop',
-                                    style: TextStyle(
-                                      color: Color(0xFF1A73E8),
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 0.2,
-                                    ),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFFEAF1FE),
-                                    foregroundColor: const Color(0xFF1A73E8),
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                      side: const BorderSide(
-                                        color: Color(0xFF1A73E8),
-                                        width: 1.3,
-                                      ),
-                                    ),
-                                  ),
+                          if (!completed && !showParcelCompletion) ...[
+                            // Parcel/Bike: this entire block (Navigate
+                            // button, "Ride in Progress" badge, receiver
+                            // row, quick-message chips) is now duplicated by
+                            // ParcelDeliverySection's own unified card stack
+                            // (eta+Navigate headline, receiver card, etc.),
+                            // so it's skipped for parcels. Car/solo/shared
+                            // rides render it exactly as before.
+                            if (!c.isParcel.value) ...[
+                              // Secondary / utility action -> tonal blue so it
+                              // reads as distinct from the solid primary
+                              // "Arrived / Complete" CTA.
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  2,
+                                  16,
+                                  14,
                                 ),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.rideInProgress
-                                        .withOpacity(0.10),
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: AppColors.rideInProgress
-                                          .withOpacity(0.20),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Container(
-                                        height: 8,
-                                        width: 8,
-                                        decoration: BoxDecoration(
-                                          color: AppColors.rideInProgress,
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Ride in Progress',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.rideInProgress,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    height: 44,
-                                    width: 44,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF3F4F6),
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    clipBehavior: Clip.antiAlias,
-                                    child: Obx(() {
-                                      final url = c.profilePic.value.trim();
-                                      if (url.isEmpty) {
-                                        return const Icon(
-                                          Icons.person_rounded,
-                                          color: Color(0xFF6B7280),
-                                        );
-                                      }
-                                      return CachedNetworkImage(
-                                        imageUrl: url,
-                                        fit: BoxFit.cover,
-                                        errorWidget: (_, __, ___) =>
-                                            const Icon(
-                                              Icons.person_rounded,
-                                              color: Color(0xFF6B7280),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  height: 52,
+                                  child:
+                                      c.isParcel.value
+                                          ? ElevatedButton.icon(
+                                            onPressed:
+                                                () => _onNavigatePressed(c),
+                                            icon: const Icon(
+                                              Icons.navigation_rounded,
+                                              size: 18,
                                             ),
-                                      );
-                                    }),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                            label: const Text(
+                                              'Navigate to Receiver',
+                                              style: TextStyle(
+                                                fontSize: 15.5,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  ParcelDarkTheme.accentBlue,
+                                              foregroundColor: Colors.white,
+                                              elevation: 0,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(15),
+                                              ),
+                                            ),
+                                          )
+                                          : ElevatedButton.icon(
+                                            onPressed:
+                                                () => _onNavigatePressed(c),
+                                            icon: Container(
+                                              width: 26,
+                                              height: 26,
+                                              decoration: const BoxDecoration(
+                                                color: Color(0xFF1A73E8),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(
+                                                Icons.navigation_rounded,
+                                                color: Colors.white,
+                                                size: 15,
+                                              ),
+                                            ),
+                                            label: const Text(
+                                              'Navigate to Drop',
+                                              style: TextStyle(
+                                                color: Color(0xFF1A73E8),
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: 0.2,
+                                              ),
+                                            ),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(
+                                                0xFFEAF1FE,
+                                              ),
+                                              foregroundColor: const Color(
+                                                0xFF1A73E8,
+                                              ),
+                                              elevation: 0,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                                side: const BorderSide(
+                                                  color: Color(0xFF1A73E8),
+                                                  width: 1.3,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.rideInProgress
+                                          .withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: AppColors.rideInProgress
+                                            .withOpacity(0.20),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Obx(
-                                          () => Text(
-                                            c.custName.value.trim().isEmpty
-                                                ? 'Rider'
-                                                : c.custName.value.trim(),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w800,
-                                              color: Color(0xFF111827),
+                                        Container(
+                                          height: 8,
+                                          width: 8,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.rideInProgress,
+                                            borderRadius: BorderRadius.circular(
+                                              10,
                                             ),
                                           ),
                                         ),
-                                        const SizedBox(height: 4),
+                                        const SizedBox(width: 8),
                                         Text(
-                                          c.isParcel.value
-                                              ? 'Delivering package'
-                                              : 'Dropping off passenger',
+                                          'Ride in Progress',
                                           style: TextStyle(
-                                            fontSize: 12.5,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.textColorGrey,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.rideInProgress,
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
-                                  Obx(() {
-                                    // Parcel: at the drop leg the useful call
-                                    // target is the RECEIVER, not the sender.
-                                    final receiver =
-                                        c.receiverPhone.value.trim();
-                                    final phone =
-                                        (c.isParcel.value &&
-                                                receiver.isNotEmpty)
-                                            ? receiver
-                                            : c.customerPhone.value.trim();
-                                    return _ActionIconButton(
-                                      icon: Icons.call_rounded,
-                                      color: const Color(0xFF00A85E),
-                                      onTap: () async {
-                                        await CallLauncher.openDialer(
-                                          phone: phone,
-                                          context: context,
-                                        );
-                                      },
-                                    );
-                                  }),
-                                  const SizedBox(width: 11),
-                                  _ActionIconButton(
-                                    icon: Icons.chat_bubble_rounded,
-                                    color: const Color(0xFF111827),
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder:
-                                              (_) => ChatScreen(
-                                                bookingId: bookingId,
-                                                initialPhone:
-                                                    c.customerPhone.value,
-                                              ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 12),
+                              const SizedBox(height: 14),
 
-                            Obx(() {
-                              final eta =
-                                  driverStatusController.dropDurationInMin.value
-                                      .round();
-                              final chips = DriverMessageSuggestions.drop(
-                                etaMinutes: eta,
-                              );
-                              return Padding(
+                              Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 16,
                                 ),
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
-                                    children:
-                                        chips
-                                            .map(
-                                              (msg) => Padding(
-                                                padding: const EdgeInsets.only(
-                                                  right: 8,
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      height: 44,
+                                      width: 44,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF3F4F6),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: Obx(() {
+                                        final url = c.profilePic.value.trim();
+                                        if (url.isEmpty) {
+                                          return const Icon(
+                                            Icons.person_rounded,
+                                            color: Color(0xFF6B7280),
+                                          );
+                                        }
+                                        return CachedNetworkImage(
+                                          imageUrl: url,
+                                          fit: BoxFit.cover,
+                                          errorWidget:
+                                              (_, __, ___) => const Icon(
+                                                Icons.person_rounded,
+                                                color: Color(0xFF6B7280),
+                                              ),
+                                        );
+                                      }),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Obx(
+                                            () => Text(
+                                              c.custName.value.trim().isEmpty
+                                                  ? 'Rider'
+                                                  : c.custName.value.trim(),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w800,
+                                                color: Color(0xFF111827),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            c.isParcel.value
+                                                ? 'Delivering package'
+                                                : 'Dropping off passenger',
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.textColorGrey,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Obx(() {
+                                      // Parcel: at the drop leg the useful call
+                                      // target is the RECEIVER, not the sender.
+                                      final receiver =
+                                          c.receiverPhone.value.trim();
+                                      final phone =
+                                          (c.isParcel.value &&
+                                                  receiver.isNotEmpty)
+                                              ? receiver
+                                              : c.customerPhone.value.trim();
+                                      return _ActionIconButton(
+                                        icon: Icons.call_rounded,
+                                        color: const Color(0xFF00A85E),
+                                        onTap: () async {
+                                          await CallLauncher.openDialer(
+                                            phone: phone,
+                                            context: context,
+                                          );
+                                        },
+                                      );
+                                    }),
+                                    const SizedBox(width: 11),
+                                    _ActionIconButton(
+                                      icon: Icons.chat_bubble_rounded,
+                                      color: const Color(0xFF111827),
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder:
+                                                (_) => ChatScreen(
+                                                  bookingId: bookingId,
+                                                  initialPhone:
+                                                      c.customerPhone.value,
                                                 ),
-                                                child: InkWell(
-                                                  onTap:
-                                                      () => sendDriverQuickMsg(
-                                                        msg,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+
+                              Obx(() {
+                                final eta =
+                                    driverStatusController
+                                        .dropDurationInMin
+                                        .value
+                                        .round();
+                                final chips = DriverMessageSuggestions.drop(
+                                  etaMinutes: eta,
+                                );
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children:
+                                          chips
+                                              .map(
+                                                (msg) => Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        right: 8,
                                                       ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(18),
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 12,
-                                                          vertical: 8,
+                                                  child: InkWell(
+                                                    onTap:
+                                                        () =>
+                                                            sendDriverQuickMsg(
+                                                              msg,
+                                                            ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          18,
                                                         ),
-                                                    decoration: BoxDecoration(
-                                                      color: AppColors
-                                                          .commonBlack
-                                                          .withOpacity(0.04),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            18,
+                                                    child: Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 12,
+                                                            vertical: 8,
                                                           ),
-                                                      border: Border.all(
+                                                      decoration: BoxDecoration(
                                                         color: AppColors
                                                             .commonBlack
-                                                            .withOpacity(0.08),
+                                                            .withOpacity(0.04),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              18,
+                                                            ),
+                                                        border: Border.all(
+                                                          color: AppColors
+                                                              .commonBlack
+                                                              .withOpacity(
+                                                                0.08,
+                                                              ),
+                                                        ),
                                                       ),
-                                                    ),
-                                                    child: Text(
-                                                      msg,
-                                                      style: const TextStyle(
-                                                        fontSize: 12,
-                                                        fontWeight:
-                                                            FontWeight.w600,
+                                                      child: Text(
+                                                        msg,
+                                                        style: const TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
                                                       ),
                                                     ),
                                                   ),
                                                 ),
-                                              ),
-                                            )
-                                            .toList(),
-                                  ),
-                                ),
-                              );
-                            }),
-                            const SizedBox(height: 10),
-
-                            const SizedBox(height: 10),
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              child: Obx(() {
-                                // Prefer fresh positive server ETA; else fall
-                                // back to the local driver->drop route ETA so the
-                                // card never shows a permanent "0 min".
-                                final serverMin = driverStatusController
-                                    .dropDurationInMin.value;
-                                final eta = c.formatDuration(
-                                  serverMin > 0
-                                      ? serverMin
-                                      : c.routeDurationMin.value,
-                                );
-                                final dist = c.formatDistance(
-                                  driverStatusController
-                                      .dropDistanceInMeters
-                                      .value,
-                                );
-                                return Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      '$eta - $dist',
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w800,
-                                        color: Color(0xFF111827),
-                                      ),
+                                              )
+                                              .toList(),
                                     ),
-                                  ],
+                                  ),
                                 );
                               }),
-                            ),
-                            const SizedBox(height: 14),
-                            // Parcels get the step-based delivery panel (info
-                            // cards + checklist preview) instead of the
-                            // generic ride details; rides are unchanged.
+                              const SizedBox(height: 10),
+                            ],
+
+                            const SizedBox(height: 10),
+                            // Parcel/Bike: ParcelDeliverySection renders its own
+                            // "Arriving in X min / Delivering package to..."
+                            // headline, so this generic eta-dist row would be a
+                            // duplicate. Car/solo/shared rides are unchanged.
+                            if (!c.isParcel.value) ...[
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                child: Obx(() {
+                                  // Prefer fresh positive server ETA; else fall
+                                  // back to the local driver->drop route ETA so the
+                                  // card never shows a permanent "0 min".
+                                  final serverMin =
+                                      driverStatusController
+                                          .dropDurationInMin
+                                          .value;
+                                  final eta = c.formatDuration(
+                                    serverMin > 0
+                                        ? serverMin
+                                        : c.routeDurationMin.value,
+                                  );
+                                  final dist = c.formatDistance(
+                                    driverStatusController
+                                        .dropDistanceInMeters
+                                        .value,
+                                  );
+                                  return Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        '$eta - $dist',
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFF111827),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
+                            // Parcels get the step-based delivery panel.
+                            // atDropLocation stays true here too — Start
+                            // Delivery / Out for Delivery are actions the
+                            // driver takes WHILE traveling to the receiver,
+                            // not only once GPS says they've arrived, so the
+                            // action card must be visible from this state on
+                            // (previously hidden behind atDropLocation:false,
+                            // which is why the current action wasn't obvious
+                            // right after Pickup OTP verification).
                             if (c.isParcel.value)
                               ParcelDeliverySection(
                                 controller: c,
-                                atDropLocation: false,
+                                atDropLocation: true,
+                                onNavigate: () => _onNavigatePressed(c),
                               )
                             else
                               Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
                                 child: _rideDetails(
                                   context: context,
                                   c: c,
@@ -730,153 +845,265 @@ class RideStatsScreen extends StatelessWidget {
                           ] else ...[
                             Column(
                               children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.circle,
-                                      color: AppColors.drkGreen,
-                                      size: 13,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Obx(() {
-                                      final etaMin =
-                                          driverStatusController
-                                              .dropDurationInMin
-                                              .value;
-                                      final distM =
-                                          driverStatusController
-                                              .dropDistanceInMeters
-                                              .value;
-                                      final arrived =
-                                          distM.isFinite &&
-                                          distM >= 0 &&
-                                          distM <= 60;
-                                      final label =
-                                          arrived
-                                              ? 'Arrived'
-                                              : (etaMin.isFinite && etaMin < 1
-                                                  ? '<1 min away'
-                                                  : '${etaMin.ceil()} min away');
-                                      return Text(
-                                        label,
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      );
-                                    }),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                CustomTextfield.textWithStylesSmall(
-                                  fontWeight: FontWeight.w500,
-                                  c.isParcel.value
-                                      ? 'Delivering package to ${c.receiverName.value.trim().isEmpty ? c.custName.value : c.receiverName.value.trim()}'
-                                      : 'Dropping off ${c.custName.value}',
-                                ),
-                                const SizedBox(height: 5),
-                                // Parcel delivery trust checklist: receiver
-                                // card + delivery OTP + POD photo. Renders
-                                // nothing for plain rides.
-                                ParcelDeliverySection(controller: c),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 10,
-                                  ),
-                                  // Parcel: the Complete slider stays LOCKED
-                                  // until receiver OTP + POD photo are done
-                                  // (backend re-validates — this is UX, not
-                                  // the gate). Rides always get the slider.
-                                  child: (c.isParcel.value &&
-                                          (!c.deliveryOtpVerified.value ||
-                                              c.podPhotoUrl.value.isEmpty))
-                                      ? const ParcelCompleteLockedBar()
-                                      : HopprSwipeSlider(
-                                    height: 50,
-                                    backgroundColor: AppColors.drkGreen,
-                                    handleColor: Colors.white,
-                                    handleIconColor: AppColors.drkGreen,
-                                    text: c.isParcel.value
-                                        ? 'Complete Delivery'
-                                        : 'Complete Ride',
-                                    onAction: (controller) async {
-                                      // PARCEL GATE (UX pre-check; the backend
-                                      // re-validates and is the source of
-                                      // truth): receiver OTP must be verified
-                                      // before the swipe can complete.
-                                      if (c.isParcel.value &&
-                                          !c.deliveryOtpVerified.value) {
-                                        controller.failure();
-                                        await Future<void>.delayed(
-                                          const Duration(milliseconds: 250),
-                                        );
-                                        controller.reset();
-                                        CustomSnackBar.showError(
-                                          "Verify the receiver's delivery OTP first",
-                                        );
-                                        if (context.mounted) {
-                                          await showParcelDeliveryOtpSheet(
-                                            context,
-                                            c,
-                                          );
-                                        }
-                                        return;
-                                      }
-                                      controller.loading();
-                                      await Future.delayed(
-                                        const Duration(milliseconds: 700),
-                                      );
-
-                                      final msg = await driverStatusController
-                                          .completeRideRequest(
-                                            context,
-                                            Amount: c.amount.value,
-                                            bookingId: bookingId,
-                                          );
-
-                                      if (msg != null) {
-                                        controller.success();
-                                        await Future.delayed(
-                                          const Duration(milliseconds: 300),
-                                        );
-                                        if (!context.mounted) return;
-                                         Navigator.push(
-                                           context,
-                                           MaterialPageRoute(
-                                             builder:
-                                                 (_) => CashCollectedScreen(
-                                                   Amount: c.amount.value,
-                                                   bookingId: bookingId,
-                                                   name: c.custName.value,
-                                                   imageUrl: c.profilePic.value,
-                                                   isSharedRide: false,
-                                                 ),
-                                           ),
-                                         );
-                                         return;
-                                       }
-
-                                      controller.failure();
-                                      await Future<void>.delayed(
-                                        const Duration(milliseconds: 250),
-                                      );
-                                      controller.reset();
-                                      if (!context.mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Failed to complete ride',
+                                if (c.isParcel.value)
+                                  ParcelDeliverySection(
+                                    controller: c,
+                                    atDropLocation: true,
+                                    onNavigate: () => _onNavigatePressed(c),
+                                  )
+                                else ...[
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.circle,
+                                        color: AppColors.drkGreen,
+                                        size: 13,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Obx(() {
+                                        final etaMin =
+                                            driverStatusController
+                                                .dropDurationInMin
+                                                .value;
+                                        final distM =
+                                            driverStatusController
+                                                .dropDistanceInMeters
+                                                .value;
+                                        final arrived =
+                                            distM.isFinite &&
+                                            distM >= 0 &&
+                                            distM <= 60;
+                                        final label =
+                                            arrived
+                                                ? 'Arrived'
+                                                : (etaMin.isFinite && etaMin < 1
+                                                    ? 'Arriving now'
+                                                    : '${etaMin.ceil()} min away');
+                                        return Text(
+                                          label,
+                                          style: const TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.w600,
                                           ),
-                                        ),
-                                      );
-                                    },
+                                        );
+                                      }),
+                                    ],
                                   ),
-                                ),
-                                const SizedBox(height: 10),
+                                  const SizedBox(height: 10),
+                                  CustomTextfield.textWithStylesSmall(
+                                    fontWeight: FontWeight.w500,
+                                    'Dropping off ${c.custName.value}',
+                                  ),
+                                ],
+                                if (!c.isParcel.value ||
+                                    c.parcelStatus.value ==
+                                        'OUT_FOR_DELIVERY') ...[
+                                  const SizedBox(height: 5),
+                                  // Parcel delivery trust checklist: receiver
+                                  // card + delivery OTP + POD photo. Renders
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 10,
+                                    ),
+                                    // Parcel: the Complete slider stays LOCKED
+                                    // until receiver OTP + POD photo are done
+                                    // AND, for CASH parcels, the receiver's
+                                    // payment is confirmed collected (backend
+                                    // re-validates all three — this is UX, not
+                                    // the gate). Rides always get the slider.
+                                    child:
+                                        (c.isParcel.value &&
+                                                (!c.deliveryOtpVerified.value ||
+                                                    c
+                                                        .podPhotoUrl
+                                                        .value
+                                                        .isEmpty ||
+                                                    c.needsCashCollectionBeforeDelivery))
+                                            ? ParcelCompleteLockedBar(
+                                              message:
+                                                  !c.deliveryOtpVerified.value
+                                                      ? 'Verify receiver OTP to complete delivery.'
+                                                      : c
+                                                          .podPhotoUrl
+                                                          .value
+                                                          .isEmpty
+                                                      ? 'Upload delivery photo to complete delivery.'
+                                                      : 'Collect cash payment from the receiver to complete delivery.',
+                                            )
+                                            : HopprSwipeSlider(
+                                              height: 50,
+                                              backgroundColor:
+                                                  AppColors.drkGreen,
+                                              handleColor: Colors.white,
+                                              handleIconColor:
+                                                  AppColors.drkGreen,
+                                              text:
+                                                  c.isParcel.value
+                                                      ? 'Complete Delivery'
+                                                      : 'Complete Ride',
+                                              onAction: (controller) async {
+                                                // PARCEL GATE (UX pre-check; the backend
+                                                // re-validates and is the source of
+                                                // truth): receiver OTP must be verified
+                                                // before the swipe can complete.
+                                                if (c.isParcel.value &&
+                                                    !c
+                                                        .deliveryOtpVerified
+                                                        .value) {
+                                                  controller.failure();
+                                                  await Future<void>.delayed(
+                                                    const Duration(
+                                                      milliseconds: 250,
+                                                    ),
+                                                  );
+                                                  controller.reset();
+                                                  CustomSnackBar.showError(
+                                                    "Verify the receiver's delivery OTP first",
+                                                  );
+                                                  if (context.mounted) {
+                                                    await showParcelDeliveryOtpSheet(
+                                                      context,
+                                                      c,
+                                                    );
+                                                  }
+                                                  return;
+                                                }
+
+                                                // Parcel: confirm before the irreversible
+                                                // completion call — backend still gates
+                                                // on OTP+POD regardless of this answer.
+                                                if (c.isParcel.value) {
+                                                  final confirmed =
+                                                      await showCompleteDeliveryConfirmSheet(
+                                                        context,
+                                                      );
+                                                  if (!confirmed) {
+                                                    controller.reset();
+                                                    return;
+                                                  }
+                                                }
+
+                                                controller.loading();
+                                                await Future.delayed(
+                                                  const Duration(
+                                                    milliseconds: 700,
+                                                  ),
+                                                );
+
+                                                final msg =
+                                                    c.isParcel.value
+                                                        ? await c
+                                                            .completeDelivery(
+                                                              context,
+                                                            )
+                                                        : await driverStatusController
+                                                            .completeRideRequest(
+                                                              context,
+                                                              Amount:
+                                                                  c
+                                                                      .amount
+                                                                      .value,
+                                                              bookingId:
+                                                                  bookingId,
+                                                            );
+
+                                                if (msg != null) {
+                                                  controller.success();
+                                                  await Future.delayed(
+                                                    const Duration(
+                                                      milliseconds: 300,
+                                                    ),
+                                                  );
+                                                  if (!context.mounted) return;
+                                                  if (c.isParcel.value) {
+                                                    Navigator.pushReplacement(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder:
+                                                            (
+                                                              _,
+                                                            ) => ParcelDeliverySuccessScreen(
+                                                              bookingId:
+                                                                  bookingId,
+                                                              receiverName:
+                                                                  c
+                                                                      .receiverName
+                                                                      .value,
+                                                              dropAddress:
+                                                                  c
+                                                                      .customerTo
+                                                                      .value,
+                                                              podPhotoUrl:
+                                                                  c
+                                                                      .podPhotoUrl
+                                                                      .value,
+                                                              deliveredAt:
+                                                                  DateTime.now(),
+                                                              customerName:
+                                                                  c
+                                                                      .custName
+                                                                      .value,
+                                                              customerProfilePic:
+                                                                  c
+                                                                      .profilePic
+                                                                      .value,
+                                                            ),
+                                                      ),
+                                                    );
+                                                    return;
+                                                  }
+                                                  Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder:
+                                                          (
+                                                            _,
+                                                          ) => CashCollectedScreen(
+                                                            Amount:
+                                                                c.amount.value,
+                                                            bookingId:
+                                                                bookingId,
+                                                            name:
+                                                                c
+                                                                    .custName
+                                                                    .value,
+                                                            imageUrl:
+                                                                c
+                                                                    .profilePic
+                                                                    .value,
+                                                            isSharedRide: false,
+                                                          ),
+                                                    ),
+                                                  );
+                                                  return;
+                                                }
+
+                                                controller.failure();
+                                                await Future<void>.delayed(
+                                                  const Duration(
+                                                    milliseconds: 250,
+                                                  ),
+                                                );
+                                                controller.reset();
+                                                // No generic fallback snackbar
+                                                // here: completeDelivery() /
+                                                // completeRideRequest() already
+                                                // surface the REAL backend
+                                                // reason (e.g. "Collect the cash
+                                                // payment before completing
+                                                // delivery") via CustomSnackBar
+                                                // before returning null. A
+                                                // second generic "Failed to
+                                                // complete ride" toast on top of
+                                                // that buried the actionable
+                                                // message.
+                                              },
+                                            ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                ],
                               ],
                             ),
                           ],
@@ -1326,10 +1553,14 @@ class _RideStatsScreenState extends State<RideStatsScreen>
     _markerController.dispose();
     try {
       // remove ONLY listeners; keep socket alive if singleton in app
+      // NOTE: never call socket.off('driver-cancelled'/'customer-cancelled')
+      // here — the raw off(event) with no handler removes ALL listeners for
+      // that event (socket.io semantics), including DriverMainController's
+      // app-lifetime cancellation handler, silently breaking cancellation
+      // detection for every screen opened afterward until something happens
+      // to re-bind it.
       socketService.socket.off('driver-reached-destination');
       socketService.socket.off('driver-location');
-      socketService.socket.off('driver-cancelled');
-      socketService.socket.off('customer-cancelled');
       // socketService.socket.disconnect(); // uncomment only if this screen owns the socket
     } catch (_) {}
     super.dispose();

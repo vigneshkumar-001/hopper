@@ -100,18 +100,45 @@ Future<void> _initFcmSafely() async {
     firebaseService.listenToMessages(
       onMessage: (msg) {
         _logFcmMessage('FG', msg);
-        firebaseService.showNotification(msg);
+        unawaited(firebaseService.showNotification(msg));
+        if (FirebaseService.isBookingRequestNotification(msg.data)) {
+          if (Get.isRegistered<DriverMainController>()) {
+            unawaited(
+              Get.find<DriverMainController>().handleBookingRequestNotification(
+                msg.data,
+                source: 'fcm_foreground',
+              ),
+            );
+          } else {
+            unawaited(
+              FirebaseService.queueBookingRequestNotification(msg.data),
+            );
+          }
+        }
       },
       onMessageOpenedApp: (msg) {
         _logFcmMessage('OPENED', msg);
+      },
+      onBookingRequestOpened: (data) {
         if (Get.isRegistered<DriverMainController>()) {
           unawaited(
             Get.find<DriverMainController>()
-                .restorePendingBookingRequestFromNotification(force: true),
+                .handleBookingRequestNotification(
+                  data,
+                  source: 'notification_tap',
+                  payloadAlreadyQueued: true,
+                ),
           );
         }
       },
     );
+
+    if (Get.isRegistered<DriverMainController>()) {
+      unawaited(
+        Get.find<DriverMainController>()
+            .restorePendingBookingRequestFromNotification(force: true),
+      );
+    }
 
     CommonLogger.log.d("FCM initialized");
   } catch (e, st) {

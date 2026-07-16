@@ -28,6 +28,7 @@ import 'package:hopper/api/repository/api_config_controller.dart';
 import 'package:hopper/api/repository/api_constents.dart';
 import 'package:hopper/api/repository/request.dart';
 import 'package:hopper/utils/sharedprefsHelper/sharedprefs_handler.dart';
+import 'package:hopper/utils/session/jwt_expiry.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../Presentation/Authentication/controller/authController.dart';
 import '../../Presentation/Authentication/models/fcm_response.dart';
@@ -233,7 +234,8 @@ class ApiDataSource extends BaseApiDataSource {
       dynamic response = await Request.sendRequest(
         url,
         {
-          "uniqueId": uniqueId, // Firebase UID for the Apple identity //Mandatory
+          "uniqueId":
+              uniqueId, // Firebase UID for the Apple identity //Mandatory
           "provider": "apple",
           "type": "social",
           "email": email,
@@ -1453,6 +1455,24 @@ class ApiDataSource extends BaseApiDataSource {
     required String status,
   }) async {
     try {
+      final token = (await SharedPrefHelper.getToken() ?? '').trim();
+      if (token.isEmpty) {
+        return const Left(
+          AuthenticationFailure(
+            'Your session has ended. Please sign in again.',
+            code: 'NO_TOKEN',
+          ),
+        );
+      }
+      if (isJwtExpired(token)) {
+        return const Left(
+          AuthenticationFailure(
+            'Your session has expired. Please sign in again.',
+            code: 'TOKEN_EXPIRED',
+          ),
+        );
+      }
+
       final driverId = await SharedPrefHelper.getDriverId();
       String url = ApiConstents.driverAccept;
 
@@ -1467,6 +1487,19 @@ class ApiDataSource extends BaseApiDataSource {
         final result = BookingAcceptModel.fromJson(response.data);
         CommonLogger.log.i(response.data);
         return Right(result);
+      } else if (response is Response && response.statusCode == 401) {
+        final data = response.data;
+        final message =
+            (data is Map ? data['message'] : null)?.toString().trim();
+        final code = (data is Map ? data['code'] : null)?.toString().trim();
+        return Left(
+          AuthenticationFailure(
+            message?.isNotEmpty == true
+                ? message!
+                : 'Your session has ended. Please sign in again.',
+            code: code?.isNotEmpty == true ? code! : 'INVALID_TOKEN',
+          ),
+        );
       } else if (response is Response && response.statusCode == 409) {
         return Left(ServerFailure(response.data['message']));
       } else if (response is Response) {
@@ -1571,6 +1604,128 @@ class ApiDataSource extends BaseApiDataSource {
     }
   }
 
+  // ── Parcel delivery trust (Phase 2) ───────────────────────────────────────
+
+  /// Verify the SENDER's pickup OTP (parcels only). Dedicated hash-based
+  /// endpoint — separate from the legacy shared ride-start OTP.
+  Future<Either<Failure, Map<String, dynamic>>> verifyParcelPickupOtp({
+    required String bookingId,
+    required String enteredOtp,
+  }) async {
+    try {
+      final response = await Request.sendRequest(
+        ApiConstents.parcelVerifyPickupOtp,
+        {"bookingId": bookingId, "enteredOtp": enteredOtp},
+        'Post',
+        false,
+      );
+      if (response is Response && response.statusCode == 200) {
+        return Right(Map<String, dynamic>.from(response.data as Map));
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(
+            (response.data is Map ? response.data['message'] : null)
+                    ?.toString() ??
+                'Pickup OTP verification failed',
+          ),
+        );
+      }
+      return Left(ServerFailure('Unexpected error'));
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  /// PICKED_UP -> IN_TRANSIT (parcels only).
+  Future<Either<Failure, Map<String, dynamic>>> startParcelDelivery({
+    required String bookingId,
+  }) async {
+    try {
+      final response = await Request.sendRequest(
+        ApiConstents.parcelStartDelivery,
+        {"bookingId": bookingId},
+        'Post',
+        false,
+      );
+      if (response is Response && response.statusCode == 200) {
+        return Right(Map<String, dynamic>.from(response.data as Map));
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(
+            (response.data is Map ? response.data['message'] : null)
+                    ?.toString() ??
+                'Could not start delivery',
+          ),
+        );
+      }
+      return Left(ServerFailure('Unexpected error'));
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  /// Driver confirms the sender's CASH payment was collected at pickup
+  /// (parcels only). Required before startParcelDelivery() will succeed for
+  /// a CASH-mode parcel — see isParcelPaymentSatisfied() on the backend.
+  Future<Either<Failure, Map<String, dynamic>>> confirmParcelCashCollected({
+    required String bookingId,
+  }) async {
+    try {
+      final response = await Request.sendRequest(
+        ApiConstents.parcelConfirmCashCollected,
+        {"bookingId": bookingId},
+        'Post',
+        false,
+      );
+      if (response is Response && response.statusCode == 200) {
+        return Right(Map<String, dynamic>.from(response.data as Map));
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(
+            (response.data is Map ? response.data['message'] : null)
+                    ?.toString() ??
+                'Could not confirm cash collected',
+          ),
+        );
+      }
+      return Left(ServerFailure('Unexpected error'));
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
+  /// IN_TRANSIT -> OUT_FOR_DELIVERY (parcels only).
+  Future<Either<Failure, Map<String, dynamic>>> markParcelOutForDelivery({
+    required String bookingId,
+  }) async {
+    try {
+      final response = await Request.sendRequest(
+        ApiConstents.parcelOutForDelivery,
+        {"bookingId": bookingId},
+        'Post',
+        false,
+      );
+      if (response is Response && response.statusCode == 200) {
+        return Right(Map<String, dynamic>.from(response.data as Map));
+      } else if (response is Response) {
+        return Left(
+          ServerFailure(
+            (response.data is Map ? response.data['message'] : null)
+                    ?.toString() ??
+                'Could not update delivery status',
+          ),
+        );
+      }
+      return Left(ServerFailure('Unexpected error'));
+    } catch (e) {
+      CommonLogger.log.e(e);
+      return Left(ServerFailure('Something went wrong'));
+    }
+  }
+
   Future<Either<Failure, BookingAcceptModel>> otpRequest({
     required String bookingId,
   }) async {
@@ -1653,7 +1808,9 @@ class ApiDataSource extends BaseApiDataSource {
         return Right((msg ?? 'Active stop updated').toString());
       } else if (response is Response) {
         final msg = response.data is Map ? response.data['message'] : null;
-        return Left(ServerFailure((msg ?? 'Could not select this stop').toString()));
+        return Left(
+          ServerFailure((msg ?? 'Could not select this stop').toString()),
+        );
       }
       return Left(ServerFailure('Unexpected error'));
     } catch (e) {
@@ -1675,9 +1832,10 @@ class ApiDataSource extends BaseApiDataSource {
         'Post',
         false,
       );
-      final data = (response is Response && response.data is Map)
-          ? Map<String, dynamic>.from(response.data as Map)
-          : <String, dynamic>{};
+      final data =
+          (response is Response && response.data is Map)
+              ? Map<String, dynamic>.from(response.data as Map)
+              : <String, dynamic>{};
       if (response is Response && response.statusCode == 200) {
         return Right(data);
       }
@@ -1882,17 +2040,20 @@ class ApiDataSource extends BaseApiDataSource {
 
       if (response is Response && response.statusCode == 200) {
         final body = response.data;
-        final data = (body is Map && body['data'] is Map)
-            ? Map<String, dynamic>.from(body['data'] as Map)
-            : <String, dynamic>{};
+        final data =
+            (body is Map && body['data'] is Map)
+                ? Map<String, dynamic>.from(body['data'] as Map)
+                : <String, dynamic>{};
         data['message'] =
             (body is Map ? body['message'] : null) ?? 'Passenger cancelled';
         return Right(data);
       } else if (response is Response) {
-        return Left(ServerFailure(
-          (response.data is Map ? response.data['message'] : null) ??
-              'Could not cancel passenger',
-        ));
+        return Left(
+          ServerFailure(
+            (response.data is Map ? response.data['message'] : null) ??
+                'Could not cancel passenger',
+          ),
+        );
       }
       return Left(ServerFailure('Unexpected error'));
     } catch (e) {
@@ -1918,15 +2079,17 @@ class ApiDataSource extends BaseApiDataSource {
 
       if (response is Response && response.statusCode == 200) {
         final data = response.data;
-        final msg = (data is Map && data['message'] != null)
-            ? data['message'].toString()
-            : 'All shared rides cancelled';
+        final msg =
+            (data is Map && data['message'] != null)
+                ? data['message'].toString()
+                : 'All shared rides cancelled';
         return Right(msg);
       } else if (response is Response) {
         final data = response.data;
-        final msg = (data is Map && data['message'] != null)
-            ? data['message'].toString()
-            : 'Could not cancel the shared rides';
+        final msg =
+            (data is Map && data['message'] != null)
+                ? data['message'].toString()
+                : 'Could not cancel the shared rides';
         return Left(ServerFailure(msg));
       } else {
         return Left(ServerFailure("Unexpected error"));
@@ -2199,7 +2362,7 @@ class ApiDataSource extends BaseApiDataSource {
   /// Save / update the driver's withdraw bank details.
   /// POST /users/update-driver-withdraw-payments-details
   Future<Either<Failure, BankDetailsResponse>>
-      updateDriverWithdrawPaymentDetails({
+  updateDriverWithdrawPaymentDetails({
     required String accountHolderName,
     required String bankName,
     required String bankCode,
@@ -2272,8 +2435,10 @@ class ApiDataSource extends BaseApiDataSource {
     try {
       final url = ApiConstents.driverEarnings;
 
-      List<String> _cleanList(List<String>? v) =>
-          (v ?? const <String>[]).map((e) => e.trim()).where((e) => e.isNotEmpty).toList(growable: false);
+      List<String> _cleanList(List<String>? v) => (v ?? const <String>[])
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList(growable: false);
 
       final pm = _cleanList(paymentModes);
       final st = _cleanList(statuses);
@@ -2308,7 +2473,8 @@ class ApiDataSource extends BaseApiDataSource {
         if (response.data is Map) {
           return Left(
             ServerFailure(
-              (response.data['message'] ?? 'Failed to load earnings').toString(),
+              (response.data['message'] ?? 'Failed to load earnings')
+                  .toString(),
             ),
           );
         }

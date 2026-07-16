@@ -1,4 +1,4 @@
-﻿// lib/Presentation/DriverScreen/screens/picking_customer_screen.dart
+// lib/Presentation/DriverScreen/screens/picking_customer_screen.dart
 // âœ… Update: Top row = Call (left) + Duration (center) + Chat (right)
 // âœ… Under that = Customer profile + name (tap name -> enable Arrived button for testing)
 
@@ -32,6 +32,7 @@ import 'package:hopper/utils/ride_map/ride_map_controller.dart';
 
 import '../controller/driver_status_controller.dart';
 import '../controller/pickup_customer_controller.dart';
+import '../widgets/parcel_dark_theme.dart';
 
 class PickingCustomerScreen extends StatefulWidget {
   final LatLng pickupLocation;
@@ -39,6 +40,11 @@ class PickingCustomerScreen extends StatefulWidget {
   final String? dropLocationAddress;
   final LatLng driverLocation;
   final String bookingId;
+  // Car->Parcel UI flash fix: when the caller already knows the booking
+  // type (from the accept-response or an active-booking resume payload),
+  // pass it here so PickingCustomerController seeds isParcel synchronously
+  // instead of defaulting false until an async socket/REST reply arrives.
+  final bool initialIsParcel;
 
   const PickingCustomerScreen({
     super.key,
@@ -47,6 +53,7 @@ class PickingCustomerScreen extends StatefulWidget {
     required this.bookingId,
     this.pickupLocationAddress,
     this.dropLocationAddress,
+    this.initialIsParcel = false,
   });
 
   @override
@@ -56,6 +63,7 @@ class PickingCustomerScreen extends StatefulWidget {
 class _PickingCustomerScreenState extends State<PickingCustomerScreen>
     with WidgetsBindingObserver {
   late final PickingCustomerController c;
+  late final String _controllerTag;
   late final ActionSliderController sliderController;
   final NavigationService _navigationService = NavigationService();
   StreamSubscription<dynamic>? _bgLocationSub;
@@ -66,6 +74,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     sliderController = ActionSliderController();
+    _controllerTag = '${widget.bookingId}:${identityHashCode(this)}';
 
     // IMPORTANT: Don't create GetX controllers during `build()`.
     // Creating it in `initState()` prevents "markNeedsBuild during build"
@@ -77,8 +86,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
         bookingId: widget.bookingId,
         pickupLocationAddress: widget.pickupLocationAddress,
         dropLocationAddress: widget.dropLocationAddress,
+        initialIsParcel: widget.initialIsParcel,
       ),
-      tag: widget.bookingId,
+      tag: _controllerTag,
     );
 
     _setupBackgroundServiceListener();
@@ -96,8 +106,8 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
     _bgLocationSub?.cancel();
     sliderController.dispose();
     // Allow GetX to clean up controller when this screen is removed.
-    if (Get.isRegistered<PickingCustomerController>(tag: widget.bookingId)) {
-      Get.delete<PickingCustomerController>(tag: widget.bookingId, force: true);
+    if (Get.isRegistered<PickingCustomerController>(tag: _controllerTag)) {
+      Get.delete<PickingCustomerController>(tag: _controllerTag, force: true);
     }
     super.dispose();
   }
@@ -148,7 +158,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
   }
 
   Future<void> _onNavigatePressed() async {
-    final ok = await _navigationService.requestPermissions(); 
+    final ok = await _navigationService.requestPermissions();
     if (!ok) {
       Get.snackbar(
         'Permission Required',
@@ -245,6 +255,18 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
             final pickupTarget =
                 c.adjustedPickupLocation.value ?? widget.pickupLocation;
 
+            // Bike/Parcel delivery: completely separate black-theme layout,
+            // reusing the exact same controller/map/callbacks as the ride
+            // path below — never a second map or a duplicate controller.
+            // Car/Solo/Shared ride UI is untouched below this branch.
+            if (c.isParcel.value) {
+              return _buildParcelPickupBody(
+                context,
+                driverStatusController,
+                pickupTarget,
+              );
+            }
+
             // NOTE: No side-effects in build. All map updates are driven by the
             // controller (workers) to avoid build-phase exceptions.
             return Stack(
@@ -268,16 +290,16 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                           controller: c.rideMap,
                           initialPosition: pickupTarget,
                           myLocationEnabled: false,
-                           fitToBounds: false,
-                           trafficEnabled: false,
-                           compassEnabled: false,
-                           onUserCameraMoveStarted: () {
-                             c.isDriverFocused.value = false;
-                             c.rideMap.setAutoFollowEnabled(false);
-                             c.rideMap.focusMode.value = MapFocusMode.fullTrip;
-                           },
-                           onMapCreated: (gm) => c.onMapCreated(gm, context),
-                         ),
+                          fitToBounds: false,
+                          trafficEnabled: false,
+                          compassEnabled: false,
+                          onUserCameraMoveStarted: () {
+                            c.isDriverFocused.value = false;
+                            c.rideMap.setAutoFollowEnabled(false);
+                            c.rideMap.focusMode.value = MapFocusMode.fullTrip;
+                          },
+                          onMapCreated: (gm) => c.onMapCreated(gm, context),
+                        ),
                         Positioned(
                           top: 56,
                           left: 12,
@@ -324,9 +346,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                 // Map controls
                 Positioned(
                   top: c.arrivedAtPickup.value ? 322 : 472,
-                    right: 12,
-                    child: Column(
-                      children: [
+                  right: 12,
+                  child: Column(
+                    children: [
                       ValueListenableBuilder<MapFocusMode>(
                         valueListenable: c.rideMap.focusMode,
                         builder: (context, mode, _) {
@@ -349,7 +371,8 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                               );
                               c.isDriverFocused.value = false;
                             },
-                            onDriverFocusedChanged: (v) => c.isDriverFocused.value = v,
+                            onDriverFocusedChanged:
+                                (v) => c.isDriverFocused.value = v,
                           );
                         },
                       ),
@@ -490,11 +513,17 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                                         ),
                                       ),
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFFEAF1FE),
-                                        foregroundColor: const Color(0xFF1A73E8),
+                                        backgroundColor: const Color(
+                                          0xFFEAF1FE,
+                                        ),
+                                        foregroundColor: const Color(
+                                          0xFF1A73E8,
+                                        ),
                                         elevation: 0,
                                         shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(14),
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
                                           side: const BorderSide(
                                             color: Color(0xFF1A73E8),
                                             width: 1.3,
@@ -554,7 +583,7 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                                                         const EdgeInsets.only(
                                                           right: 8,
                                                         ),
-                                                     child: InkWell(
+                                                    child: InkWell(
                                                       onTap: () async {
                                                         final sent = await c
                                                             .sendQuickMessage(
@@ -566,7 +595,8 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                                                             ScaffoldMessenger.of(
                                                               context,
                                                             );
-                                                        messenger.clearSnackBars();
+                                                        messenger
+                                                            .clearSnackBars();
                                                         messenger.showSnackBar(
                                                           SnackBar(
                                                             content: Text(
@@ -576,9 +606,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                                                             ),
                                                             duration:
                                                                 const Duration(
-                                                              milliseconds:
-                                                                  1200,
-                                                            ),
+                                                                  milliseconds:
+                                                                      1200,
+                                                                ),
                                                           ),
                                                         );
                                                       },
@@ -792,14 +822,14 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
                                     child: _roundIconBox(AppImages.msg),
                                   ),
                                   leading: GestureDetector(
-                                     onTap: () async {
-                                       await CallLauncher.openDialer(
-                                         phone: c.customerPhone.value,
-                                         context: context,
-                                       );
-                                     },
-                                     child: _roundIconBox(AppImages.call),
-                                    ),
+                                    onTap: () async {
+                                      await CallLauncher.openDialer(
+                                        phone: c.customerPhone.value,
+                                        context: context,
+                                      );
+                                    },
+                                    child: _roundIconBox(AppImages.call),
+                                  ),
                                   title: Center(
                                     child: CustomTextfield.textWithStyles600(
                                       'Waiting for the Rider',
@@ -899,6 +929,627 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
     );
   }
 
+  // ---------------- PARCEL PICKUP (BLACK THEME, PARCEL-ONLY) ----------------
+  // Everything below is reached ONLY when c.isParcel.value == true. Reuses
+  // the exact same controller (`c`), map controller (`c.rideMap`), and
+  // button callbacks as the ride path above — no duplicate controller, no
+  // second map, no changed business logic. Only the visual layer is new.
+
+  Widget _buildParcelPickupBody(
+    BuildContext context,
+    DriverStatusController driverStatusController,
+    LatLng pickupTarget,
+  ) {
+    final mapHeight = MediaQuery.of(context).size.height * 0.38;
+    return Container(
+      color: ParcelDarkTheme.background,
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(28),
+              bottomRight: Radius.circular(28),
+            ),
+            child: SizedBox(
+              height: mapHeight,
+              width: double.infinity,
+              child: Stack(
+                children: [
+                  RideMapView(
+                    controller: c.rideMap,
+                    initialPosition: pickupTarget,
+                    myLocationEnabled: false,
+                    fitToBounds: false,
+                    trafficEnabled: false,
+                    compassEnabled: false,
+                    onUserCameraMoveStarted: () {
+                      c.isDriverFocused.value = false;
+                      c.rideMap.setAutoFollowEnabled(false);
+                      c.rideMap.focusMode.value = MapFocusMode.fullTrip;
+                    },
+                    onMapCreated: (gm) => c.onMapCreated(gm, context),
+                  ),
+                  IgnorePointer(
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x66000000), Color(0x00000000)],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    // Matches the status header's own safe-area offset below
+                    // (top: padding.top + 8) so the two sit level with each
+                    // other instead of this button floating above it, flush
+                    // against the status bar.
+                    top: MediaQuery.of(context).padding.top + 8,
+                    right: 12,
+                    child: ValueListenableBuilder<MapFocusMode>(
+                      valueListenable: c.rideMap.focusMode,
+                      builder: (context, mode, _) {
+                        final focused = mode == MapFocusMode.driver;
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: ParcelDarkTheme.surface.withOpacity(0.92),
+                            shape: BoxShape.circle,
+                          ),
+                          child: MapFocusToggleButton(
+                            isDriverFocused: focused,
+                            onFocusDriver: () async {
+                              c.rideMap.applyFocusMode(
+                                MapFocusMode.driver,
+                                userInitiated: true,
+                              );
+                              c.isDriverFocused.value = true;
+                            },
+                            onFitBounds: () async {
+                              c.rideMap.applyFocusMode(
+                                MapFocusMode.fullTrip,
+                                userInitiated: true,
+                              );
+                              c.isDriverFocused.value = false;
+                            },
+                            onDriverFocusedChanged:
+                                (v) => c.isDriverFocused.value = v,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + 8,
+                    left: 12,
+                    right: 64,
+                    child: _parcelStatusHeader(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          DraggableScrollableSheet(
+            key: ValueKey('parcel-${c.arrivedAtPickup.value}'),
+            // Pre-arrival content (package summary + Navigate + Cancel/Arrived)
+            // is substantially richer than post-arrival (a single waiting card
+            // + swipe slider) — sizing both states the same left the sparser
+            // one with a large empty area below its content. Smaller sizing
+            // for the waiting state also keeps more of the map visible.
+            initialChildSize: c.arrivedAtPickup.value ? 0.56 : 0.34,
+            minChildSize: c.arrivedAtPickup.value ? 0.42 : 0.26,
+            maxChildSize: c.arrivedAtPickup.value ? 0.88 : 0.62,
+            builder: (context, scrollController) {
+              return Container(
+                decoration: const BoxDecoration(
+                  color: ParcelDarkTheme.background,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: ListView(
+                    controller: scrollController,
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 44,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: ParcelDarkTheme.borderStrong,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (c.arrivedAtPickup.value) ...[
+                        _parcelSenderPackageCard(),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 54,
+                          child: ElevatedButton.icon(
+                            onPressed: _onNavigatePressed,
+                            icon: const Icon(
+                              Icons.navigation_rounded,
+                              size: 20,
+                            ),
+                            label: const Text(
+                              'Navigate to Pickup',
+                              style: TextStyle(
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              // Black, not blue — matches the app's black &
+                              // white theme.
+                              backgroundColor: const Color(0xFF0B0B0F),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 54,
+                                child: OutlinedButton.icon(
+                                  onPressed: () {
+                                    Buttons.showCancelRideBottomSheet(
+                                      context,
+                                      onConfirmCancel: (reason) async {
+                                        await driverStatusController
+                                            .cancelBooking(
+                                              bookingId: widget.bookingId,
+                                              context,
+                                              reason: reason,
+                                            );
+                                      },
+                                    );
+                                  },
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    size: 18,
+                                    color: ParcelDarkTheme.accentRed,
+                                  ),
+                                  label: const Text(
+                                    'Cancel',
+                                    style: TextStyle(
+                                      color: ParcelDarkTheme.accentRed,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(
+                                      color: ParcelDarkTheme.accentRed,
+                                      width: 1.2,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(15),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 2,
+                              child: Obx(() {
+                                final ready = c.driverReached.value;
+                                final submitting = c.isArrivedSubmitting.value;
+                                return SizedBox(
+                                  height: 54,
+                                  child: ElevatedButton.icon(
+                                    onPressed:
+                                        (!ready || submitting)
+                                            ? null
+                                            : () => c.onArrivedAtPickupPressed(
+                                              context,
+                                            ),
+                                    icon:
+                                        submitting
+                                            ? const SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                            : const Icon(
+                                              Icons.check_circle_rounded,
+                                              size: 20,
+                                            ),
+                                    label: Text(
+                                      ready ? 'Arrived' : 'Heading there',
+                                      style: const TextStyle(
+                                        fontSize: 15.5,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor:
+                                          ParcelDarkTheme.accentGreen,
+                                      foregroundColor: Colors.white,
+                                      disabledBackgroundColor:
+                                          ParcelDarkTheme.surfaceSecondary,
+                                      disabledForegroundColor:
+                                          ParcelDarkTheme.textMuted,
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ),
+                          ],
+                        ),
+                      ] else ...[
+                        _parcelWaitingForSenderCard(context),
+                        const SizedBox(height: 16),
+                        HopprSwipeSlider(
+                          controller: sliderController,
+                          height: 54,
+                          backgroundColor: ParcelDarkTheme.surfaceSecondary,
+                          handleColor: ParcelDarkTheme.accentGreen,
+                          handleIconColor: Colors.white,
+                          // HopprSwipeSlider's text defaults to white — fine on
+                          // the old dark surface, unreadable on the light one
+                          // this track now uses. Must be explicit here.
+                          textColor: ParcelDarkTheme.textPrimary,
+                          text: 'Swipe to Verify Pickup OTP',
+                          onAction: (slider) async {
+                            slider.loading();
+                            await c.onSwipeStartRide(context);
+                            slider.success();
+                            await Future<void>.delayed(
+                              const Duration(milliseconds: 250),
+                            );
+                            slider.reset();
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _parcelStatusHeader() {
+    return Obx(() {
+      final title = c.arrivedAtPickup.value ? 'Go to Pickup' : 'At Pickup';
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: ParcelDarkTheme.surface.withOpacity(0.92),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: ParcelDarkTheme.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: const BoxDecoration(
+                // Black, not blue — matches the app's black & white theme.
+                color: Color(0xFF0B0B0F),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.two_wheeler_rounded,
+                size: 15,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: ParcelDarkTheme.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'PKG-${widget.bookingId}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: ParcelDarkTheme.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Widget _parcelSenderPackageCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: ParcelDarkTheme.card(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Collect the package from the sender.',
+            style: TextStyle(
+              color: ParcelDarkTheme.textSecondary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _parcelInfoRow(
+            icon: Icons.trip_origin_rounded,
+            label: 'Pickup Location',
+            value:
+                (widget.pickupLocationAddress ?? c.pickupAddressText.value)
+                        .trim()
+                        .isEmpty
+                    ? 'Fetching address…'
+                    : (widget.pickupLocationAddress ??
+                        c.pickupAddressText.value),
+          ),
+          Obx(() {
+            final distM =
+                driverStatusControllerOf(context).pickupDistanceInMeters.value;
+            final etaMin =
+                driverStatusControllerOf(context).pickupDurationInMin.value;
+            final parts = <String>[
+              if (distM.isFinite && distM > 0) _formatMeters(distM),
+              if (etaMin.isFinite && etaMin > 0) '${etaMin.round()} min away',
+            ];
+            if (parts.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 4, left: 26),
+              child: Text(
+                parts.join(' • '),
+                style: const TextStyle(
+                  color: ParcelDarkTheme.textMuted,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            );
+          }),
+          const Divider(height: 24, color: ParcelDarkTheme.border),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Obx(
+                  () => _parcelInfoRow(
+                    icon: Icons.person_rounded,
+                    label: 'Sender',
+                    value:
+                        c.customerName.value.trim().isEmpty
+                            ? 'Sender'
+                            : c.customerName.value,
+                  ),
+                ),
+              ),
+              Obx(() {
+                final phone = c.customerPhone.value.trim();
+                if (phone.isEmpty) return const SizedBox.shrink();
+                return InkWell(
+                  borderRadius: BorderRadius.circular(24),
+                  onTap: () async {
+                    await CallLauncher.openDialer(
+                      phone: phone,
+                      context: context,
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: const BoxDecoration(
+                      color: ParcelDarkTheme.surfaceSecondary,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.call_rounded,
+                      size: 17,
+                      color: ParcelDarkTheme.accentGreen,
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+          Obx(() {
+            final type = c.parcelType.value.trim();
+            final weight = c.parcelWeight.value.trim();
+            if (type.isEmpty && weight.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: _parcelInfoRow(
+                icon: Icons.inventory_2_rounded,
+                label: 'Package',
+                value: [
+                  if (type.isNotEmpty) type,
+                  if (weight.isNotEmpty) '$weight kg',
+                ].join(' • '),
+              ),
+            );
+          }),
+          Obx(() {
+            final note = c.deliveryInstruction.value.trim();
+            if (note.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: _parcelInfoRow(
+                icon: Icons.sticky_note_2_rounded,
+                label: 'Notes',
+                value: note,
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _parcelInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: ParcelDarkTheme.textSecondary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: ParcelDarkTheme.textMuted,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: ParcelDarkTheme.textPrimary,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _parcelWaitingForSenderCard(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: ParcelDarkTheme.card(),
+      child: Row(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(24),
+            onTap: () async {
+              await CallLauncher.openDialer(
+                phone: c.customerPhone.value,
+                context: context,
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.all(11),
+              decoration: const BoxDecoration(
+                color: ParcelDarkTheme.surfaceSecondary,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.call_rounded,
+                size: 18,
+                color: ParcelDarkTheme.accentGreen,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Waiting for the Sender',
+                  style: TextStyle(
+                    color: ParcelDarkTheme.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Obx(
+                  () => Text(
+                    c.customerName.value.trim().isEmpty
+                        ? 'Sender'
+                        : c.customerName.value,
+                    style: const TextStyle(
+                      color: ParcelDarkTheme.textSecondary,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          InkWell(
+            borderRadius: BorderRadius.circular(24),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (_) => ChatScreen(
+                        bookingId: widget.bookingId,
+                        initialPhone: c.customerPhone.value,
+                      ),
+                ),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.all(11),
+              decoration: const BoxDecoration(
+                color: ParcelDarkTheme.surfaceSecondary,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.chat_bubble_rounded,
+                size: 18,
+                // Black, not blue — matches the app's black & white theme.
+                color: Color(0xFF0B0B0F),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  DriverStatusController driverStatusControllerOf(BuildContext context) =>
+      Get.find<DriverStatusController>();
+
+  String _formatMeters(double meters) {
+    if (meters < 1000) return '${meters.round()} m';
+    return '${(meters / 1000).toStringAsFixed(1)} km';
+  }
+
   // ---------------- UI BLOCKS ----------------
 
   static String _routeDistanceText(
@@ -965,7 +1616,9 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
           // pickup. While approaching, a non-positive value means "no ETA yet"
           // -> show '--' instead of a misleading "0 min".
           final text =
-              (mins > 0 || c.driverReached.value) ? _formatDuration(mins) : '--';
+              (mins > 0 || c.driverReached.value)
+                  ? _formatDuration(mins)
+                  : '--';
           return CustomTextfield.textWithStyles600(text, fontSize: 20);
         }),
       ),
@@ -979,8 +1632,10 @@ class _PickingCustomerScreenState extends State<PickingCustomerScreen>
           // map route fetch, available without any socket frame); fall back to
           // the socket-provided pickupDistanceInMeters. This stops the "--"
           // showing when the driver-location socket frame hasn't landed yet.
-          final distLine =
-              _routeDistanceText(driverStatusController, c.ui.value.distanceText);
+          final distLine = _routeDistanceText(
+            driverStatusController,
+            c.ui.value.distanceText,
+          );
 
           return Column(
             mainAxisSize: MainAxisSize.min,
