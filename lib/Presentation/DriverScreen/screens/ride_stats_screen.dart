@@ -913,8 +913,20 @@ class RideStatsScreen extends StatelessWidget {
                                     // payment is confirmed collected (backend
                                     // re-validates all three — this is UX, not
                                     // the gate). Rides always get the slider.
-                                    child:
-                                        (c.isParcel.value &&
+                                    //
+                                    // This needs its OWN Obx: deliveryOtpVerified /
+                                    // podPhotoUrl / needsCashCollectionBeforeDelivery
+                                    // are never read by the OUTER Obx above (which
+                                    // only tracks driverCompletedRide/isParcel/
+                                    // parcelStatus), and this whole card sits inside
+                                    // DraggableScrollableSheet's deferred `builder:`
+                                    // closure — so without a local Obx, verifying the
+                                    // OTP or uploading the POD photo updated the
+                                    // state but never rebuilt this widget, leaving
+                                    // the locked bar stuck even after every
+                                    // requirement was actually satisfied.
+                                    child: Obx(() {
+                                      return (c.isParcel.value &&
                                                 (!c.deliveryOtpVerified.value ||
                                                     c
                                                         .podPhotoUrl
@@ -1100,7 +1112,8 @@ class RideStatsScreen extends StatelessWidget {
                                                 // that buried the actionable
                                                 // message.
                                               },
-                                            ),
+                                            );
+                                    }),
                                   ),
                                   const SizedBox(height: 10),
                                 ],
